@@ -4,7 +4,7 @@ Rust, and Go. Used to compare which models can write idiomatic code in
 languages other than Python.
 """
 
-# ── JavaScript (Node.js) ─────────────────────────────────────────────────────
+# JavaScript (Node.js)
 CODING_JS_TASKS = [
     {
         "id": "code_js_001", "difficulty": "easy", "category": "coding",
@@ -70,7 +70,7 @@ CODING_JS_TASKS = [
     },
 ]
 
-# ── TypeScript ───────────────────────────────────────────────────────────────
+# TypeScript
 CODING_TS_TASKS = [
     {
         "id": "code_ts_001", "difficulty": "easy", "category": "coding",
@@ -96,7 +96,7 @@ CODING_TS_TASKS = [
     },
 ]
 
-# ── Rust ────────────────────────────────────────────────────────────────────
+# Rust
 CODING_RUST_TASKS = [
     {
         "id": "code_rust_001", "difficulty": "easy", "category": "coding",
@@ -130,7 +130,7 @@ CODING_RUST_TASKS = [
     },
 ]
 
-# ── Go ──────────────────────────────────────────────────────────────────────
+# Go
 CODING_GO_TASKS = [
     {
         "id": "code_go_001", "difficulty": "easy", "category": "coding",
@@ -152,7 +152,7 @@ CODING_GO_TASKS = [
     },
 ]
 
-# ── C++ ──────────────────────────────────────────────────────────────────────
+# C++
 CODING_CPP_TASKS = [
     {
         "id": "code_cpp_001", "difficulty": "easy", "category": "coding",

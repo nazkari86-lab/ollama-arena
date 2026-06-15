@@ -1,10 +1,4 @@
-"""
-Backends — adapters to model servers and runtimes.
-
-    OllamaBackend         http://localhost:11434
-    OpenAICompatBackend   vLLM, LM Studio, llama.cpp, OpenAI, Groq, ...
-    TransformersBackend   in-process HuggingFace transformers (lazy)
-"""
+"""Adapters to model servers and runtimes."""
 from .base import Backend, GenResult
 from .ollama import OllamaBackend
 from .openai_compat import OpenAICompatBackend

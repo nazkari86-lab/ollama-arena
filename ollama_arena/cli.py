@@ -1,18 +1,4 @@
-"""
-ollama-arena command-line interface.
-
-Subcommands:
-  match        Run head-to-head match between two or more models
-  tournament   Round-robin between N models
-  leaderboard  Show current ELO table
-  list         List models exposed by the configured backend
-  tasks        Show built-in benchmark statistics
-  datasets     List, pull, or refresh HuggingFace datasets
-  finetune     Analyze weaknesses, generate data, or run Unsloth LoRA
-  perf         Show throughput / latency statistics
-  export       Export a self-contained HTML dashboard
-  web          Launch the FastAPI dashboard
-"""
+"""Command-line entry point. See `ollama-arena --help`."""
 from __future__ import annotations
 import argparse, sys
 from pathlib import Path
@@ -37,7 +23,7 @@ def _make_arena(args):
     )
 
 
-# ── list ─────────────────────────────────────────────────────────────────────
+# list
 def cmd_list(args):
     console = _console()
     from rich.table import Table
@@ -59,7 +45,7 @@ def cmd_list(args):
     console.print(t)
 
 
-# ── leaderboard ──────────────────────────────────────────────────────────────
+# leaderboard
 def cmd_leaderboard(args):
     console = _console()
     from rich.table import Table
@@ -83,7 +69,7 @@ def cmd_leaderboard(args):
     console.print(t)
 
 
-# ── match ────────────────────────────────────────────────────────────────────
+# match
 def cmd_match(args):
     console = _console()
     from rich.panel import Panel
@@ -149,7 +135,7 @@ def cmd_match(args):
     cmd_leaderboard(args)
 
 
-# ── tournament ───────────────────────────────────────────────────────────────
+# tournament
 def cmd_tournament(args):
     console = _console()
     models = [m.strip() for m in args.models.split(",")]
@@ -165,7 +151,7 @@ def cmd_tournament(args):
     cmd_leaderboard(args)
 
 
-# ── tasks ────────────────────────────────────────────────────────────────────
+# tasks
 def cmd_tasks(args):
     console = _console()
     from rich.table import Table
@@ -189,7 +175,7 @@ def cmd_tasks(args):
     console.print(f"\nLanguages covered: [cyan]{', '.join(list_languages())}[/cyan]")
 
 
-# ── datasets ─────────────────────────────────────────────────────────────────
+# datasets
 def cmd_datasets(args):
     console = _console()
     from rich.table import Table
@@ -220,7 +206,7 @@ def cmd_datasets(args):
     console.print("\nPull:  [cyan]ollama-arena datasets --pull humaneval[/cyan]")
 
 
-# ── finetune ─────────────────────────────────────────────────────────────────
+# finetune
 def cmd_finetune(args):
     console = _console()
     from .finetune import (
@@ -256,7 +242,7 @@ def cmd_finetune(args):
     console.print("Pass one of: --analyze | --generate | --train")
 
 
-# ── perf ─────────────────────────────────────────────────────────────────────
+# perf
 def cmd_perf(args):
     console = _console()
     from rich.table import Table
@@ -280,7 +266,7 @@ def cmd_perf(args):
     console.print(t)
 
 
-# ── export ───────────────────────────────────────────────────────────────────
+# export
 def cmd_export(args):
     console = _console()
     from .elo import EloStore
@@ -301,7 +287,7 @@ def cmd_export(args):
     console.print(f"     open file://{Path(out).absolute()}")
 
 
-# ── web ──────────────────────────────────────────────────────────────────────
+# web
 def cmd_web(args):
     from .web import run_web
     run_web(host=args.host, port=args.port,
@@ -309,7 +295,7 @@ def cmd_web(args):
             backend=args.backend, api_key=args.api_key)
 
 
-# ── main ─────────────────────────────────────────────────────────────────────
+# main
 def main():
     p = argparse.ArgumentParser(
         prog="ollama-arena",

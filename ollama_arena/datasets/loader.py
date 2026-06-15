@@ -1,6 +1,8 @@
-"""
-Universal dataset loader — pulls from HuggingFace Hub, caches locally,
-normalizes into ollama-arena's task schema.
+"""HuggingFace dataset loaders with on-disk caching.
+
+Each loader maps an upstream row to the arena task schema:
+    {id, category, language, difficulty, instruction,
+     test_code | expected_answer, check, source}
 """
 from __future__ import annotations
 import hashlib, json, logging, os, time
@@ -31,7 +33,7 @@ class DatasetInfo:
     n_tasks:     int    = 0
 
 
-# ── HF row → task normalizers ────────────────────────────────────────────────
+# HF row → task normalizers
 def _humaneval(row: dict, idx: int) -> dict:
     """OpenAI HumanEval: {task_id, prompt, canonical_solution, test, entry_point}."""
     prompt = row["prompt"].strip()
@@ -198,7 +200,7 @@ def _arc(row: dict, idx: int) -> dict:
     }
 
 
-# ── Registry ────────────────────────────────────────────────────────────────
+# Registry
 REGISTRY: dict[str, DatasetInfo] = {
     "humaneval": DatasetInfo(
         name="humaneval", hf_id="openai_humaneval", split="test",
@@ -265,7 +267,7 @@ REGISTRY: dict[str, DatasetInfo] = {
 }
 
 
-# ── Public API ───────────────────────────────────────────────────────────────
+# Public API
 def available_datasets() -> list[dict]:
     return [
         {"name": d.name, "hf_id": d.hf_id, "category": d.category,

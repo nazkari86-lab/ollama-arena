@@ -1,4 +1,9 @@
-"""Performance tracker — aggregates tokens/sec, latency, time-to-first-token."""
+"""Per-generation performance log and aggregates.
+
+These numbers include HTTP overhead and the model server's scheduling
+behaviour, not just raw decode speed. Useful for relative comparisons
+within one backend; treat absolute values with care.
+"""
 from __future__ import annotations
 import sqlite3, statistics, time
 from typing import Optional

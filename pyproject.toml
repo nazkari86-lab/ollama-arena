@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ollama-arena"
-version = "2.1.0"
+version = "2.1.1"
 description = "Local LLM evaluation arena with ELO ratings. Multi-backend (Ollama, vLLM, LM Studio, OpenAI-compat), HuggingFace benchmark loaders, multi-language sandboxed code execution, performance metrics, and an Unsloth-based fine-tuning pipeline."
 readme = "README.md"
 license = { text = "MIT" }

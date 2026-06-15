@@ -4,7 +4,7 @@ Inspection Benchmarks — 20 code samples with ground truth.
 """
 
 INSPECTION_TASKS = [
-    # ── Buggy samples (10) ───────────────────────────────────────────────────
+    # Buggy samples (10)
     {
         "id": "insp_001", "has_bug": True, "bug_type": "command_injection",
         "code": """
@@ -123,7 +123,7 @@ def load_session(session_data: str):
         "expected_issues": ["insecure_deserialization", "arbitrary_code_execution_risk"],
         "safe_alternative": "Use JSON for session data. Never unpickle untrusted input.",
     },
-    # ── Clean samples (10) ───────────────────────────────────────────────────
+    # Clean samples (10)
     {
         "id": "insp_011", "has_bug": False, "bug_type": None,
         "code": """

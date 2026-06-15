@@ -1,6 +1,4 @@
-"""
-Core arena engine — multi-backend ELO battles for local LLMs.
-"""
+"""Pair-wise match driver and ELO bookkeeping."""
 from __future__ import annotations
 import logging, time
 from dataclasses import dataclass, field
@@ -44,16 +42,11 @@ class OllamaClient(OllamaBackend):
 
 
 class Arena:
-    """
-    Run ELO-rated head-to-head matches between local LLMs.
+    """Pair-wise match driver with persistent ELO ratings.
 
-    Works with any of these backends:
-
-        Arena()                                # default: Ollama at :11434
-        Arena(backend="http://localhost:8000/v1")        # vLLM
-        Arena(backend="lmstudio")                        # LM Studio preset
-        Arena(backend="groq", api_key="gsk_...")         # Groq cloud
-        Arena(backend=OllamaBackend(...))                # explicit instance
+    `backend` accepts a preset name ("ollama", "vllm", "lmstudio",
+    "openai", "groq", ...), a full URL, or a Backend instance. If omitted,
+    the legacy `ollama_url` kwarg is used (default :11434).
     """
 
     def __init__(
@@ -89,7 +82,7 @@ class Arena:
             for name in from_datasets:
                 self.load_hf_dataset(name)
 
-    # ── Dataset injection ───────────────────────────────────────────────────
+    # Dataset injection
     def load_hf_dataset(self, name: str, limit: int | None = None) -> int:
         """Pull tasks from a HuggingFace dataset and add to the arena pool."""
         from .datasets import load_dataset
@@ -109,7 +102,7 @@ class Arena:
             pool = [t for t in pool if t.get("difficulty") == difficulty]
         return pool[:n]
 
-    # ── Single match ────────────────────────────────────────────────────────
+    # Single match
     def run_match(
         self,
         model_a: str,
@@ -138,8 +131,9 @@ class Arena:
             self._log_perf(model_a, res_a)
             self._log_perf(model_b, res_b)
 
-            # Score: deterministic scorer first; fall back to LLM-judge for
-            # open-ended tasks (or use it as primary when explicitly enabled).
+            # Open-ended tasks (use_judge=True) bypass the deterministic
+            # scorer. The judge call is two more generations per task — keep
+            # n small or use a small judge model.
             if self.judge and task.get("use_judge"):
                 jr = self.judge.grade_pair(
                     task["instruction"], res_a.text, res_b.text,
@@ -190,7 +184,7 @@ class Arena:
             duration_s=round(time.time() - t0, 1),
         )
 
-    # ── Tournament ──────────────────────────────────────────────────────────
+    # Tournament
     def run_tournament(
         self,
         models: list[str],
@@ -204,7 +198,7 @@ class Arena:
             self.run_match(a, b, category=category, n=n_per_match)
         return self.leaderboard()
 
-    # ── Read-only views ─────────────────────────────────────────────────────
+    # Read-only views
     def leaderboard(self) -> list[dict]:
         return self.elo.leaderboard()
 
@@ -214,7 +208,7 @@ class Arena:
     def performance_stats(self) -> list[dict]:
         return self.perf.stats()
 
-    # ── Internal ───────────────────────────────────────────────────────────
+    # Internal
     def _log_perf(self, model: str, res: GenResult):
         if res.ok:
             self.perf.record(

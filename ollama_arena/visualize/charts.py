@@ -1,7 +1,4 @@
-"""
-Plotly chart generators. All return HTML fragments (no I/O) so they can be
-embedded in FastAPI responses or written to standalone files.
-"""
+"""Plotly chart generators returning embeddable HTML fragments."""
 from __future__ import annotations
 import datetime, json, math
 from collections import defaultdict
@@ -19,7 +16,7 @@ def _require_plotly():
         )
 
 
-# ── ELO timeline ─────────────────────────────────────────────────────────────
+# ELO timeline
 def elo_timeline_html(matches: list[dict], top_n: int = 8) -> str:
     """
     Plot ELO rating evolution for each model over time.
@@ -68,7 +65,7 @@ def elo_timeline_html(matches: list[dict], top_n: int = 8) -> str:
                       div_id="elo-timeline-chart")
 
 
-# ── Radar (capability by category) ───────────────────────────────────────────
+# Radar (capability by category)
 def radar_html(matches: list[dict], categories: list[str], top_n: int = 5) -> str:
     """Radar chart of each model's win-rate per category."""
     go = _require_plotly()
@@ -121,7 +118,7 @@ def radar_html(matches: list[dict], categories: list[str], top_n: int = 5) -> st
     return fig.to_html(include_plotlyjs=False, full_html=False, div_id="radar-chart")
 
 
-# ── Head-to-head heatmap ─────────────────────────────────────────────────────
+# Head-to-head heatmap
 def heatmap_html(matches: list[dict]) -> str:
     """Heatmap of pairwise win-rates between models."""
     go = _require_plotly()
@@ -166,7 +163,7 @@ def heatmap_html(matches: list[dict]) -> str:
     return fig.to_html(include_plotlyjs=False, full_html=False, div_id="heatmap-chart")
 
 
-# ── Performance ──────────────────────────────────────────────────────────────
+# Performance
 def performance_chart_html(perf: list[dict]) -> str:
     """
     Bar chart of mean tokens/sec and latency per model.
@@ -202,18 +199,16 @@ def performance_chart_html(perf: list[dict]) -> str:
     return fig.to_html(include_plotlyjs=False, full_html=False, div_id="perf-chart")
 
 
-# ── Leaderboard table (rendered as HTML, not Plotly) ─────────────────────────
+# Leaderboard table (rendered as HTML, not Plotly)
 def leaderboard_table_html(board: list[dict]) -> str:
     if not board:
         return "<div style='color:#8b949e;padding:20px;text-align:center'>No matches yet.</div>"
-    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     rows = []
     for e in board:
-        medal = medals.get(e["rank"], str(e["rank"]))
         wr = f"{e['win_rate']:.0%}"
         rows.append(
             f"<tr>"
-            f"<td style='font-weight:700'>{medal}</td>"
+            f"<td style='font-weight:700'>{e['rank']}</td>"
             f"<td><strong>{e['model']}</strong></td>"
             f"<td style='color:#58a6ff;font-weight:700'>{e['elo']:.0f}</td>"
             f"<td style='color:#3fb950'>{e['wins']}</td>"
@@ -240,7 +235,7 @@ def leaderboard_table_html(board: list[dict]) -> str:
     return table
 
 
-# ── Full dashboard ───────────────────────────────────────────────────────────
+# Full dashboard
 def full_dashboard_html(
     leaderboard: list[dict],
     matches: list[dict],

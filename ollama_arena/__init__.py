@@ -1,15 +1,5 @@
-"""
-ollama-arena — local LLM evaluation arena with ELO ratings.
-
-    from ollama_arena import Arena, EloStore
-    from ollama_arena.backends import OllamaBackend, OpenAICompatBackend
-    from ollama_arena.sandboxes import run_in_language
-    from ollama_arena.datasets import load_dataset
-    from ollama_arena.visualize import export_dashboard
-    from ollama_arena.finetune import analyze_weaknesses, unsloth_train
-"""
-__version__ = "2.1.0"
-__author__  = "nazkari86-lab"
+"""Pair-wise evaluation arena for local LLMs."""
+__version__ = "2.1.1"
 
 from .arena import Arena, OllamaClient, MatchResult
 from .backends import Backend, OllamaBackend, OpenAICompatBackend, GenResult

@@ -1,4 +1,4 @@
-"""Terminal banner — Darth Vader ASCII art."""
+"""Terminal banner."""
 
 VADER = """\
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -30,13 +30,9 @@ VADER = """\
 ⢠⣿⣿⣿⣿⣿⣿⣿⣿⡟⠀⠀⠀⠀⠀⡼⠀⠀⢀⣾⠏⢀⣿⣿⣿⠋⠀⠀⣰⣿⣧⡀⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇\
 """
 
-TITLE = "OLLAMA  ARENA"
-TAGLINE = "Local LLM ELO arena · multi-backend · HuggingFace benchmarks"
-
-
 def render(version: str = "") -> str:
-    title_line = f"  {TITLE}" + (f"  v{version}" if version else "")
-    return f"\n{VADER}\n{title_line}\n  {TAGLINE}\n"
+    tag = f"  ollama-arena" + (f" {version}" if version else "")
+    return f"\n{VADER}\n{tag}\n"
 
 
 def print_banner(version: str = ""):

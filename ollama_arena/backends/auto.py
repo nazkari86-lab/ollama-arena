@@ -1,4 +1,4 @@
-"""Auto-detect which backend is running locally."""
+"""Heuristic backend picker."""
 from __future__ import annotations
 import logging
 from urllib.parse import urlparse
@@ -32,12 +32,7 @@ def detect_backend(url: str | None = None) -> str:
 
 
 def auto_backend(url: str | None = None, api_key: str | None = None) -> Backend:
-    """
-    Smart picker:
-      • None or contains :11434 / api/tags → OllamaBackend
-      • Otherwise → OpenAICompatBackend
-      • Short preset names ('vllm', 'lmstudio', 'openai', 'groq') auto-resolved.
-    """
+    """Return an Ollama or OpenAI-compat backend based on `url`."""
     if not url:
         return OllamaBackend()
 

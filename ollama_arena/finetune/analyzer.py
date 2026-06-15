@@ -1,4 +1,3 @@
-"""Analyze arena history to find each model's weak categories."""
 from __future__ import annotations
 import sqlite3
 from collections import defaultdict
@@ -6,11 +5,7 @@ from collections import defaultdict
 
 def analyze_weaknesses(db_path: str = "arena.db",
                        min_matches: int = 3) -> list[dict]:
-    """
-    Return list of {model, category, win_rate, samples} for (model, category)
-    pairs where win_rate < 0.5 and samples >= min_matches.
-    These are good candidates for fine-tuning.
-    """
+    """Sub-50% (model, category) pairs with at least `min_matches` games."""
     with sqlite3.connect(db_path) as cx:
         rows = cx.execute("""
             SELECT model_a, model_b, category, score_a, score_b

@@ -1,7 +1,4 @@
-"""
-Universal evaluator — routes tasks to the right scorer based on category/id.
-Auto-scores: code execution (any language), exact-match reasoning, vuln detection.
-"""
+"""Per-task scorers and a router from task id/category to the right one."""
 from __future__ import annotations
 import logging, re
 from typing import Any
@@ -9,13 +6,14 @@ from typing import Any
 log = logging.getLogger("arena.eval")
 
 
-# ── Code-block extraction ────────────────────────────────────────────────────
+# Code-block extraction
 _FENCED = re.compile(r"```(?:python|py|javascript|js|typescript|ts|rust|rs|go|cpp|c\+\+|bash|sh)?\s*(.*?)```",
                      re.DOTALL | re.IGNORECASE)
 
 
 def extract_code(text: str, language: str = "python") -> str:
-    """Pull the code block from an LLM response, language-aware."""
+    """Pull the first fenced code block; fall back to raw text if it
+    already looks like source in the requested language."""
     m = _FENCED.search(text)
     if m:
         return m.group(1).strip()
@@ -35,9 +33,9 @@ def extract_code(text: str, language: str = "python") -> str:
     return stripped
 
 
-# ── Coding (executable) ──────────────────────────────────────────────────────
+# Coding (executable)
 def eval_coding(task: dict, response: str) -> float:
-    """Run code, execute test_code, score 1.0 if all asserts pass."""
+    """1.0 if generated code + test_code exit 0 inside the sandbox."""
     from .sandboxes import run_in_language
     language = task.get("language", "python")
     code = extract_code(response, language)
@@ -55,9 +53,8 @@ def eval_coding(task: dict, response: str) -> float:
     return 1.0 if result.accepted else 0.0
 
 
-# ── Reasoning / math / knowledge (string match) ──────────────────────────────
+# Reasoning / math / knowledge (string match)
 def eval_text_answer(task: dict, response: str) -> float:
-    """Exact/contains/numeric scoring."""
     resp = response.strip().lower()
     expected = str(task.get("expected_answer", "")).strip().lower()
     check = task.get("check", "contains")
@@ -87,7 +84,7 @@ def eval_text_answer(task: dict, response: str) -> float:
     return 0.0
 
 
-# ── Security & inspection (keyword presence) ─────────────────────────────────
+# Security & inspection (keyword presence)
 def eval_security(task: dict, response: str) -> float:
     resp = response.lower()
     expected = [v.lower() for v in task.get("expected_vulns", [])]
@@ -127,7 +124,7 @@ def eval_planning(task: dict, response: str) -> float:
     return round(component_score * 0.7 + length_score * 0.3, 3)
 
 
-# ── Router ──────────────────────────────────────────────────────────────────
+# Router
 def evaluate(task: dict, response: str) -> float:
     tid = task.get("id", "")
     cat = task.get("category", "")

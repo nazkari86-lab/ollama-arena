@@ -4,7 +4,7 @@ Scored by: exact match or numeric tolerance check.
 """
 
 REASONING_TASKS = [
-    # ── Logic (5) ────────────────────────────────────────────────────────────
+    # Logic (5)
     {
         "id": "reas_001", "difficulty": "easy", "category": "logic",
         "instruction": "If all Bloops are Razzies, and all Razzies are Lazzies, are all Bloops definitely Lazzies? Answer with exactly: 'yes' or 'no', then one sentence explanation.",
@@ -36,7 +36,7 @@ REASONING_TASKS = [
         "expected_answer": "paradox",
         "check": "exact_prefix",
     },
-    # ── Mathematics (5) ──────────────────────────────────────────────────────
+    # Mathematics (5)
     {
         "id": "reas_006", "difficulty": "easy", "category": "math",
         "instruction": "What is the sum of all integers from 1 to 1000? Provide only the numeric answer.",
@@ -67,7 +67,7 @@ REASONING_TASKS = [
         "expected_answer": "150",
         "check": "exact",
     },
-    # ── Algorithm Analysis (5) ───────────────────────────────────────────────
+    # Algorithm Analysis (5)
     {
         "id": "reas_011", "difficulty": "easy", "category": "algorithms",
         "instruction": "What is the time complexity of finding the k-th smallest element in an unsorted array using a min-heap? Give only the Big-O notation (e.g., O(n log k)).",

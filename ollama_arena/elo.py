@@ -1,4 +1,9 @@
-"""ELO rating system with SQLite persistence."""
+"""ELO ratings backed by SQLite.
+
+K=32 is the Chess Federation default. We update after every task rather
+than every match, which converges faster but is noisier than the standard
+formula on short samples.
+"""
 from __future__ import annotations
 import sqlite3, json, time, os, math
 from pathlib import Path
@@ -12,7 +17,7 @@ def _expected(ra: float, rb: float) -> float:
 
 
 def update_elo(ra: float, rb: float, result: float) -> tuple[float, float]:
-    """result: 1.0=A wins, 0.5=draw, 0.0=B wins. Returns (new_ra, new_rb)."""
+    """`result` is 1.0=A win, 0.5=draw, 0.0=B win. Standard chess formula."""
     ea = _expected(ra, rb)
     new_ra = ra + _K * (result - ea)
     new_rb = rb + _K * ((1 - result) - (1 - ea))
@@ -63,7 +68,8 @@ class EloStore:
 
     def record_match(self, model_a: str, model_b: str, category: str,
                      score_a: float, score_b: float):
-        """Record match result and update ELO for both models."""
+        # Ties update ratings by `K * (0.5 - expected)`, which is small but
+        # non-zero when the rating gap is large. This is intentional.
         ra = self.get(model_a)
         rb = self.get(model_b)
 

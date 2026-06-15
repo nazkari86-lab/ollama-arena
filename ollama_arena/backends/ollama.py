@@ -1,4 +1,4 @@
-"""Ollama backend (native /api/generate)."""
+"""Ollama native /api/generate client."""
 from __future__ import annotations
 import json, logging, re, time
 import requests

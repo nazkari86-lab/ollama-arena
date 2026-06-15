@@ -1,9 +1,4 @@
-"""
-FastAPI dashboard with live Plotly charts.
-
-  pip install 'ollama-arena[web]'   →  fastapi, uvicorn
-  pip install 'ollama-arena[viz]'   →  plotly
-"""
+"""FastAPI dashboard. Requires [web] (fastapi, uvicorn). Charts require [viz]."""
 from __future__ import annotations
 import logging
 from pathlib import Path
@@ -71,7 +66,7 @@ def run_web(
     def api_datasets():
         return available_datasets()
 
-    # ── Charts (HTML fragments rendered via Plotly) ─────────────────────────
+    # Charts (HTML fragments rendered via Plotly)
     @app.get("/charts/elo")
     def chart_elo():
         try:
@@ -104,7 +99,7 @@ def run_web(
     def chart_lb():
         return HTMLResponse(leaderboard_table_html(arena.leaderboard()))
 
-    # ── Run a match ─────────────────────────────────────────────────────────
+    # Run a match
     @app.post("/api/match")
     def api_run_match(body: dict, tasks: BackgroundTasks):
         ma = body.get("model_a", ""); mb = body.get("model_b", "")
@@ -139,7 +134,7 @@ def run_web(
     def api_job(job_id: str):
         return jobs.get(job_id, {"status": "not_found"})
 
-    # ── HF dataset ──────────────────────────────────────────────────────────
+    # HF dataset
     @app.post("/api/pull_dataset")
     def api_pull(body: dict, tasks: BackgroundTasks):
         name = body.get("name")

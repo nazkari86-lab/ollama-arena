@@ -1,16 +1,9 @@
-"""
-LLM-as-judge — grade open-ended responses using a stronger model as referee.
+"""LLM-as-judge for open-ended responses.
 
-Use when:
-  • Task has no executable test_code
-  • Task is creative / explanatory
-  • Reasoning answer can be paraphrased many ways
-
-The judge is asked to assign a score 0-10; we normalize to 0.0-1.0.
-Bias mitigations:
-  • Responses presented in randomized order (A/B then B/A)
-  • Score is averaged across both orderings
-  • Judge prompt explicitly bans length/style preference
+Each pair is graded twice — once as (A, B) and once as (B, A) — and the
+two scores are averaged. This mitigates the well-known position bias
+where judges tend to prefer the response shown first (Zheng et al., 2023,
+"Judging LLM-as-a-Judge").
 """
 from __future__ import annotations
 import logging, random, re

@@ -4,7 +4,7 @@ Scored by: exec + assert tests (pass=1.0, fail=0.0).
 """
 
 CODING_TASKS = [
-    # ── Easy (10) ────────────────────────────────────────────────────────────
+    # Easy (10)
     {
         "id": "code_001", "difficulty": "easy", "role": "coder",
         "instruction": "Write a Python function `sieve(n)` that returns all prime numbers up to n using the Sieve of Eratosthenes.",
@@ -55,7 +55,7 @@ CODING_TASKS = [
         "instruction": "Write a Python function `binary_search(lst, target)` that returns the index of target in sorted list lst, or -1 if not found.",
         "test_code": "assert binary_search([1,3,5,7,9], 5) == 2\nassert binary_search([1,3,5,7,9], 4) == -1\nassert binary_search([], 1) == -1",
     },
-    # ── Medium (12) ──────────────────────────────────────────────────────────
+    # Medium (12)
     {
         "id": "code_011", "difficulty": "medium", "role": "coder",
         "instruction": "Write a Python function `lru_cache_fn(capacity)` that returns a dict-like object implementing LRU cache with get(key) and put(key, value) methods.",
@@ -116,7 +116,7 @@ CODING_TASKS = [
         "instruction": "Write a Python function `parse_duration(s)` that parses strings like '2h30m15s' into total seconds.",
         "test_code": "assert parse_duration('2h30m15s') == 9015\nassert parse_duration('1h') == 3600\nassert parse_duration('90s') == 90\nassert parse_duration('1h1m1s') == 3661",
     },
-    # ── Hard (8) ─────────────────────────────────────────────────────────────
+    # Hard (8)
     {
         "id": "code_023", "difficulty": "hard", "role": "coder",
         "instruction": "Write a Python function `consistent_hash(nodes, replicas=150)` that implements a consistent hashing ring. It should have methods: add_node(node), remove_node(node), get_node(key) returning the responsible node.",

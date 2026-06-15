@@ -1,10 +1,4 @@
-"""
-Thin wrapper around Unsloth for LoRA fine-tuning.
-Pulls 2-4x speedup vs raw transformers on a single GPU.
-
-Install: pip install 'ollama-arena[finetune]'
-         (brings unsloth, transformers, peft, trl, accelerate, datasets, torch)
-"""
+"""Unsloth LoRA training, GGUF export. Requires the [finetune] extra and CUDA."""
 from __future__ import annotations
 import json, logging
 from dataclasses import dataclass, asdict

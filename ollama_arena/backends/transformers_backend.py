@@ -1,12 +1,10 @@
-"""
-Direct HuggingFace Transformers backend — runs models in-process via PyTorch.
+"""In-process generation via HuggingFace Transformers.
 
-Skips the HTTP round-trip required by Ollama/vLLM. Useful for:
-  - Models not yet packaged for Ollama
-  - Quick local A/B testing of HF checkpoints
-  - GPU-rich machines where the HTTP layer is the bottleneck
+Slower than a dedicated server like vLLM (no batching, no continuous
+batching, no FlashAttention by default) but useful for one-off checks of
+checkpoints that aren't packaged for Ollama yet.
 
-Install:  pip install 'ollama-arena[hf]'   →  transformers, torch, accelerate
+Requires the [hf] extra: transformers, torch, accelerate.
 """
 from __future__ import annotations
 import logging, time

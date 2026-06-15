@@ -1,15 +1,8 @@
-"""
-OpenAI-compatible backend.
+"""OpenAI /v1/chat/completions client.
 
-Works with anything that speaks OpenAI's /v1/chat/completions:
-  • vLLM            (--port 8000)
-  • LM Studio       (default port 1234)
-  • llama.cpp server
-  • OpenAI          api.openai.com/v1
-  • Groq            api.groq.com/openai/v1
-  • Together        api.together.xyz/v1
-  • OpenRouter      openrouter.ai/api/v1
-  • Anything else with /v1/chat/completions
+Works against vLLM, LM Studio, llama.cpp server, OpenAI, Groq, Together,
+OpenRouter, Fireworks, DeepInfra, or any provider that implements the
+same surface.
 """
 from __future__ import annotations
 import json, logging, os, re, time

@@ -1,8 +1,9 @@
-"""
-Universal multi-language sandbox runner.
+"""Subprocess-based code execution per language.
 
-Uses native compilers/interpreters via subprocess with strict timeouts.
-For stronger isolation, set use_docker=True (requires docker installed).
+Not a security boundary on its own — relies on (1) a static pattern
+deny-list and (2) a wall-clock timeout. For untrusted input, pass
+use_docker=True; the container runs with --network=none --read-only
+--memory=512m --cpus=1.
 """
 from __future__ import annotations
 import os, re, shutil, subprocess, sys, tempfile, time
@@ -11,7 +12,9 @@ from pathlib import Path
 from .base import Language, RunResult, normalize
 
 
-# ── Static security filter ───────────────────────────────────────────────────
+# Static deny-list. This is necessary but not sufficient — relies on the
+# subprocess timeout and the fact that arena code is run on tasks generated
+# by trusted models. For untrusted input use the docker path.
 _BLOCKED_PATTERNS = [
     r"\brm\s+-rf\b",
     r"\bsudo\b",
@@ -36,7 +39,7 @@ def _check_safe(code: str) -> tuple[bool, str]:
     return True, ""
 
 
-# ── Runtime detection ────────────────────────────────────────────────────────
+# Runtime detection
 def _has(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
@@ -61,7 +64,7 @@ def available_languages() -> list[str]:
     return out
 
 
-# ── Language-specific runners ────────────────────────────────────────────────
+# Language-specific runners
 def _run_python(code: str, timeout: int, tmp: Path) -> RunResult:
     f = tmp / "main.py"
     f.write_text(code)
@@ -139,7 +142,7 @@ _RUNNERS = {
 }
 
 
-# ── Core executor ────────────────────────────────────────────────────────────
+# Core executor
 def _exec(cmd: list[str], timeout: int, lang: Language) -> RunResult:
     """Run subprocess with timeout and capture I/O."""
     t0 = time.time()
@@ -168,7 +171,7 @@ def _exec(cmd: list[str], timeout: int, lang: Language) -> RunResult:
                          language=lang.value)
 
 
-# ── Docker isolation (optional) ──────────────────────────────────────────────
+# Docker isolation (optional)
 _DOCKER_IMAGES = {
     Language.PYTHON:     "python:3.12-slim",
     Language.JAVASCRIPT: "node:20-alpine",
@@ -220,7 +223,7 @@ def _run_in_docker(code: str, lang: Language, timeout: int) -> RunResult:
         )
 
 
-# ── Public API ───────────────────────────────────────────────────────────────
+# Public API
 def run_in_language(
     code: str,
     language: str | Language = "python",

@@ -372,7 +372,7 @@ async function runMatch() {
     const job = await api(`/api/job/${encodeURIComponent(job_id)}`);
     for (let i = last; i < (job.log || []).length; i++) {
       const e = job.log[i];
-      const icon = e.outcome === 'a_wins' ? '✅' : e.outcome === 'b_wins' ? '❌' : '🤝';
+      const icon = e.outcome === 'a_wins' ? 'A' : e.outcome === 'b_wins' ? 'B' : '=';
       const cls = e.outcome === 'a_wins' ? 'log-win' : e.outcome === 'b_wins' ? 'log-loss' : 'log-draw';
       log.innerHTML += `<div class="${cls}">${icon} ${e.task_id}: ${e.score_a.toFixed(2)} vs ${e.score_b.toFixed(2)}</div>`;
       log.scrollTop = log.scrollHeight;
@@ -383,12 +383,12 @@ async function runMatch() {
       const r = job.result;
       const winner = r.a_wins > r.b_wins ? ma : r.b_wins > r.a_wins ? mb : 'Draw';
       status.className = 'status done';
-      status.textContent = `✅ Done in ${r.duration_s}s! Winner: ${winner}  ELO: ${r.elo_a_after.toFixed(0)} / ${r.elo_b_after.toFixed(0)}`;
+      status.textContent = `done in ${r.duration_s}s — winner: ${winner}, ELO: ${r.elo_a_after.toFixed(0)} / ${r.elo_b_after.toFixed(0)}`;
       btn.disabled = false; btn.textContent = 'Start match';
       loadAll();
     } else if (job.status === 'error') {
       clearInterval(pollInterval);
-      status.className = 'status error'; status.textContent = `❌ ${job.error}`;
+      status.className = 'status error'; status.textContent = `error: ${job.error}`;
       btn.disabled = false; btn.textContent = 'Start match';
     }
   }, 1500);

@@ -1,7 +1,4 @@
-"""
-Package a fine-tuned GGUF artifact as an Ollama model so the arena can
-immediately re-run benchmarks on the improved model.
-"""
+"""Wrap a GGUF as an Ollama Modelfile and register it."""
 from __future__ import annotations
 import logging, subprocess
 from pathlib import Path

@@ -1,10 +1,4 @@
-"""
-Build training datasets from arena failures.
-
-For each task the weak model failed at, generate a high-quality response
-from the strongest model in that category, then save (instruction, response)
-pairs as JSONL for Unsloth/transformers fine-tuning.
-"""
+"""Build SFT datasets by distilling a stronger teacher model."""
 from __future__ import annotations
 import json, logging, sqlite3
 from collections import defaultdict

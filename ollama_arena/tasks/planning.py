@@ -12,7 +12,7 @@ PLANNING_RUBRIC = {
 }
 
 PLANNING_TASKS = [
-    # ── System Design (8) ────────────────────────────────────────────────────
+    # System Design (8)
     {
         "id": "plan_001", "difficulty": "medium", "role": "planner",
         "instruction": "Design a URL shortener service (like bit.ly) that handles 10,000 requests/sec. Describe: data model, hash generation strategy, caching layer, database choice, and API endpoints.",
@@ -61,7 +61,7 @@ PLANNING_TASKS = [
         "key_components": ["test pyramid", "deployment strategy", "rollback", "secrets", "monorepo tooling"],
         "rubric": PLANNING_RUBRIC,
     },
-    # ── Algorithm/Approach Design (7) ────────────────────────────────────────
+    # Algorithm/Approach Design (7)
     {
         "id": "plan_009", "difficulty": "medium", "role": "planner",
         "instruction": "You have a dataset of 100M user clickstream events per day. Design an approach to compute top-100 most clicked products in real-time (< 1 minute delay) and batch (daily). Include data structures and algorithms.",
@@ -104,7 +104,7 @@ PLANNING_TASKS = [
         "key_components": ["token bucket vs sliding window", "distributed coordination", "latency SLA", "atomicity"],
         "rubric": PLANNING_RUBRIC,
     },
-    # ── Code Architecture (5) ────────────────────────────────────────────────
+    # Code Architecture (5)
     {
         "id": "plan_016", "difficulty": "medium", "role": "planner",
         "instruction": "You're refactoring a 50,000-line Python monolith into microservices. Describe your strangler fig pattern approach: how to identify boundaries, the migration sequence, and how to maintain data consistency during migration.",
