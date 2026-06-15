@@ -5,8 +5,7 @@ than every match, which converges faster but is noisier than the standard
 formula on short samples.
 """
 from __future__ import annotations
-import sqlite3, json, time, os, math
-from pathlib import Path
+import sqlite3, time
 
 _DEFAULT_ELO = 1200
 _K = 32
@@ -59,6 +58,30 @@ class EloStore:
                     elo_b_after REAL,
                     ts REAL
                 );
+                CREATE TABLE IF NOT EXISTS task_detail (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    match_id INTEGER,
+                    task_id TEXT,
+                    category TEXT,
+                    difficulty TEXT,
+                    language TEXT,
+                    instruction TEXT,
+                    response_a TEXT,
+                    response_b TEXT,
+                    expected TEXT,
+                    score_a REAL,
+                    score_b REAL,
+                    outcome TEXT,
+                    tps_a REAL,
+                    tps_b REAL,
+                    latency_a REAL,
+                    latency_b REAL,
+                    ts REAL
+                );
+                CREATE INDEX IF NOT EXISTS idx_task_detail_task
+                    ON task_detail(task_id);
+                CREATE INDEX IF NOT EXISTS idx_task_detail_match
+                    ON task_detail(match_id);
             """)
 
     def get(self, model: str) -> float:
@@ -67,9 +90,7 @@ class EloStore:
             return row[0] if row else _DEFAULT_ELO
 
     def record_match(self, model_a: str, model_b: str, category: str,
-                     score_a: float, score_b: float):
-        # Ties update ratings by `K * (0.5 - expected)`, which is small but
-        # non-zero when the rating gap is large. This is intentional.
+                     score_a: float, score_b: float) -> tuple[float, float]:
         ra = self.get(model_a)
         rb = self.get(model_b)
 
@@ -92,7 +113,6 @@ class EloStore:
                         elo=excluded.elo, updated_at=excluded.updated_at
                 """, (model, elo, now))
 
-            # Update win/loss/draw counters
             if result == 1.0:
                 cx.execute("UPDATE ratings SET wins=wins+1, matches=matches+1 WHERE model=?", (model_a,))
                 cx.execute("UPDATE ratings SET losses=losses+1, matches=matches+1 WHERE model=?", (model_b,))
@@ -105,11 +125,38 @@ class EloStore:
 
             cx.execute("""
                 INSERT INTO match_log
-                (model_a,model_b,category,score_a,score_b,elo_a_before,elo_b_before,elo_a_after,elo_b_after,ts)
+                (model_a,model_b,category,score_a,score_b,
+                 elo_a_before,elo_b_before,elo_a_after,elo_b_after,ts)
                 VALUES (?,?,?,?,?,?,?,?,?,?)
-            """, (model_a, model_b, category, score_a, score_b, ra, rb, new_ra, new_rb, now))
+            """, (model_a, model_b, category, score_a, score_b,
+                  ra, rb, new_ra, new_rb, now))
 
         return new_ra, new_rb
+
+    def save_task_detail(
+        self, match_id: int, task_id: str, category: str,
+        difficulty: str, language: str, instruction: str,
+        response_a: str, response_b: str, expected: str,
+        score_a: float, score_b: float, outcome: str,
+        tps_a: float = 0.0, tps_b: float = 0.0,
+        latency_a: float = 0.0, latency_b: float = 0.0,
+    ):
+        with self._conn() as cx:
+            cx.execute("""
+                INSERT INTO task_detail
+                (match_id, task_id, category, difficulty, language,
+                 instruction, response_a, response_b, expected,
+                 score_a, score_b, outcome, tps_a, tps_b, latency_a, latency_b, ts)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (match_id, task_id, category, difficulty, language,
+                  instruction, response_a, response_b, expected,
+                  score_a, score_b, outcome, tps_a, tps_b, latency_a, latency_b,
+                  time.time()))
+
+    def last_match_id(self) -> int:
+        with self._conn() as cx:
+            row = cx.execute("SELECT MAX(id) FROM match_log").fetchone()
+            return row[0] or 0
 
     def leaderboard(self) -> list[dict]:
         with self._conn() as cx:
@@ -130,10 +177,89 @@ class EloStore:
     def match_history(self, limit: int = 50) -> list[dict]:
         with self._conn() as cx:
             rows = cx.execute("""
-                SELECT model_a, model_b, category, score_a, score_b,
+                SELECT id, model_a, model_b, category, score_a, score_b,
                        elo_a_before, elo_b_before, elo_a_after, elo_b_after, ts
                 FROM match_log ORDER BY ts DESC LIMIT ?
             """, (limit,)).fetchall()
-        keys = ["model_a", "model_b", "category", "score_a", "score_b",
+        keys = ["id", "model_a", "model_b", "category", "score_a", "score_b",
                 "elo_a_before", "elo_b_before", "elo_a_after", "elo_b_after", "ts"]
         return [dict(zip(keys, r)) for r in rows]
+
+    def tasks_for_match(self, match_id: int) -> list[dict]:
+        with self._conn() as cx:
+            rows = cx.execute("""
+                SELECT task_id, category, difficulty, language, instruction,
+                       response_a, response_b, expected,
+                       score_a, score_b, outcome, tps_a, tps_b, latency_a, latency_b, ts
+                FROM task_detail WHERE match_id=? ORDER BY ts
+            """, (match_id,)).fetchall()
+        keys = ["task_id", "category", "difficulty", "language", "instruction",
+                "response_a", "response_b", "expected",
+                "score_a", "score_b", "outcome", "tps_a", "tps_b",
+                "latency_a", "latency_b", "ts"]
+        return [dict(zip(keys, r)) for r in rows]
+
+    def task_history(self, task_id: str) -> list[dict]:
+        with self._conn() as cx:
+            rows = cx.execute("""
+                SELECT d.task_id, d.category, d.difficulty,
+                       m.model_a, m.model_b,
+                       d.instruction, d.response_a, d.response_b, d.expected,
+                       d.score_a, d.score_b, d.outcome, d.ts
+                FROM task_detail d
+                JOIN match_log m ON m.id = d.match_id
+                WHERE d.task_id=? ORDER BY d.ts DESC
+            """, (task_id,)).fetchall()
+        keys = ["task_id", "category", "difficulty", "model_a", "model_b",
+                "instruction", "response_a", "response_b", "expected",
+                "score_a", "score_b", "outcome", "ts"]
+        return [dict(zip(keys, r)) for r in rows]
+
+    def category_stats(self, model: str) -> list[dict]:
+        """Per-category win/loss breakdown for a single model."""
+        with self._conn() as cx:
+            rows = cx.execute("""
+                SELECT d.category,
+                       SUM(CASE WHEN (m.model_a=? AND d.outcome='a_wins')
+                                  OR (m.model_b=? AND d.outcome='b_wins') THEN 1 ELSE 0 END) wins,
+                       SUM(CASE WHEN (m.model_a=? AND d.outcome='b_wins')
+                                  OR (m.model_b=? AND d.outcome='a_wins') THEN 1 ELSE 0 END) losses,
+                       SUM(CASE WHEN d.outcome='draw' THEN 1 ELSE 0 END) draws,
+                       COUNT(*) total
+                FROM task_detail d
+                JOIN match_log m ON m.id = d.match_id
+                WHERE m.model_a=? OR m.model_b=?
+                GROUP BY d.category
+                ORDER BY total DESC
+            """, (model, model, model, model, model, model)).fetchall()
+        return [
+            {"category": r[0], "wins": r[1], "losses": r[2],
+             "draws": r[3], "total": r[4],
+             "win_rate": round(r[1] / max(r[4], 1), 3)}
+            for r in rows
+        ]
+
+    def recent_matches_summary(self, limit: int = 10) -> list[dict]:
+        """Match-level summary: models, category, task count, winner."""
+        with self._conn() as cx:
+            rows = cx.execute("""
+                SELECT m.id, m.model_a, m.model_b, m.category, m.ts,
+                       COUNT(d.id) as tasks,
+                       SUM(CASE WHEN d.outcome='a_wins' THEN 1 ELSE 0 END) a_wins,
+                       SUM(CASE WHEN d.outcome='b_wins' THEN 1 ELSE 0 END) b_wins,
+                       SUM(CASE WHEN d.outcome='draw'   THEN 1 ELSE 0 END) draws
+                FROM match_log m
+                LEFT JOIN task_detail d ON d.match_id = m.id
+                GROUP BY m.id
+                ORDER BY m.ts DESC LIMIT ?
+            """, (limit,)).fetchall()
+        result = []
+        for r in rows:
+            mid, ma, mb, cat, ts, tasks, aw, bw, dr = r
+            winner = ma if aw > bw else (mb if bw > aw else "draw")
+            result.append({
+                "id": mid, "model_a": ma, "model_b": mb, "category": cat,
+                "ts": ts, "tasks": tasks,
+                "a_wins": aw, "b_wins": bw, "draws": dr, "winner": winner,
+            })
+        return result

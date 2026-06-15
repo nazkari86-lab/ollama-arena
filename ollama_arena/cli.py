@@ -1,6 +1,7 @@
 """Command-line entry point. See `ollama-arena --help`."""
 from __future__ import annotations
-import argparse, sys
+import argparse, sys, textwrap, time
+from datetime import datetime
 from pathlib import Path
 
 
@@ -23,7 +24,30 @@ def _make_arena(args):
     )
 
 
-# list
+def _outcome_icon(outcome: str) -> str:
+    return {"a_wins": "[green]✓ A[/green]",
+            "b_wins": "[red]✓ B[/red]",
+            "draw":   "[dim]  =[/dim]"}[outcome]
+
+
+def _wrap(text: str, width: int = 90) -> str:
+    if not text:
+        return "[dim](empty)[/dim]"
+    lines = text.strip().splitlines()
+    out = []
+    for ln in lines[:6]:
+        out.append(textwrap.shorten(ln, width=width, placeholder="…"))
+    if len(lines) > 6:
+        out.append(f"[dim]… ({len(lines)-6} more lines)[/dim]")
+    return "\n".join(out)
+
+
+def _trunc(text: str, n: int = 120) -> str:
+    text = text.strip()
+    return text[:n] + "…" if len(text) > n else text
+
+
+# ── list ─────────────────────────────────────────────────────────────────────
 def cmd_list(args):
     console = _console()
     from rich.table import Table
@@ -31,7 +55,7 @@ def cmd_list(args):
     backend = auto_backend(args.backend or args.ollama, api_key=args.api_key)
 
     if not backend.is_alive():
-        console.print(f"[red]✗ Backend not reachable.[/red]")
+        console.print("[red]✗ Backend not reachable.[/red]")
         sys.exit(1)
     models = backend.list_models()
     if not models:
@@ -45,7 +69,7 @@ def cmd_list(args):
     console.print(t)
 
 
-# leaderboard
+# ── leaderboard ──────────────────────────────────────────────────────────────
 def cmd_leaderboard(args):
     console = _console()
     from rich.table import Table
@@ -54,12 +78,12 @@ def cmd_leaderboard(args):
     if not board:
         console.print("[yellow]No matches yet.[/yellow]"); return
     t = Table(title="ELO Leaderboard", show_lines=False)
-    t.add_column("rank",  style="bold yellow", width=6)
-    t.add_column("model", style="bold cyan",   min_width=22)
-    t.add_column("elo",   style="bold green",  justify="right")
-    t.add_column("W",     style="green",       justify="right")
-    t.add_column("L",     style="red",         justify="right")
-    t.add_column("D",     style="dim",         justify="right")
+    t.add_column("rank",    style="bold yellow", width=6)
+    t.add_column("model",   style="bold cyan",   min_width=22)
+    t.add_column("elo",     style="bold green",  justify="right")
+    t.add_column("W",       style="green",       justify="right")
+    t.add_column("L",       style="red",         justify="right")
+    t.add_column("D",       style="dim",         justify="right")
     t.add_column("matches", justify="right")
     t.add_column("win%",    justify="right")
     for e in board:
@@ -69,25 +93,27 @@ def cmd_leaderboard(args):
     console.print(t)
 
 
-# match
+# ── match ─────────────────────────────────────────────────────────────────────
 def cmd_match(args):
     console = _console()
     from rich.panel import Panel
     from rich.progress import Progress, SpinnerColumn, TextColumn
     from rich.table import Table
+    from rich.rule import Rule
 
+    verbose = getattr(args, "verbose", False)
     models = [m.strip() for m in args.models.split(",")]
     if len(models) < 2:
         console.print("[red]--models needs at least 2 entries[/red]"); sys.exit(1)
 
     arena = _make_arena(args)
     if not arena.client.is_alive():
-        console.print(f"[red]Backend not reachable.[/red]"); sys.exit(1)
+        console.print("[red]✗ Backend not reachable.[/red]"); sys.exit(1)
 
     if args.dataset:
         for d in args.dataset.split(","):
             n = arena.load_hf_dataset(d.strip(), limit=args.dataset_limit)
-            console.print(f"  loaded HF dataset '{d}': {n} tasks")
+            console.print(f"  loaded [cyan]{d}[/cyan]: {n} tasks")
 
     from itertools import combinations
     pairs = list(combinations(models, 2))
@@ -102,40 +128,59 @@ def cmd_match(args):
         title="ollama-arena"))
 
     task_log = []
-    def on_task(tid, sa, sb, outcome):
-        marker = {"a_wins":"[green]A[/green]","b_wins":"[red]B[/red]","draw":"[dim]=[/dim]"}[outcome]
-        task_log.append(f"  {marker}  {tid}: {sa:.2f} vs {sb:.2f}")
+
+    def on_task(tid, sa, sb, outcome, instruction, resp_a, resp_b, expected):
+        icon = _outcome_icon(outcome)
+        task_log.append((tid, sa, sb, outcome, instruction, resp_a, resp_b, expected))
+        # always print one-liner
+        console.print(
+            f"  {icon}  [dim]{tid}[/dim]  "
+            f"[cyan]{sa:.2f}[/cyan] vs [magenta]{sb:.2f}[/magenta]  "
+            f"[dim]{_trunc(instruction, 60)}[/dim]"
+        )
+        if verbose:
+            _print_task_detail(console, tid, sa, sb, outcome,
+                               instruction, resp_a, resp_b, expected, "", "")
+
     arena._on_task_done = on_task
 
     for i, (ma, mb) in enumerate(pairs, 1):
-        console.print(f"\n[bold]Match {i}/{len(pairs)}: [cyan]{ma}[/cyan] vs [magenta]{mb}[/magenta][/bold]")
+        console.print(Rule(
+            f"[bold]Match {i}/{len(pairs)}: [cyan]{ma}[/cyan] vs [magenta]{mb}[/magenta][/bold]"
+        ))
         task_log.clear()
         with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                       console=console, transient=True) as prog:
-            tid = prog.add_task(f"Running {n} tasks...", total=None)
+            tid = prog.add_task(f"Generating…", total=None)
             r = arena.run_match(ma, mb, category=category, n=n,
                                 difficulty=args.difficulty)
             prog.remove_task(tid)
-        for ln in task_log:
-            console.print(ln)
+
         winner = ma if r.a_wins > r.b_wins else mb if r.b_wins > r.a_wins else "draw"
         da = r.elo_a_after - r.elo_a_before
-        db = r.elo_b_after - r.elo_b_before
-        s = Table(show_header=False, box=None, padding=(0,2))
+        db_ = r.elo_b_after - r.elo_b_before
+        s = Table(show_header=False, box=None, padding=(0, 2))
         s.add_column("", style="dim"); s.add_column("A", style="cyan", justify="right")
         s.add_column("B", style="magenta", justify="right")
-        s.add_row("model", ma, mb)
-        s.add_row("wins", str(r.a_wins), str(r.b_wins))
-        s.add_row("win%", f"{r.a_win_rate:.0%}", f"{r.b_win_rate:.0%}")
-        s.add_row("elo", f"{r.elo_a_after:.0f} ({da:+.0f})", f"{r.elo_b_after:.0f} ({db:+.0f})")
+        s.add_row("model",  ma, mb)
+        s.add_row("wins",   str(r.a_wins), str(r.b_wins))
+        s.add_row("win%",   f"{r.a_win_rate:.0%}", f"{r.b_win_rate:.0%}")
+        s.add_row("elo",    f"{r.elo_a_after:.0f} ({da:+.0f})",
+                            f"{r.elo_b_after:.0f} ({db_:+.0f})")
         console.print(s)
-        console.print(f"  winner: [bold]{winner}[/bold]  ({r.duration_s:.0f}s)")
+        console.print(f"  winner: [bold]{winner}[/bold]  ({r.duration_s:.0f}s)  "
+                      f"match #{r.match_id}")
+        if not verbose and task_log:
+            console.print(
+                f"\n  [dim]Run with [bold]--verbose[/bold] to see all prompts & responses, "
+                f"or: [bold]ollama-arena results --match {r.match_id}[/bold][/dim]"
+            )
 
     console.print()
     cmd_leaderboard(args)
 
 
-# tournament
+# ── tournament ────────────────────────────────────────────────────────────────
 def cmd_tournament(args):
     console = _console()
     models = [m.strip() for m in args.models.split(",")]
@@ -151,7 +196,7 @@ def cmd_tournament(args):
     cmd_leaderboard(args)
 
 
-# tasks
+# ── tasks ─────────────────────────────────────────────────────────────────────
 def cmd_tasks(args):
     console = _console()
     from rich.table import Table
@@ -159,15 +204,15 @@ def cmd_tasks(args):
     stats = task_stats()
     t = Table(title="Built-in benchmarks", show_lines=False)
     t.add_column("Category", style="bold cyan")
-    t.add_column("Tasks", justify="right")
-    t.add_column("Easy", justify="right", style="green")
+    t.add_column("Tasks",  justify="right")
+    t.add_column("Easy",   justify="right", style="green")
     t.add_column("Medium", justify="right", style="yellow")
-    t.add_column("Hard", justify="right", style="red")
+    t.add_column("Hard",   justify="right", style="red")
     for cat, count in stats.items():
         tasks = get_tasks(category=cat)
-        easy   = sum(1 for x in tasks if x.get("difficulty")=="easy")
-        medium = sum(1 for x in tasks if x.get("difficulty")=="medium")
-        hard   = sum(1 for x in tasks if x.get("difficulty")=="hard")
+        easy   = sum(1 for x in tasks if x.get("difficulty") == "easy")
+        medium = sum(1 for x in tasks if x.get("difficulty") == "medium")
+        hard   = sum(1 for x in tasks if x.get("difficulty") == "hard")
         t.add_row(cat, str(count), str(easy), str(medium), str(hard))
     t.add_section()
     t.add_row("[bold]Total[/bold]", f"[bold]{sum(stats.values())}[/bold]", "", "", "")
@@ -175,7 +220,7 @@ def cmd_tasks(args):
     console.print(f"\nLanguages covered: [cyan]{', '.join(list_languages())}[/cyan]")
 
 
-# datasets
+# ── datasets ──────────────────────────────────────────────────────────────────
 def cmd_datasets(args):
     console = _console()
     from rich.table import Table
@@ -194,11 +239,11 @@ def cmd_datasets(args):
         return
 
     t = Table(title="HuggingFace benchmark datasets", show_lines=False)
-    t.add_column("name", style="bold cyan")
-    t.add_column("hf id", style="dim")
+    t.add_column("name",     style="bold cyan")
+    t.add_column("hf id",    style="dim")
     t.add_column("category")
-    t.add_column("cached", justify="right")
-    t.add_column("license", style="dim")
+    t.add_column("cached",   justify="right")
+    t.add_column("license",  style="dim")
     for d in available_datasets():
         cached = "yes" if d["cached"] else "—"
         t.add_row(d["name"], d["hf_id"], d["category"], cached, d["license"])
@@ -206,7 +251,259 @@ def cmd_datasets(args):
     console.print("\nPull:  [cyan]ollama-arena datasets --pull humaneval[/cyan]")
 
 
-# finetune
+# ── results ───────────────────────────────────────────────────────────────────
+def cmd_results(args):
+    """Show recent matches with per-task breakdowns."""
+    console = _console()
+    from rich.table import Table
+    from rich.rule import Rule
+    from rich.panel import Panel
+    from .elo import EloStore
+
+    store = EloStore(db_path=args.db)
+
+    if args.match:
+        _show_match_detail(console, store, args.match, args.full)
+        return
+
+    # List recent matches
+    matches = store.recent_matches_summary(limit=args.last)
+    if not matches:
+        console.print("[yellow]No matches recorded yet.[/yellow]"); return
+
+    t = Table(title=f"Last {len(matches)} matches", show_lines=False)
+    t.add_column("ID",       style="dim", width=5)
+    t.add_column("Model A",  style="cyan", min_width=18)
+    t.add_column("Model B",  style="magenta", min_width=18)
+    t.add_column("Category", style="yellow")
+    t.add_column("Tasks",    justify="right")
+    t.add_column("A wins",   style="green",  justify="right")
+    t.add_column("B wins",   style="red",    justify="right")
+    t.add_column("Draws",    style="dim",    justify="right")
+    t.add_column("Winner",   style="bold")
+    t.add_column("Date")
+    for m in matches:
+        dt = datetime.fromtimestamp(m["ts"]).strftime("%m-%d %H:%M")
+        t.add_row(str(m["id"]), m["model_a"], m["model_b"], m["category"],
+                  str(m["tasks"]), str(m["a_wins"]), str(m["b_wins"]),
+                  str(m["draws"]), m["winner"], dt)
+    console.print(t)
+    console.print("\nDrill into a match: [cyan]ollama-arena results --match <ID>[/cyan]")
+    console.print("Full responses:     [cyan]ollama-arena results --match <ID> --full[/cyan]")
+
+
+def _show_match_detail(console, store, match_id: int, full: bool = False):
+    from rich.rule import Rule
+    from rich.panel import Panel
+
+    tasks = store.tasks_for_match(match_id)
+    if not tasks:
+        console.print(f"[red]Match #{match_id} not found or has no task detail.[/red]")
+        console.print("[dim]Matches run before v2.2.0 were not stored at task level.[/dim]")
+        return
+
+    history = store.match_history(limit=200)
+    info = next((m for m in history if m["id"] == match_id), None)
+    if info:
+        console.print(Rule(
+            f"[bold]Match #{match_id}: [cyan]{info['model_a']}[/cyan] vs "
+            f"[magenta]{info['model_b']}[/magenta]  [{info['category']}][/bold]"
+        ))
+
+    for i, t in enumerate(tasks, 1):
+        _print_task_detail(
+            console, t["task_id"], t["score_a"], t["score_b"], t["outcome"],
+            t["instruction"], t["response_a"], t["response_b"], t["expected"],
+            info["model_a"] if info else "A", info["model_b"] if info else "B",
+            i, len(tasks), full,
+            tps_a=t["tps_a"], tps_b=t["tps_b"],
+            latency_a=t["latency_a"], latency_b=t["latency_b"],
+            difficulty=t["difficulty"], language=t["language"],
+        )
+
+
+def _print_task_detail(
+    console, task_id, score_a, score_b, outcome,
+    instruction, resp_a, resp_b, expected,
+    model_a, model_b, i=None, total=None, full=False,
+    tps_a=0.0, tps_b=0.0, latency_a=0.0, latency_b=0.0,
+    difficulty="", language="",
+):
+    from rich.panel import Panel
+    from rich.columns import Columns
+
+    icon = _outcome_icon(outcome)
+    header = f"{icon}  [bold]{task_id}[/bold]"
+    if i and total:
+        header = f"[dim]{i}/{total}[/dim]  " + header
+    meta = []
+    if difficulty:
+        col = {"easy": "green", "medium": "yellow", "hard": "red"}.get(difficulty, "dim")
+        meta.append(f"[{col}]{difficulty}[/{col}]")
+    if language and language != "natural":
+        meta.append(f"[blue]{language}[/blue]")
+    if meta:
+        header += "  " + "  ".join(meta)
+
+    console.print()
+    console.print(header)
+    console.print(f"  [dim]Score:[/dim]  "
+                  f"[cyan]{model_a or 'A'}[/cyan] [bold]{score_a:.3f}[/bold]  "
+                  f"[magenta]{model_b or 'B'}[/magenta] [bold]{score_b:.3f}[/bold]")
+    if tps_a or tps_b:
+        console.print(f"  [dim]Speed:[/dim]  "
+                      f"[cyan]{tps_a:.0f} tps  {latency_a:.2f}s[/cyan]  "
+                      f"[magenta]{tps_b:.0f} tps  {latency_b:.2f}s[/magenta]")
+
+    # Prompt
+    instr_display = instruction if full else _wrap(instruction, 100)
+    console.print(Panel(instr_display, title="[dim]Prompt[/dim]", border_style="dim",
+                        padding=(0, 1)))
+
+    # Responses
+    if full:
+        ra_disp = resp_a or "[dim](empty)[/dim]"
+        rb_disp = resp_b or "[dim](empty)[/dim]"
+    else:
+        ra_disp = _wrap(resp_a, 100)
+        rb_disp = _wrap(resp_b, 100)
+
+    ra_color = "green" if score_a > score_b else ("red" if score_a < score_b else "dim")
+    rb_color = "green" if score_b > score_a else ("red" if score_b < score_a else "dim")
+
+    console.print(Panel(ra_disp,
+                        title=f"[{ra_color}]{model_a or 'Model A'} ({score_a:.3f})[/{ra_color}]",
+                        border_style=ra_color, padding=(0, 1)))
+    console.print(Panel(rb_disp,
+                        title=f"[{rb_color}]{model_b or 'Model B'} ({score_b:.3f})[/{rb_color}]",
+                        border_style=rb_color, padding=(0, 1)))
+
+    if expected:
+        exp_disp = expected if full else _trunc(expected, 200)
+        console.print(f"  [dim]Expected:[/dim] [yellow]{exp_disp}[/yellow]")
+
+
+# ── inspect ───────────────────────────────────────────────────────────────────
+def cmd_inspect(args):
+    """Show all recorded runs for a specific task ID."""
+    console = _console()
+    from rich.table import Table
+    from rich.rule import Rule
+    from .elo import EloStore
+
+    store = EloStore(db_path=args.db)
+    history = store.task_history(args.task_id)
+    if not history:
+        console.print(f"[yellow]No history for task '{args.task_id}'.[/yellow]")
+        return
+
+    console.print(Rule(f"[bold]Task: {args.task_id}[/bold]"))
+
+    # Show the prompt once
+    console.print(Panel(
+        history[0]["instruction"],
+        title="[dim]Prompt[/dim]", border_style="dim", padding=(0, 1)
+    ))
+    if history[0]["expected"]:
+        console.print(f"  [dim]Expected:[/dim] [yellow]{history[0]['expected']}[/yellow]")
+
+    console.print()
+    t = Table(title=f"All runs ({len(history)} total)", show_lines=False)
+    t.add_column("Model A",  style="cyan")
+    t.add_column("Model B",  style="magenta")
+    t.add_column("A score",  justify="right", style="cyan")
+    t.add_column("B score",  justify="right", style="magenta")
+    t.add_column("Outcome",  justify="center")
+    t.add_column("Date",     style="dim")
+    for h in history:
+        dt = datetime.fromtimestamp(h["ts"]).strftime("%Y-%m-%d %H:%M")
+        icon = {"a_wins": "A ✓", "b_wins": "B ✓", "draw": "="}.get(h["outcome"], h["outcome"])
+        t.add_row(h["model_a"], h["model_b"],
+                  f"{h['score_a']:.3f}", f"{h['score_b']:.3f}",
+                  icon, dt)
+    console.print(t)
+
+    if args.full:
+        for h in history:
+            dt = datetime.fromtimestamp(h["ts"]).strftime("%Y-%m-%d %H:%M")
+            console.print(Rule(f"[dim]{h['model_a']} vs {h['model_b']} — {dt}[/dim]"))
+            console.print(Panel(h["response_a"],
+                                title=f"[cyan]{h['model_a']} ({h['score_a']:.3f})[/cyan]",
+                                border_style="cyan", padding=(0, 1)))
+            console.print(Panel(h["response_b"],
+                                title=f"[magenta]{h['model_b']} ({h['score_b']:.3f})[/magenta]",
+                                border_style="magenta", padding=(0, 1)))
+
+
+# ── report ────────────────────────────────────────────────────────────────────
+def cmd_report(args):
+    """Per-model breakdown by category, difficulty, strengths/weaknesses."""
+    console = _console()
+    from rich.table import Table
+    from rich.rule import Rule
+    from .elo import EloStore
+
+    store = EloStore(db_path=args.db)
+    board = store.leaderboard()
+    if not board:
+        console.print("[yellow]No data yet.[/yellow]"); return
+
+    models = [e["model"] for e in board]
+    if args.model:
+        models = [m for m in models if args.model.lower() in m.lower()]
+        if not models:
+            console.print(f"[red]No model matching '{args.model}'[/red]"); return
+
+    for model in models:
+        stats = store.category_stats(model)
+        if not stats:
+            continue
+
+        console.print(Rule(f"[bold cyan]{model}[/bold cyan]"))
+
+        elo_entry = next((e for e in board if e["model"] == model), None)
+        if elo_entry:
+            console.print(
+                f"  ELO [bold green]{elo_entry['elo']:.0f}[/bold green]  "
+                f"rank #{elo_entry['rank']}  "
+                f"{elo_entry['wins']}W / {elo_entry['losses']}L / {elo_entry['draws']}D  "
+                f"({elo_entry['win_rate']:.0%} win rate)"
+            )
+
+        t = Table(show_lines=False, padding=(0, 2))
+        t.add_column("Category",  style="bold")
+        t.add_column("Tasks",     justify="right")
+        t.add_column("Won",       style="green",  justify="right")
+        t.add_column("Lost",      style="red",    justify="right")
+        t.add_column("Draw",      style="dim",    justify="right")
+        t.add_column("Win rate",  justify="right")
+        t.add_column("Verdict",   style="dim")
+
+        strengths, weaknesses = [], []
+        for s in stats:
+            wr = s["win_rate"]
+            bar = "█" * int(wr * 10) + "░" * (10 - int(wr * 10))
+            if wr >= 0.6:
+                verdict = "[green]strong[/green]"
+                strengths.append(s["category"])
+            elif wr <= 0.35:
+                verdict = "[red]weak[/red]"
+                weaknesses.append(s["category"])
+            else:
+                verdict = "[yellow]average[/yellow]"
+            t.add_row(s["category"], str(s["total"]),
+                      str(s["wins"]), str(s["losses"]), str(s["draws"]),
+                      f"{wr:.0%} {bar}", verdict)
+        console.print(t)
+
+        if strengths:
+            console.print(f"  Strengths:  [green]{', '.join(strengths)}[/green]")
+        if weaknesses:
+            console.print(f"  Weaknesses: [red]{', '.join(weaknesses)}[/red]")
+        console.print()
+
+
+# ── finetune ──────────────────────────────────────────────────────────────────
 def cmd_finetune(args):
     console = _console()
     from .finetune import (
@@ -242,7 +539,7 @@ def cmd_finetune(args):
     console.print("Pass one of: --analyze | --generate | --train")
 
 
-# perf
+# ── perf ──────────────────────────────────────────────────────────────────────
 def cmd_perf(args):
     console = _console()
     from rich.table import Table
@@ -251,13 +548,13 @@ def cmd_perf(args):
     if not stats:
         console.print("[yellow]No performance data yet.[/yellow]"); return
     t = Table(title="Performance (per model)", show_lines=False)
-    t.add_column("Model", style="bold cyan")
-    t.add_column("Samples", justify="right")
-    t.add_column("TPS mean", style="green", justify="right")
-    t.add_column("TPS p95", style="green", justify="right")
-    t.add_column("Latency mean (s)", style="yellow", justify="right")
-    t.add_column("Latency p95 (s)", style="yellow", justify="right")
-    t.add_column("TTFT (s)", style="dim", justify="right")
+    t.add_column("Model",             style="bold cyan")
+    t.add_column("Samples",           justify="right")
+    t.add_column("TPS mean",          style="green",  justify="right")
+    t.add_column("TPS p95",           style="green",  justify="right")
+    t.add_column("Latency mean (s)",  style="yellow", justify="right")
+    t.add_column("Latency p95 (s)",   style="yellow", justify="right")
+    t.add_column("TTFT (s)",          style="dim",    justify="right")
     for s in stats:
         t.add_row(s["model"], str(s["n_samples"]),
                   f"{s['tps_mean']:.1f}", f"{s['tps_p95']:.1f}",
@@ -266,7 +563,7 @@ def cmd_perf(args):
     console.print(t)
 
 
-# export
+# ── export ────────────────────────────────────────────────────────────────────
 def cmd_export(args):
     console = _console()
     from .elo import EloStore
@@ -287,7 +584,7 @@ def cmd_export(args):
     console.print(f"     open file://{Path(out).absolute()}")
 
 
-# web
+# ── web ───────────────────────────────────────────────────────────────────────
 def cmd_web(args):
     from .web import run_web
     run_web(host=args.host, port=args.port,
@@ -295,19 +592,19 @@ def cmd_web(args):
             backend=args.backend, api_key=args.api_key)
 
 
-# main
+# ── main ──────────────────────────────────────────────────────────────────────
 def main():
     p = argparse.ArgumentParser(
         prog="ollama-arena",
         description="Local LLM ELO Arena — benchmark Ollama / vLLM / LM Studio / "
                     "llama.cpp / OpenAI-compat with auto-scored battles.",
     )
-    p.add_argument("--ollama", default="http://localhost:11434", metavar="URL")
-    p.add_argument("--backend", default=None, metavar="URL|PRESET",
+    p.add_argument("--ollama",   default="http://localhost:11434", metavar="URL")
+    p.add_argument("--backend",  default=None, metavar="URL|PRESET",
                    help="vllm, lmstudio, llamacpp, openai, groq, together, openrouter,"
                         " or any URL with /v1/chat/completions")
-    p.add_argument("--api-key", default=None, metavar="KEY")
-    p.add_argument("--db",      default="arena.db", metavar="PATH")
+    p.add_argument("--api-key",  default=None, metavar="KEY")
+    p.add_argument("--db",       default="arena.db", metavar="PATH")
     sub = p.add_subparsers(dest="cmd", metavar="COMMAND")
 
     def add_common(parser):
@@ -315,54 +612,97 @@ def main():
                             help="HF datasets to load (comma-sep): humaneval,mbpp,gsm8k,mmlu,...")
         parser.add_argument("--dataset-limit", type=int, default=None)
 
+    # match
     pm = sub.add_parser("match", help="Head-to-head battle(s)")
-    pm.add_argument("--models", required=True, metavar="A,B[,C...]")
-    pm.add_argument("--category", default="coding",
+    pm.add_argument("--models",     required=True, metavar="A,B[,C...]")
+    pm.add_argument("--category",   default="coding",
                     choices=["coding","reasoning","security","planning",
-                              "inspection","math","knowledge","all"])
-    pm.add_argument("--difficulty", default=None,
-                    choices=["easy","medium","hard"])
-    pm.add_argument("-n", type=int, default=10)
+                             "inspection","math","knowledge","all"])
+    pm.add_argument("--difficulty", default=None, choices=["easy","medium","hard"])
+    pm.add_argument("-n",           type=int, default=10)
+    pm.add_argument("--verbose", "-v", action="store_true",
+                    help="Print full prompt + both responses for every task")
     add_common(pm)
     pm.set_defaults(func=cmd_match)
 
+    # tournament
     pt = sub.add_parser("tournament", help="Round-robin tournament")
-    pt.add_argument("--models", required=True)
+    pt.add_argument("--models",   required=True)
     pt.add_argument("--category", default="coding")
-    pt.add_argument("-n", type=int, default=5)
+    pt.add_argument("-n",         type=int, default=5)
     add_common(pt)
     pt.set_defaults(func=cmd_tournament)
 
-    sub.add_parser("leaderboard", aliases=["lb"], help="Show ELO rankings").set_defaults(func=cmd_leaderboard)
-    sub.add_parser("list", help="List available models in ELO store").set_defaults(func=cmd_list)
-    sub.add_parser("tasks", help="List built-in task categories and counts").set_defaults(func=cmd_tasks)
+    # leaderboard
+    sub.add_parser("leaderboard", aliases=["lb"],
+                   help="Show ELO rankings").set_defaults(func=cmd_leaderboard)
 
+    # list
+    sub.add_parser("list",
+                   help="List models available on the backend").set_defaults(func=cmd_list)
+
+    # tasks
+    sub.add_parser("tasks",
+                   help="List built-in task categories and counts").set_defaults(func=cmd_tasks)
+
+    # results
+    pr = sub.add_parser("results",
+                        help="Browse match history and per-task details")
+    pr.add_argument("--match",  type=int, default=None,
+                    help="Show all tasks from match <ID>")
+    pr.add_argument("--last",   type=int, default=10,
+                    help="How many recent matches to list (default 10)")
+    pr.add_argument("--full",   action="store_true",
+                    help="Print complete (untruncated) prompts and responses")
+    pr.set_defaults(func=cmd_results)
+
+    # inspect
+    pi = sub.add_parser("inspect",
+                        help="Show every recorded run for a single task ID")
+    pi.add_argument("task_id", metavar="TASK_ID")
+    pi.add_argument("--full", action="store_true",
+                    help="Print complete responses")
+    pi.set_defaults(func=cmd_inspect)
+
+    # report
+    prp = sub.add_parser("report",
+                         help="Per-model category breakdown and strength/weakness analysis")
+    prp.add_argument("--model", default=None,
+                     help="Filter to a specific model (substring match)")
+    prp.set_defaults(func=cmd_report)
+
+    # datasets
     pd = sub.add_parser("datasets", help="HF dataset cache (pull / refresh)")
     pd.add_argument("--pull",    default=None, help="Comma-sep names to download")
     pd.add_argument("--refresh", default=None, help="Comma-sep names to re-download")
     pd.add_argument("--limit",   type=int, default=None)
     pd.set_defaults(func=cmd_datasets)
 
+    # finetune
     pft = sub.add_parser("finetune", help="Unsloth pipeline (analyze/generate/train)")
-    pft.add_argument("--analyze",  action="store_true")
-    pft.add_argument("--generate", action="store_true")
-    pft.add_argument("--train",    default=None, metavar="JSONL_PATH")
-    pft.add_argument("--model",    default=None, help="Weak model name (student)")
-    pft.add_argument("--teacher",  default=None, help="Strong model name (teacher)")
-    pft.add_argument("--category", default="coding")
-    pft.add_argument("--out",      default=None)
-    pft.add_argument("--out-dir",  default=None)
-    pft.add_argument("--n-tasks",  type=int, default=50)
+    pft.add_argument("--analyze",    action="store_true")
+    pft.add_argument("--generate",   action="store_true")
+    pft.add_argument("--train",      default=None, metavar="JSONL_PATH")
+    pft.add_argument("--model",      default=None)
+    pft.add_argument("--teacher",    default=None)
+    pft.add_argument("--category",   default="coding")
+    pft.add_argument("--out",        default=None)
+    pft.add_argument("--out-dir",    default=None)
+    pft.add_argument("--n-tasks",    type=int, default=50)
     pft.add_argument("--base-model", default=None)
-    pft.add_argument("--epochs",   type=int, default=2)
+    pft.add_argument("--epochs",     type=int, default=2)
     pft.set_defaults(func=cmd_finetune)
 
-    sub.add_parser("perf", help="Performance stats").set_defaults(func=cmd_perf)
+    # perf
+    sub.add_parser("perf",
+                   help="Performance stats (TPS, latency, TTFT per model)").set_defaults(func=cmd_perf)
 
+    # export
     pex = sub.add_parser("export", help="Export shareable HTML dashboard")
     pex.add_argument("--out", default="arena_dashboard.html")
     pex.set_defaults(func=cmd_export)
 
+    # web
     pw = sub.add_parser("web", help="Launch web dashboard")
     pw.add_argument("--host", default="0.0.0.0")
     pw.add_argument("--port", type=int, default=7860)

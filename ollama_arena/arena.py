@@ -33,6 +33,7 @@ class MatchResult:
     elo_b_after: float
     task_results: list[dict] = field(default_factory=list)
     duration_s: float = 0.0
+    match_id: int = 0
 
 
 class Arena:
@@ -53,7 +54,6 @@ class Arena:
         from_datasets: list[str] | None = None,
         judge_model: str | None = None,
     ):
-        # Backend selection
         if backend is None:
             self.client = auto_backend(ollama_url)
         elif isinstance(backend, str):
@@ -66,7 +66,6 @@ class Arena:
         self._on_task_done = on_task_done
         self._extra_tasks: dict[str, list[dict]] = {}
 
-        # Optional LLM-as-judge for open-ended tasks
         self.judge = None
         if judge_model:
             from .judge import LLMJudge
@@ -76,12 +75,9 @@ class Arena:
             for name in from_datasets:
                 self.load_hf_dataset(name)
 
-    # Dataset injection
     def load_hf_dataset(self, name: str, limit: int | None = None) -> int:
-        """Pull tasks from a HuggingFace dataset and add to the arena pool."""
         from .datasets import load_dataset
         tasks = load_dataset(name, limit=limit)
-        # Group by category for routing
         for t in tasks:
             cat = t.get("category", "coding")
             self._extra_tasks.setdefault(cat, []).append(t)
@@ -96,7 +92,6 @@ class Arena:
             pool = [t for t in pool if t.get("difficulty") == difficulty]
         return pool[:n]
 
-    # Single match
     def run_match(
         self,
         model_a: str,
@@ -117,6 +112,7 @@ class Arena:
         a_wins = b_wins = draws = 0
         task_results = []
         t0 = time.time()
+        last_match_id = 0
 
         for task in tasks:
             res_a = self.client.generate(model_a, task["instruction"])
@@ -125,9 +121,6 @@ class Arena:
             self._log_perf(model_a, res_a)
             self._log_perf(model_b, res_b)
 
-            # Open-ended tasks (use_judge=True) bypass the deterministic
-            # scorer. The judge call is two more generations per task — keep
-            # n small or use a small judge model.
             if self.judge and task.get("use_judge"):
                 jr = self.judge.grade_pair(
                     task["instruction"], res_a.text, res_b.text,
@@ -146,16 +139,42 @@ class Arena:
                 outcome, draws = "draw", draws + 1
 
             self.elo.record_match(model_a, model_b, category, score_a, score_b)
+            last_match_id = self.elo.last_match_id()
+
+            self.elo.save_task_detail(
+                match_id=last_match_id,
+                task_id=task["id"],
+                category=task.get("category", category),
+                difficulty=task.get("difficulty", "unknown"),
+                language=task.get("language", "natural"),
+                instruction=task["instruction"],
+                response_a=res_a.text if res_a.ok else f"[ERROR: {res_a.error}]",
+                response_b=res_b.text if res_b.ok else f"[ERROR: {res_b.error}]",
+                expected=str(task.get("expected_answer", task.get("expected_vulns", ""))),
+                score_a=round(score_a, 3),
+                score_b=round(score_b, 3),
+                outcome=outcome,
+                tps_a=res_a.tps,
+                tps_b=res_b.tps,
+                latency_a=res_a.latency_s,
+                latency_b=res_b.latency_s,
+            )
 
             task_results.append({
-                "task_id":    task["id"],
-                "difficulty": task.get("difficulty", "?"),
-                "language":   task.get("language", "natural"),
-                "score_a":    round(score_a, 3),
-                "score_b":    round(score_b, 3),
-                "tps_a":      res_a.tps,
-                "tps_b":      res_b.tps,
-                "outcome":    outcome,
+                "task_id":     task["id"],
+                "difficulty":  task.get("difficulty", "?"),
+                "language":    task.get("language", "natural"),
+                "instruction": task["instruction"],
+                "response_a":  res_a.text if res_a.ok else "",
+                "response_b":  res_b.text if res_b.ok else "",
+                "expected":    str(task.get("expected_answer", "")),
+                "score_a":     round(score_a, 3),
+                "score_b":     round(score_b, 3),
+                "tps_a":       res_a.tps,
+                "tps_b":       res_b.tps,
+                "latency_a":   res_a.latency_s,
+                "latency_b":   res_b.latency_s,
+                "outcome":     outcome,
             })
 
             log.info(
@@ -163,7 +182,13 @@ class Arena:
                 f"{model_b}={score_b:.2f} ({res_b.tps:.0f}tps)  → {outcome}"
             )
             if self._on_task_done:
-                self._on_task_done(task["id"], score_a, score_b, outcome)
+                self._on_task_done(
+                    task["id"], score_a, score_b, outcome,
+                    task["instruction"],
+                    res_a.text if res_a.ok else "",
+                    res_b.text if res_b.ok else "",
+                    str(task.get("expected_answer", "")),
+                )
 
         total = len(tasks)
         return MatchResult(
@@ -176,9 +201,9 @@ class Arena:
             elo_b_after=self.elo.get(model_b),
             task_results=task_results,
             duration_s=round(time.time() - t0, 1),
+            match_id=last_match_id,
         )
 
-    # Tournament
     def run_tournament(
         self,
         models: list[str],
@@ -192,7 +217,6 @@ class Arena:
             self.run_match(a, b, category=category, n=n_per_match)
         return self.leaderboard()
 
-    # Read-only views
     def leaderboard(self) -> list[dict]:
         return self.elo.leaderboard()
 
@@ -202,7 +226,6 @@ class Arena:
     def performance_stats(self) -> list[dict]:
         return self.perf.stats()
 
-    # Internal
     def _log_perf(self, model: str, res: GenResult):
         if res.ok:
             self.perf.record(

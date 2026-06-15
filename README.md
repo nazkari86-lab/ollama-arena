@@ -165,9 +165,16 @@ runtime from `$PATH`:
 ## CLI
 
 ```
-ollama-arena match        --models A,B [--category C] [--dataset NAME] [--difficulty L]
+ollama-arena match        --models A,B [--category C] [--dataset NAME] [--difficulty L] [--verbose]
 ollama-arena tournament   --models A,B,C,...
 ollama-arena leaderboard
+ollama-arena results                          # list recent matches
+ollama-arena results      --match <ID>        # all tasks from match #ID
+ollama-arena results      --match <ID> --full # full untruncated responses
+ollama-arena inspect      <TASK_ID>           # every run for one task
+ollama-arena inspect      <TASK_ID> --full    # with complete responses
+ollama-arena report                           # per-model category breakdown
+ollama-arena report       --model llama3      # filter to one model
 ollama-arena perf
 ollama-arena list
 ollama-arena tasks
@@ -178,6 +185,11 @@ ollama-arena web          [--port 7860]
 ```
 
 Global flags: `--backend`, `--api-key`, `--db`, `--ollama`.
+
+Every task result — the prompt sent to each model, both responses, the
+expected answer, and the score — is stored in `arena.db`. Commands `results`,
+`inspect`, and `report` query that history so you can audit exactly what the
+models said and why they passed or failed.
 
 ## Python
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.2.0
+
+- Full response storage: every task now saves the prompt, both model
+  responses, the expected answer, score, TPS, and latency to `arena.db`.
+- `results` command — list recent matches; drill into any match with
+  `--match <ID>` to see every prompt and response; `--full` for untruncated.
+- `inspect <TASK_ID>` — see every time a specific task was run, across all
+  models, with full A/B responses.
+- `report` — per-model breakdown by category showing win rate, task count,
+  and a strength/weakness verdict for each category.
+- `match --verbose` (`-v`) — print prompt and both responses live during a run.
+- Live match output now shows task instruction snippet alongside the score.
+
 ## 2.1.2
 
 - Trim `pyproject.toml` keywords; mark as Beta.

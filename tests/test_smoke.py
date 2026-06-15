@@ -28,8 +28,73 @@ def test_elo_store_roundtrip():
         s.record_match("m1", "m2", "coding", 1.0, 0.0)
         assert s.leaderboard()[0]["model"] == "m1"
         assert s.leaderboard()[0]["wins"] == 2
-        # reload from disk
         assert EloStore(db_path=db).leaderboard()[0]["model"] == "m1"
+
+
+def test_task_detail_roundtrip():
+    with tempfile.TemporaryDirectory() as tmp:
+        db = os.path.join(tmp, "x.db")
+        s = EloStore(db_path=db)
+        s.record_match("m1", "m2", "coding", 1.0, 0.0)
+        mid = s.last_match_id()
+        s.save_task_detail(
+            match_id=mid, task_id="code_001", category="coding",
+            difficulty="easy", language="python",
+            instruction="Write a hello world function.",
+            response_a="def hello(): return 'hello'",
+            response_b="def hello(): pass",
+            expected="hello",
+            score_a=1.0, score_b=0.0, outcome="a_wins",
+            tps_a=45.0, tps_b=38.0, latency_a=1.2, latency_b=1.5,
+        )
+        tasks = s.tasks_for_match(mid)
+        assert len(tasks) == 1
+        assert tasks[0]["task_id"] == "code_001"
+        assert tasks[0]["response_a"] == "def hello(): return 'hello'"
+        assert tasks[0]["score_a"] == 1.0
+
+
+def test_task_history():
+    with tempfile.TemporaryDirectory() as tmp:
+        db = os.path.join(tmp, "x.db")
+        s = EloStore(db_path=db)
+        s.record_match("m1", "m2", "coding", 1.0, 0.0)
+        mid = s.last_match_id()
+        s.save_task_detail(
+            match_id=mid, task_id="reas_001", category="reasoning",
+            difficulty="medium", language="natural",
+            instruction="What is 2+2?", response_a="4", response_b="5",
+            expected="4", score_a=1.0, score_b=0.0, outcome="a_wins",
+        )
+        history = s.task_history("reas_001")
+        assert len(history) == 1
+        assert history[0]["model_a"] == "m1"
+
+
+def test_category_stats():
+    with tempfile.TemporaryDirectory() as tmp:
+        db = os.path.join(tmp, "x.db")
+        s = EloStore(db_path=db)
+        s.record_match("m1", "m2", "coding", 1.0, 0.0)
+        mid = s.last_match_id()
+        s.save_task_detail(
+            match_id=mid, task_id="code_001", category="coding",
+            difficulty="easy", language="python",
+            instruction="x", response_a="a", response_b="b",
+            expected="", score_a=1.0, score_b=0.0, outcome="a_wins",
+        )
+        stats = s.category_stats("m1")
+        assert any(x["category"] == "coding" for x in stats)
+
+
+def test_recent_matches_summary():
+    with tempfile.TemporaryDirectory() as tmp:
+        db = os.path.join(tmp, "x.db")
+        s = EloStore(db_path=db)
+        s.record_match("m1", "m2", "coding", 1.0, 0.0)
+        summary = s.recent_matches_summary(limit=5)
+        assert len(summary) == 1
+        assert summary[0]["model_a"] == "m1"
 
 
 def test_task_stats():
