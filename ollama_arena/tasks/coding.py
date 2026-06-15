@@ -68,8 +68,8 @@ CODING_TASKS = [
     },
     {
         "id": "code_013", "difficulty": "medium", "role": "coder",
-        "instruction": "Write a Python async function `fetch_all(urls)` using asyncio and aiohttp that fetches all URLs concurrently and returns a list of (url, status_code) tuples.",
-        "test_code": "import asyncio\nresult = asyncio.run(fetch_all(['http://httpbin.org/status/200', 'http://httpbin.org/status/404']))\nassert isinstance(result, list)\nassert len(result) == 2",
+        "instruction": "Write a Python async function `fetch_all(urls)` using asyncio and aiohttp that fetches all URLs concurrently and returns a list of (url, status_code) tuples. For URLs that fail to connect, use status_code=-1.",
+        "test_code": "import asyncio\nfrom unittest.mock import patch, AsyncMock, MagicMock\nclass _Resp:\n    def __init__(self, s): self.status = s\n    async def __aenter__(self): return self\n    async def __aexit__(self, *a): pass\nclass _Session:\n    def get(self, url, **kw): return _Resp(200 if '200' in url else 404)\n    async def __aenter__(self): return self\n    async def __aexit__(self, *a): pass\nwith patch('aiohttp.ClientSession', return_value=_Session()):\n    result = asyncio.run(fetch_all(['http://example.com/200', 'http://example.com/404']))\nassert isinstance(result, list) and len(result) == 2",
     },
     {
         "id": "code_014", "difficulty": "medium", "role": "coder",

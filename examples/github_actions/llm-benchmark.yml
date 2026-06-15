@@ -1,0 +1,43 @@
+# LLM Quality Gate — ollama-arena CI template
+#
+# Requirements:
+#   - A self-hosted GitHub Actions runner with Ollama installed and running
+#   - Set repository variables: LLM_MODEL (e.g. "llama3.2:3b")
+#   - Optionally set LLM_MODEL_B for head-to-head comparison
+#
+# Usage:
+#   Copy this file to .github/workflows/llm-benchmark.yml in your project.
+
+name: LLM Benchmark
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Ollama model to benchmark"
+        default: "llama3.2:3b"
+
+jobs:
+  benchmark:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ollama-arena
+        run: pip install ollama-arena --quiet
+
+      - name: Run benchmark
+        run: |
+          ollama-arena benchmark ${{ vars.LLM_MODEL || inputs.model || 'llama3.2:3b' }} \
+            --fail-below ${{ vars.SCORE_THRESHOLD || '60' }}
+
+      - name: Head-to-head comparison (optional)
+        if: vars.LLM_MODEL_B != ''
+        run: |
+          ollama-arena match \
+            --models "${{ vars.LLM_MODEL }},${{ vars.LLM_MODEL_B }}" \
+            --category coding -n 10 --share \
+            >> $GITHUB_STEP_SUMMARY

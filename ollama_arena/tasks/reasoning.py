@@ -102,44 +102,4 @@ REASONING_TASKS = [
     },
 ]
 
-def evaluate_answer(task: dict, model_answer: str) -> float:
-    """Score a model's answer against expected. Returns 0.0–1.0."""
-    model_lower = model_answer.strip().lower()
-    expected = str(task["expected_answer"]).lower()
-    check = task.get("check", "exact")
-
-    if check == "exact":
-        return 1.0 if expected in model_lower else 0.0
-
-    elif check == "exact_prefix":
-        return 1.0 if model_lower.startswith(expected) else 0.0
-
-    elif check == "contains":
-        return 1.0 if expected in model_lower else 0.0
-
-    elif check == "contains_any":
-        items = [x.lower() for x in task.get("check_items", [expected])]
-        return 1.0 if any(item in model_lower for item in items) else 0.0
-
-    elif check == "contains_all":
-        items = [x.lower() for x in task.get("check_items", [expected])]
-        return 1.0 if all(item in model_lower for item in items) else 0.0
-
-    elif check == "exact_normalized":
-        # Remove spaces and compare
-        return 1.0 if expected.replace(" ", "") in model_lower.replace(" ", "") else 0.0
-
-    elif check == "numeric_approx":
-        import re
-        nums = re.findall(r'\d+\.?\d*', model_lower)
-        if not nums:
-            return 0.0
-        tolerance = task.get("tolerance", 2)
-        exp_val = float(expected)
-        for n in nums:
-            if abs(float(n) - exp_val) <= tolerance:
-                return 1.0
-        return 0.0
-
-    return 0.0
 

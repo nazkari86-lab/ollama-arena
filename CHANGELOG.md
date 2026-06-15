@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.3.0
+
+- `benchmark MODEL[,MODEL2]` — standardized 30-task Score (0–100) across 5 categories.
+  `--compare` shows side-by-side; `--fail-below SCORE` exits 1 for CI quality gates.
+- `match --share` — prints a copyable markdown results table at the end of a match.
+- GitHub Actions template in `examples/github_actions/llm-benchmark.yml`.
+- Web API: `/api/version`, `/api/task/{id}`, `/api/report/{model}` endpoints.
+- Web: job log now includes truncated prompt and responses for live match view.
+- Fix: `code_013` no longer hits `httpbin.org` — replaced with unittest.mock patch.
+- Fix: web job_id collision resolved by appending timestamp.
+- Fix: dead code `evaluate_answer()` removed from `reasoning.py`.
+- README rewritten with `benchmark` as the headline command.
+
 ## 2.2.0
 
 - Full response storage: every task now saves the prompt, both model

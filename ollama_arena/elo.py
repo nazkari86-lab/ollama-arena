@@ -82,6 +82,14 @@ class EloStore:
                     ON task_detail(task_id);
                 CREATE INDEX IF NOT EXISTS idx_task_detail_match
                     ON task_detail(match_id);
+                CREATE TABLE IF NOT EXISTS benchmark_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    model TEXT,
+                    score REAL,
+                    scores_by_category TEXT,
+                    n_tasks INTEGER,
+                    ts REAL
+                );
             """)
 
     def get(self, model: str) -> float:
@@ -236,6 +244,35 @@ class EloStore:
             {"category": r[0], "wins": r[1], "losses": r[2],
              "draws": r[3], "total": r[4],
              "win_rate": round(r[1] / max(r[4], 1), 3)}
+            for r in rows
+        ]
+
+    def save_benchmark(self, model: str, score: float,
+                       scores_by_category: dict, n_tasks: int):
+        import json
+        with self._conn() as cx:
+            cx.execute("""
+                INSERT INTO benchmark_runs (model, score, scores_by_category, n_tasks, ts)
+                VALUES (?, ?, ?, ?, ?)
+            """, (model, score, json.dumps(scores_by_category), n_tasks, time.time()))
+
+    def benchmark_history(self, model: str | None = None, limit: int = 20) -> list[dict]:
+        import json
+        with self._conn() as cx:
+            if model:
+                rows = cx.execute("""
+                    SELECT model, score, scores_by_category, n_tasks, ts
+                    FROM benchmark_runs WHERE model=? ORDER BY ts DESC LIMIT ?
+                """, (model, limit)).fetchall()
+            else:
+                rows = cx.execute("""
+                    SELECT model, score, scores_by_category, n_tasks, ts
+                    FROM benchmark_runs ORDER BY ts DESC LIMIT ?
+                """, (limit,)).fetchall()
+        return [
+            {"model": r[0], "score": r[1],
+             "scores_by_category": json.loads(r[2]),
+             "n_tasks": r[3], "ts": r[4]}
             for r in rows
         ]
 

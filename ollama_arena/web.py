@@ -1,6 +1,6 @@
 """FastAPI dashboard. Requires [web] (fastapi, uvicorn). Charts require [viz]."""
 from __future__ import annotations
-import logging
+import logging, time
 from pathlib import Path
 
 log = logging.getLogger("arena.web")
@@ -33,7 +33,8 @@ def run_web(
                   backend=backend, api_key=api_key)
     jobs: dict[str, dict] = {}
 
-    app = FastAPI(title="Ollama Arena", version="2.0.0")
+    from . import __version__
+    app = FastAPI(title="Ollama Arena", version=__version__)
     HERE = Path(__file__).parent.parent / "templates"
 
     @app.get("/", response_class=HTMLResponse)
@@ -65,6 +66,19 @@ def run_web(
     @app.get("/api/datasets")
     def api_datasets():
         return available_datasets()
+
+    @app.get("/api/version")
+    def api_version():
+        from . import __version__
+        return {"version": __version__}
+
+    @app.get("/api/task/{task_id}")
+    def api_task_history(task_id: str):
+        return arena.elo.task_history(task_id)
+
+    @app.get("/api/report/{model}")
+    def api_report(model: str):
+        return arena.elo.category_stats(model)
 
     # Charts (HTML fragments rendered via Plotly)
     @app.get("/charts/elo")
@@ -106,13 +120,16 @@ def run_web(
         cat = body.get("category", "coding"); n = int(body.get("n", 5))
         if not ma or not mb:
             raise HTTPException(400, "model_a and model_b required")
-        jid = f"{ma}_vs_{mb}_{cat}_{n}"
+        jid = f"{ma}_vs_{mb}_{cat}_{n}_{int(time.time())}"
         jobs[jid] = {"status": "running", "log": [], "model_a": ma, "model_b": mb}
 
         def _run():
-            def on_task(tid, sa, sb, outcome):
+            def on_task(tid, sa, sb, outcome, instruction="", resp_a="", resp_b="", expected=""):
                 jobs[jid]["log"].append({
-                    "task_id": tid, "score_a": sa, "score_b": sb, "outcome": outcome
+                    "task_id": tid, "score_a": sa, "score_b": sb, "outcome": outcome,
+                    "instruction": instruction[:200] if instruction else "",
+                    "resp_a": resp_a[:300] if resp_a else "",
+                    "resp_b": resp_b[:300] if resp_b else "",
                 })
             arena._on_task_done = on_task
             try:
@@ -151,7 +168,6 @@ def run_web(
         return {"started": True, "name": name}
 
     from ._banner import print_banner
-    from . import __version__
     print_banner(__version__)
     print(f"  backend: {arena.client.name}")
     print(f"  url:     http://{host if host != '0.0.0.0' else 'localhost'}:{port}\n")

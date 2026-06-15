@@ -1,25 +1,35 @@
 # ollama-arena
 
-A pair-wise evaluation harness for locally hosted language models. Runs
-matches between two models on a shared task set, scores each response
-deterministically (or with an LLM judge), and maintains an ELO rating
-across runs.
+**"Which of my local models is actually better at coding?"** — ollama-arena answers
+that in 60 seconds. It runs pair-wise battles between local LLMs, scores each response
+automatically, and keeps an ELO leaderboard across sessions.
 
 ```
 pip install ollama-arena
-ollama-arena match --models llama3.2:3b,qwen2.5-coder:7b -n 20
+ollama-arena benchmark llama3.2:3b,qwen2.5-coder:7b --compare
 ```
 
 ```
-match 1/1   llama3.2:3b  vs  qwen2.5-coder:7b
-  code_001   1.00  vs  1.00   draw
-  code_002   0.00  vs  1.00   B
-  humaneval_3 1.00 vs 1.00    draw
+  llama3.2:3b         Score: 61.3 / 100   (coding:58  reasoning:65  security:70 ...)
+  qwen2.5-coder:7b    Score: 74.8 / 100   (coding:82  reasoning:71  security:68 ...)
+  Winner: qwen2.5-coder:7b  (margin: 13.5 pts)
+```
+
+Or run a detailed head-to-head with shareable output:
+
+```
+ollama-arena match --models llama3.2:3b,qwen2.5-coder:7b --category coding -n 10 --share
+```
+
+```
+  ✓ A  code_001  1.00 vs 0.00  [easy][python]  Write a sieve of Eratosthenes…
+  ✓ B  code_002  0.00 vs 1.00  [medium][python] Implement an LRU cache…
+  = =  code_003  1.00 vs 1.00  [hard][python]   Write a consistent hash ring…
   ...
 
-rank  model                elo    W   L   D   matches  win%
-1     qwen2.5-coder:7b    1271    7   1   2     10     70%
-2     llama3.2:3b         1129    1   7   2     10     10%
+  rank  model                elo    W   L   D   win%
+  1     qwen2.5-coder:7b    1271    7   1   2   70%
+  2     llama3.2:3b         1129    1   7   2   10%
 ```
 
 ## Why
@@ -162,10 +172,23 @@ runtime from `$PATH`:
 
 `ollama-arena tasks` shows which languages are currently runnable.
 
+## CI / GitHub Actions
+
+Use ollama-arena as a quality gate in CI. Add to `.github/workflows/`:
+
+```yaml
+- run: pip install ollama-arena
+- run: ollama-arena benchmark ${{ vars.LLM_MODEL }} --fail-below 65
+- run: ollama-arena match --models ${{ vars.MODEL_A }},${{ vars.MODEL_B }} --share >> $GITHUB_STEP_SUMMARY
+```
+
+A full template is in [`examples/github_actions/llm-benchmark.yml`](examples/github_actions/llm-benchmark.yml).
+
 ## CLI
 
 ```
-ollama-arena match        --models A,B [--category C] [--dataset NAME] [--difficulty L] [--verbose]
+ollama-arena benchmark    MODEL[,MODEL2]  [--compare] [--fail-below SCORE]
+ollama-arena match        --models A,B [--category C] [--dataset NAME] [--verbose] [--share]
 ollama-arena tournament   --models A,B,C,...
 ollama-arena leaderboard
 ollama-arena results                          # list recent matches
