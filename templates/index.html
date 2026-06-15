@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ollama Arena ⚔️</title>
+<title>Ollama Arena </title>
 <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -103,8 +103,8 @@
 
 <div class="header">
   <div>
-    <h1>⚔️ Ollama <span>Arena</span></h1>
-    <p>Local LLM ELO benchmark · Multi-backend · HuggingFace datasets · Auto fine-tuning</p>
+    <h1>Ollama <span>Arena</span></h1>
+    <p>Local LLM ELO arena · multi-backend · HuggingFace benchmarks</p>
   </div>
   <div class="badges">
     <span class="badge badge-green" id="backend-badge">Backend: ?</span>
@@ -113,10 +113,10 @@
 </div>
 
 <div class="tabs">
-  <div class="tab active" data-tab="dashboard">📊 Dashboard</div>
-  <div class="tab" data-tab="battle">⚔️ Battle</div>
-  <div class="tab" data-tab="datasets">📚 Datasets</div>
-  <div class="tab" data-tab="performance">⚡ Performance</div>
+  <div class="tab active" data-tab="dashboard">Dashboard</div>
+  <div class="tab" data-tab="battle">Match</div>
+  <div class="tab" data-tab="datasets">Datasets</div>
+  <div class="tab" data-tab="performance">Performance</div>
 </div>
 
 <div class="container">
@@ -124,7 +124,7 @@
   <!-- DASHBOARD -->
   <div class="tab-content active" id="tab-dashboard">
     <div class="card">
-      <h2>📈 Live Stats</h2>
+      <h2>Stats</h2>
       <div class="stat-grid">
         <div class="stat-card"><div class="stat-num" id="stat-models">0</div><div class="stat-label">Models tested</div></div>
         <div class="stat-card"><div class="stat-num" id="stat-matches">0</div><div class="stat-label">Matches played</div></div>
@@ -134,22 +134,22 @@
     </div>
 
     <div class="card">
-      <h2>🏆 ELO Leaderboard <button class="refresh" onclick="loadAll()">↻ refresh</button></h2>
+      <h2>ELO leaderboard <button class="refresh" onclick="loadAll()">↻ refresh</button></h2>
       <div id="leaderboard-table"><div class="empty">No matches yet.</div></div>
     </div>
 
     <div class="card full">
-      <h2>📊 ELO Over Time</h2>
+      <h2>ELO over time</h2>
       <div id="chart-elo"><div class="empty">Loading…</div></div>
     </div>
 
     <div class="grid-2">
-      <div class="card"><h2>📡 Capability Radar</h2><div id="chart-radar"><div class="empty">Need more matches…</div></div></div>
-      <div class="card"><h2>⚔️ Head-to-Head Win Rate</h2><div id="chart-heatmap"><div class="empty">Need more matches…</div></div></div>
+      <div class="card"><h2>Capability radar</h2><div id="chart-radar"><div class="empty">Need more matches…</div></div></div>
+      <div class="card"><h2>Head-to-head win rate</h2><div id="chart-heatmap"><div class="empty">Need more matches…</div></div></div>
     </div>
 
     <div class="card">
-      <h2>📜 Recent Matches</h2>
+      <h2>Recent matches</h2>
       <div id="history"></div>
     </div>
   </div>
@@ -158,12 +158,12 @@
   <div class="tab-content" id="tab-battle">
     <div class="layout">
       <div class="card">
-        <h2>📊 Quick Stats</h2>
+        <h2>Leaderboard</h2>
         <div id="leaderboard-table-2"><div class="empty">No matches yet.</div></div>
       </div>
 
       <div class="card">
-        <h2>⚔️ Configure Match</h2>
+        <h2>Configure match</h2>
         <div class="form-group">
           <label>Model A</label>
           <select id="model-a"><option value="">Loading…</option></select>
@@ -186,7 +186,7 @@
           <label>Tasks per match</label>
           <input type="number" id="n-tasks" value="5" min="1" max="50">
         </div>
-        <button class="btn" id="run-btn" onclick="runMatch()">⚔️ Start Battle</button>
+        <button class="btn" id="run-btn" onclick="runMatch()">Start match</button>
         <div class="status" id="match-status"></div>
         <div class="log" id="match-log" style="display:none"></div>
       </div>
@@ -196,7 +196,7 @@
   <!-- DATASETS -->
   <div class="tab-content" id="tab-datasets">
     <div class="card">
-      <h2>📚 HuggingFace Benchmark Datasets</h2>
+      <h2>HuggingFace benchmark datasets</h2>
       <p style="color:#8b949e;font-size:13px;margin-bottom:16px">
         Real-world benchmarks from the HF Hub. Click "pull" to download and cache locally.
       </p>
@@ -207,11 +207,11 @@
   <!-- PERFORMANCE -->
   <div class="tab-content" id="tab-performance">
     <div class="card full">
-      <h2>⚡ Throughput vs Latency</h2>
+      <h2>Throughput vs latency</h2>
       <div id="chart-perf"><div class="empty">Run some matches first…</div></div>
     </div>
     <div class="card">
-      <h2>📐 Per-Model Performance</h2>
+      <h2>Per-model performance</h2>
       <div id="perf-table"><div class="empty">No samples yet.</div></div>
     </div>
   </div>
@@ -361,7 +361,7 @@ async function runMatch() {
   const log = document.getElementById('match-log');
   const status = document.getElementById('match-status');
   log.style.display = 'block'; log.innerHTML = '';
-  status.className = 'status running'; status.textContent = `⚔️ ${ma} vs ${mb} — running ${n} tasks...`;
+  status.className = 'status running'; status.textContent = `${ma} vs ${mb} — running ${n} tasks...`;
 
   const {job_id} = await api('/api/match', {
     method: 'POST', headers: {'Content-Type':'application/json'},
@@ -384,12 +384,12 @@ async function runMatch() {
       const winner = r.a_wins > r.b_wins ? ma : r.b_wins > r.a_wins ? mb : 'Draw';
       status.className = 'status done';
       status.textContent = `✅ Done in ${r.duration_s}s! Winner: ${winner}  ELO: ${r.elo_a_after.toFixed(0)} / ${r.elo_b_after.toFixed(0)}`;
-      btn.disabled = false; btn.textContent = '⚔️ Start Battle';
+      btn.disabled = false; btn.textContent = 'Start match';
       loadAll();
     } else if (job.status === 'error') {
       clearInterval(pollInterval);
       status.className = 'status error'; status.textContent = `❌ ${job.error}`;
-      btn.disabled = false; btn.textContent = '⚔️ Start Battle';
+      btn.disabled = false; btn.textContent = 'Start match';
     }
   }, 1500);
 }

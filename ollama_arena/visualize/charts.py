@@ -55,7 +55,7 @@ def elo_timeline_html(matches: list[dict], top_n: int = 8) -> str:
         ))
 
     fig.update_layout(
-        title=dict(text="🏆 ELO Rating Over Time", font=dict(size=20, color="#e6edf3")),
+        title=dict(text="ELO Rating Over Time", font=dict(size=20, color="#e6edf3")),
         plot_bgcolor="#161b22", paper_bgcolor="#0d1117",
         font=dict(color="#e6edf3", family="system-ui"),
         xaxis=dict(showgrid=True, gridcolor="#30363d", title="Match #"),
@@ -104,7 +104,7 @@ def radar_html(matches: list[dict], categories: list[str], top_n: int = 5) -> st
         ))
 
     fig.update_layout(
-        title=dict(text="📡 Capability Radar (win-rate per category)",
+        title=dict(text="Capability Radar (win-rate per category)",
                    font=dict(size=18, color="#e6edf3")),
         plot_bgcolor="#0d1117", paper_bgcolor="#0d1117",
         font=dict(color="#e6edf3"),
@@ -156,7 +156,7 @@ def heatmap_html(matches: list[dict]) -> str:
         colorbar=dict(title="Win Rate", tickfont=dict(color="#e6edf3")),
     ))
     fig.update_layout(
-        title=dict(text="⚔️ Head-to-Head Win Rate", font=dict(size=18, color="#e6edf3")),
+        title=dict(text="Head-to-Head Win Rate", font=dict(size=18, color="#e6edf3")),
         plot_bgcolor="#0d1117", paper_bgcolor="#0d1117",
         font=dict(color="#e6edf3"),
         xaxis=dict(side="bottom", title="Opponent"),
@@ -188,7 +188,7 @@ def performance_chart_html(perf: list[dict]) -> str:
     fig.add_trace(go.Bar(name="Avg latency (s)", x=models, y=lat, marker_color="#f85149",
                          yaxis="y2", offsetgroup=2))
     fig.update_layout(
-        title=dict(text="⚡ Throughput vs Latency", font=dict(size=18, color="#e6edf3")),
+        title=dict(text="Throughput vs Latency", font=dict(size=18, color="#e6edf3")),
         plot_bgcolor="#161b22", paper_bgcolor="#0d1117",
         font=dict(color="#e6edf3"),
         xaxis=dict(title="Model"),
@@ -260,29 +260,32 @@ def full_dashboard_html(
 <html><head><meta charset="UTF-8"><title>{title}</title>
 <style>
   body {{ background:#0d1117; color:#e6edf3; font-family:system-ui; margin:0; padding:32px; }}
-  h1 {{ font-size:32px; margin-bottom:6px; }}
+  h1 {{ font-size:28px; margin-bottom:4px; font-weight:600; }}
   h1 span {{ color:#58a6ff; }}
-  p.meta {{ color:#8b949e; margin-bottom:24px; }}
+  p.meta {{ color:#8b949e; margin-bottom:24px; font-size:14px; }}
+  h2 {{ font-size:13px; color:#8b949e; text-transform:uppercase;
+       letter-spacing:0.5px; margin-bottom:12px; font-weight:600; }}
   .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }}
   .card {{ background:#161b22; border:1px solid #30363d; border-radius:12px; padding:20px; }}
   .full {{ grid-column:1/-1; }}
   table th, table td {{ border-bottom:1px solid #21262d; }}
   table tr:hover td {{ background:#1f2937; }}
+  footer {{ margin-top:32px; color:#8b949e; font-size:12px; text-align:center; }}
+  a {{ color:#58a6ff; text-decoration:none; }}
 </style></head>
 <body>
-  <h1>⚔️ Ollama <span>Arena</span></h1>
-  <p class="meta">Generated {ts} — local LLM ELO leaderboard with capability analysis.</p>
+  <h1>Ollama <span>Arena</span></h1>
+  <p class="meta">Generated {ts}</p>
   <div class="grid">
-    <div class="card full"><h2>🏆 Leaderboard</h2>{lb_table}</div>
+    <div class="card full"><h2>Leaderboard</h2>{lb_table}</div>
     <div class="card full">{elo_chart}</div>
     <div class="card">{radar}</div>
     <div class="card">{heatmap}</div>
     <div class="card full">{perf_chart}</div>
   </div>
-  <p style="margin-top:32px;color:#8b949e;font-size:13px;text-align:center">
-    Powered by <a href="https://github.com/nazkari86-lab/ollama-arena"
-    style="color:#58a6ff">ollama-arena</a>
-  </p>
+  <footer>
+    <a href="https://github.com/nazkari86-lab/ollama-arena">github.com/nazkari86-lab/ollama-arena</a>
+  </footer>
 </body></html>
 """
 

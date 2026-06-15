@@ -155,6 +155,9 @@ def run_web(
         tasks.add_task(_do)
         return {"started": True, "name": name}
 
-    print(f"\n  🏟️  Ollama Arena Web — backend: {arena.client.name}")
-    print(f"  → http://{host if host != '0.0.0.0' else 'localhost'}:{port}\n")
+    from ._banner import print_banner
+    from . import __version__
+    print_banner(__version__)
+    print(f"  backend: {arena.client.name}")
+    print(f"  url:     http://{host if host != '0.0.0.0' else 'localhost'}:{port}\n")
     uvicorn.run(app, host=host, port=port, log_level="warning")

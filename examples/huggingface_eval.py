@@ -14,15 +14,15 @@ arena.load_hf_dataset("humaneval", limit=20)
 arena.load_hf_dataset("gsm8k", limit=20)
 
 # Run match: HumanEval (coding) — language is auto-detected per task
-print("=== HumanEval ===")
+print("HumanEval")
 r = arena.run_match("llama3.2:3b", "qwen2.5:7b", category="coding", n=10)
 print(f"  {r.model_a}: {r.a_wins}W   {r.model_b}: {r.b_wins}W")
 
 # Run match: GSM8K (math)
-print("\n=== GSM8K ===")
+print("\nGSM8K")
 r = arena.run_match("llama3.2:3b", "qwen2.5:7b", category="math", n=10)
 print(f"  {r.model_a}: {r.a_wins}W   {r.model_b}: {r.b_wins}W")
 
-print("\n=== Final Leaderboard ===")
+print("\nFinal Leaderboard")
 for e in arena.leaderboard():
     print(f"  #{e['rank']} {e['model']:30s} ELO={e['elo']:.0f}")

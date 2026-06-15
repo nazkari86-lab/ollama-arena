@@ -1,14 +1,13 @@
 """
-Closed-loop fine-tuning — turn arena failures into training data,
-then fine-tune weak models with Unsloth and re-test.
+Closed-loop fine-tuning pipeline.
 
-Pipeline:
-  1. analyze_weaknesses(db)   — find weak (model, category) pairs from match_log
-  2. build_dataset(weak)      — collect failed task instructions + reference solutions
-  3. unsloth_train(dataset)   — LoRA fine-tune via Unsloth (requires CUDA)
-  4. push_to_ollama(adapter)  — package adapter as Ollama Modelfile
+    analyze_weaknesses          Find (model, category) pairs with win_rate < 0.5
+    build_training_dataset      Distill solutions from a teacher model
+    unsloth_train               LoRA fine-tune via Unsloth, optional GGUF export
+    build_modelfile             Wrap a GGUF as an Ollama Modelfile
+    install_to_ollama           ollama create the new model
 
-Each step is optional and standalone.
+Each step is independent and can be used on its own.
 """
 from .analyzer  import analyze_weaknesses, weakness_report
 from .generator import build_training_dataset, save_jsonl

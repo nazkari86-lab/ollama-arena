@@ -64,6 +64,7 @@ class Arena:
         backend: str | Backend | None = None,
         api_key: str | None = None,
         from_datasets: list[str] | None = None,
+        judge_model: str | None = None,
     ):
         # Backend selection
         if backend is None:
@@ -77,6 +78,12 @@ class Arena:
         self.perf = PerfTracker(db_path=db_path)
         self._on_task_done = on_task_done
         self._extra_tasks: dict[str, list[dict]] = {}
+
+        # Optional LLM-as-judge for open-ended tasks
+        self.judge = None
+        if judge_model:
+            from .judge import LLMJudge
+            self.judge = LLMJudge(self.client, judge_model)
 
         if from_datasets:
             for name in from_datasets:
@@ -131,8 +138,17 @@ class Arena:
             self._log_perf(model_a, res_a)
             self._log_perf(model_b, res_b)
 
-            score_a = evaluate(task, res_a.text) if res_a.ok else 0.0
-            score_b = evaluate(task, res_b.text) if res_b.ok else 0.0
+            # Score: deterministic scorer first; fall back to LLM-judge for
+            # open-ended tasks (or use it as primary when explicitly enabled).
+            if self.judge and task.get("use_judge"):
+                jr = self.judge.grade_pair(
+                    task["instruction"], res_a.text, res_b.text,
+                    reference=task.get("expected_answer", ""),
+                )
+                score_a, score_b = jr.score_a, jr.score_b
+            else:
+                score_a = evaluate(task, res_a.text) if res_a.ok else 0.0
+                score_b = evaluate(task, res_b.text) if res_b.ok else 0.0
 
             if score_a > score_b:
                 outcome, a_wins = "a_wins", a_wins + 1

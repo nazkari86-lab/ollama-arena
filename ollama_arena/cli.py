@@ -1,17 +1,17 @@
 """
-ollama-arena CLI — beautiful terminal interface using Rich.
+ollama-arena command-line interface.
 
 Subcommands:
-  match        Run head-to-head battles
+  match        Run head-to-head match between two or more models
   tournament   Round-robin between N models
-  leaderboard  Show ELO table
-  list         List models on a backend
-  tasks        Show benchmark statistics
-  datasets     HuggingFace datasets — list / pull / refresh
-  finetune     Analyze weaknesses / generate data / train Unsloth LoRA
-  perf         Performance stats (tokens/sec, latency)
-  export       Export shareable HTML dashboard
-  web          Launch FastAPI dashboard with live charts
+  leaderboard  Show current ELO table
+  list         List models exposed by the configured backend
+  tasks        Show built-in benchmark statistics
+  datasets     List, pull, or refresh HuggingFace datasets
+  finetune     Analyze weaknesses, generate data, or run Unsloth LoRA
+  perf         Show throughput / latency statistics
+  export       Export a self-contained HTML dashboard
+  web          Launch the FastAPI dashboard
 """
 from __future__ import annotations
 import argparse, sys
@@ -67,20 +67,17 @@ def cmd_leaderboard(args):
     board = EloStore(db_path=args.db).leaderboard()
     if not board:
         console.print("[yellow]No matches yet.[/yellow]"); return
-    t = Table(title="🏆 ELO Leaderboard", show_lines=True)
-    t.add_column("Rank", style="bold yellow", width=6)
-    t.add_column("Model", style="bold cyan", min_width=22)
-    t.add_column("ELO", style="bold green", justify="right")
-    t.add_column("W", style="green", justify="right")
-    t.add_column("L", style="red", justify="right")
-    t.add_column("D", style="dim", justify="right")
-    t.add_column("Matches", justify="right")
-    t.add_column("Win%", justify="right")
-    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    t = Table(title="ELO Leaderboard", show_lines=False)
+    t.add_column("rank",  style="bold yellow", width=6)
+    t.add_column("model", style="bold cyan",   min_width=22)
+    t.add_column("elo",   style="bold green",  justify="right")
+    t.add_column("W",     style="green",       justify="right")
+    t.add_column("L",     style="red",         justify="right")
+    t.add_column("D",     style="dim",         justify="right")
+    t.add_column("matches", justify="right")
+    t.add_column("win%",    justify="right")
     for e in board:
-        rank = e["rank"]
-        m = medals.get(rank, str(rank))
-        t.add_row(m, e["model"], f"{e['elo']:.0f}",
+        t.add_row(str(e["rank"]), e["model"], f"{e['elo']:.0f}",
                   str(e["wins"]), str(e["losses"]), str(e["draws"]),
                   str(e["matches"]), f"{e['win_rate']:.0%}")
     console.print(t)
@@ -104,7 +101,7 @@ def cmd_match(args):
     if args.dataset:
         for d in args.dataset.split(","):
             n = arena.load_hf_dataset(d.strip(), limit=args.dataset_limit)
-            console.print(f"  📦 Loaded HF dataset '{d}': {n} tasks")
+            console.print(f"  loaded HF dataset '{d}': {n} tasks")
 
     from itertools import combinations
     pairs = list(combinations(models, 2))
@@ -112,17 +109,16 @@ def cmd_match(args):
     category = args.category
 
     console.print(Panel(
-        f"[bold cyan]OLLAMA ARENA[/bold cyan]\n"
         f"Backend : [yellow]{arena.client.name}[/yellow]\n"
         f"Models  : {', '.join(models)}\n"
         f"Category: [yellow]{category}[/yellow]   "
         f"Tasks/match: [yellow]{n}[/yellow]   DB: {args.db}",
-        title="⚔️  Battle Start"))
+        title="ollama-arena"))
 
     task_log = []
     def on_task(tid, sa, sb, outcome):
-        icon = {"a_wins":"✅","b_wins":"❌","draw":"🤝"}[outcome]
-        task_log.append(f"  {icon} {tid}: {sa:.2f} vs {sb:.2f}")
+        marker = {"a_wins":"[green]A[/green]","b_wins":"[red]B[/red]","draw":"[dim]=[/dim]"}[outcome]
+        task_log.append(f"  {marker}  {tid}: {sa:.2f} vs {sb:.2f}")
     arena._on_task_done = on_task
 
     for i, (ma, mb) in enumerate(pairs, 1):
@@ -136,18 +132,18 @@ def cmd_match(args):
             prog.remove_task(tid)
         for ln in task_log:
             console.print(ln)
-        winner = ma if r.a_wins > r.b_wins else mb if r.b_wins > r.a_wins else "Draw"
+        winner = ma if r.a_wins > r.b_wins else mb if r.b_wins > r.a_wins else "draw"
         da = r.elo_a_after - r.elo_a_before
         db = r.elo_b_after - r.elo_b_before
         s = Table(show_header=False, box=None, padding=(0,2))
         s.add_column("", style="dim"); s.add_column("A", style="cyan", justify="right")
         s.add_column("B", style="magenta", justify="right")
-        s.add_row("Model", ma, mb)
-        s.add_row("Wins", str(r.a_wins), str(r.b_wins))
-        s.add_row("Win%", f"{r.a_win_rate:.0%}", f"{r.b_win_rate:.0%}")
-        s.add_row("ELO", f"{r.elo_a_after:.0f} ({da:+.0f})", f"{r.elo_b_after:.0f} ({db:+.0f})")
+        s.add_row("model", ma, mb)
+        s.add_row("wins", str(r.a_wins), str(r.b_wins))
+        s.add_row("win%", f"{r.a_win_rate:.0%}", f"{r.b_win_rate:.0%}")
+        s.add_row("elo", f"{r.elo_a_after:.0f} ({da:+.0f})", f"{r.elo_b_after:.0f} ({db:+.0f})")
         console.print(s)
-        console.print(f"  🏆 [bold]Winner: {winner}[/bold]  ({r.duration_s:.0f}s)")
+        console.print(f"  winner: [bold]{winner}[/bold]  ({r.duration_s:.0f}s)")
 
     console.print()
     cmd_leaderboard(args)
@@ -163,7 +159,7 @@ def cmd_tournament(args):
     if args.dataset:
         for d in args.dataset.split(","):
             arena.load_hf_dataset(d.strip(), limit=args.dataset_limit)
-    console.print(f"⚔️  Tournament: {len(models)} models, "
+    console.print(f"Tournament: {len(models)} models, "
                   f"{args.n} tasks/match, category={args.category}")
     arena.run_tournament(models, category=args.category, n_per_match=args.n)
     cmd_leaderboard(args)
@@ -175,7 +171,7 @@ def cmd_tasks(args):
     from rich.table import Table
     from .tasks import task_stats, get_tasks, list_languages
     stats = task_stats()
-    t = Table(title="📋 Built-in Benchmarks", show_lines=False)
+    t = Table(title="Built-in benchmarks", show_lines=False)
     t.add_column("Category", style="bold cyan")
     t.add_column("Tasks", justify="right")
     t.add_column("Easy", justify="right", style="green")
@@ -202,26 +198,26 @@ def cmd_datasets(args):
     if args.refresh:
         for name in args.refresh.split(","):
             n = refresh_dataset(name.strip(), limit=args.limit)
-            console.print(f"  ✅ refreshed [cyan]{name}[/cyan]: {n} tasks")
+            console.print(f"  refreshed [cyan]{name}[/cyan]: {n} tasks")
         return
 
     if args.pull:
         for name in args.pull.split(","):
             tasks = load_dataset(name.strip(), limit=args.limit)
-            console.print(f"  ✅ cached [cyan]{name}[/cyan]: {len(tasks)} tasks")
+            console.print(f"  cached [cyan]{name}[/cyan]: {len(tasks)} tasks")
         return
 
-    t = Table(title="📚 HuggingFace Benchmark Datasets", show_lines=False)
-    t.add_column("Name", style="bold cyan")
-    t.add_column("HF id", style="dim")
-    t.add_column("Category")
-    t.add_column("Cached", justify="right")
-    t.add_column("License", style="dim")
+    t = Table(title="HuggingFace benchmark datasets", show_lines=False)
+    t.add_column("name", style="bold cyan")
+    t.add_column("hf id", style="dim")
+    t.add_column("category")
+    t.add_column("cached", justify="right")
+    t.add_column("license", style="dim")
     for d in available_datasets():
-        cached = "✅" if d["cached"] else "—"
+        cached = "yes" if d["cached"] else "—"
         t.add_row(d["name"], d["hf_id"], d["category"], cached, d["license"])
     console.print(t)
-    console.print("\nPull a dataset:  [cyan]ollama-arena datasets --pull humaneval[/cyan]")
+    console.print("\nPull:  [cyan]ollama-arena datasets --pull humaneval[/cyan]")
 
 
 # ── finetune ─────────────────────────────────────────────────────────────────
@@ -246,7 +242,7 @@ def cmd_finetune(args):
             teacher_model=args.teacher, backend=backend, n_tasks=args.n_tasks,
         )
         out = save_jsonl(ds, args.out or f"train_{args.model.replace(':','_')}.jsonl")
-        console.print(f"  ✅ Wrote {len(ds)} pairs → [cyan]{out}[/cyan]")
+        console.print(f"  wrote {len(ds)} pairs → [cyan]{out}[/cyan]")
         return
 
     if args.train:
@@ -254,7 +250,7 @@ def cmd_finetune(args):
         cfg = UnslothConfig(base_model=args.base_model or "unsloth/llama-3.2-3b-instruct-bnb-4bit",
                             epochs=args.epochs, output_dir=args.out_dir or "outputs/lora")
         out = unsloth_train(args.train, cfg)
-        console.print(f"  ✅ Training done: {out}")
+        console.print(f"  training done: {out}")
         return
 
     console.print("Pass one of: --analyze | --generate | --train")
@@ -268,7 +264,7 @@ def cmd_perf(args):
     stats = PerfTracker(args.db).stats()
     if not stats:
         console.print("[yellow]No performance data yet.[/yellow]"); return
-    t = Table(title="⚡ Performance (per model)", show_lines=False)
+    t = Table(title="Performance (per model)", show_lines=False)
     t.add_column("Model", style="bold cyan")
     t.add_column("Samples", justify="right")
     t.add_column("TPS mean", style="green", justify="right")
@@ -301,7 +297,7 @@ def cmd_export(args):
         args.out, leaderboard=leaderboard, matches=matches,
         categories=list_categories(), performance=perf,
     )
-    console.print(f"  ✅ Dashboard exported → [cyan]{out}[/cyan]")
+    console.print(f"  dashboard exported → [cyan]{out}[/cyan]")
     console.print(f"     open file://{Path(out).absolute()}")
 
 
@@ -317,7 +313,7 @@ def cmd_web(args):
 def main():
     p = argparse.ArgumentParser(
         prog="ollama-arena",
-        description="⚔️  Local LLM ELO Arena — benchmark Ollama / vLLM / LM Studio / "
+        description="Local LLM ELO Arena — benchmark Ollama / vLLM / LM Studio / "
                     "llama.cpp / OpenAI-compat with auto-scored battles.",
     )
     p.add_argument("--ollama", default="http://localhost:11434", metavar="URL")
@@ -388,7 +384,11 @@ def main():
 
     args = p.parse_args()
     if not args.cmd:
-        p.print_help(); sys.exit(0)
+        from . import __version__
+        from ._banner import print_banner
+        print_banner(__version__)
+        p.print_help()
+        sys.exit(0)
     args.func(args)
 
 

@@ -1,19 +1,13 @@
 """
-Real benchmark datasets pulled from HuggingFace Hub.
+HuggingFace Hub dataset loaders.
 
-Supports:
-  • HumanEval        (openai_humaneval)              — Python code generation
-  • MBPP             (mbpp)                          — Python code generation
-  • MBPP+            (evalplus/mbppplus)             — extended MBPP
-  • GSM8K            (gsm8k)                         — grade-school math
-  • MMLU             (cais/mmlu)                     — 57-subject knowledge
-  • BBH              (lukaemon/bbh)                  — Big-Bench Hard
-  • MultiPL-E        (nuprl/MultiPL-E)               — code gen in 22 languages
-  • TruthfulQA       (truthful_qa)                   — factual honesty
-  • HellaSwag        (hellaswag)                     — common-sense reasoning
-  • ARC              (ai2_arc)                       — science questions
+Built-in registry:
+    humaneval, mbpp, mbpp_plus, gsm8k, mmlu, bbh,
+    multipl_e, truthfulqa, hellaswag, arc
 
-Auto-cached under ~/.cache/ollama_arena/datasets/
+Each loader normalizes HF rows into the arena task schema. Downloaded
+records are cached under ~/.cache/ollama_arena/datasets/ unless overridden
+via the OLLAMA_ARENA_CACHE environment variable.
 """
 from .loader import (
     load_dataset,
