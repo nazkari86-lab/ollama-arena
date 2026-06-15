@@ -333,9 +333,9 @@ def main():
     add_common(pt)
     pt.set_defaults(func=cmd_tournament)
 
-    sub.add_parser("leaderboard", aliases=["lb"]).set_defaults(func=cmd_leaderboard)
-    sub.add_parser("list").set_defaults(func=cmd_list)
-    sub.add_parser("tasks").set_defaults(func=cmd_tasks)
+    sub.add_parser("leaderboard", aliases=["lb"], help="Show ELO rankings").set_defaults(func=cmd_leaderboard)
+    sub.add_parser("list", help="List available models in ELO store").set_defaults(func=cmd_list)
+    sub.add_parser("tasks", help="List built-in task categories and counts").set_defaults(func=cmd_tasks)
 
     pd = sub.add_parser("datasets", help="HF dataset cache (pull / refresh)")
     pd.add_argument("--pull",    default=None, help="Comma-sep names to download")

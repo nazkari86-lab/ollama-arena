@@ -6,7 +6,7 @@ deterministically (or with an LLM judge), and maintains an ELO rating
 across runs.
 
 ```
-pip install ollama-arena
+pip install git+https://github.com/nazkari86-lab/ollama-arena.git
 ollama-arena match --models llama3.2:3b,qwen2.5-coder:7b -n 20
 ```
 
@@ -38,16 +38,23 @@ ELO rather than Glicko-2 because (a) the implementation is two lines, and
 ## Install
 
 ```
-pip install ollama-arena
+pip install git+https://github.com/nazkari86-lab/ollama-arena.git
 ```
 
-Optional extras:
+Optional extras (append to the URL, or clone and `pip install '.[extra]'`):
 
 | Extra | Adds |
 |---|---|
-| `pip install 'ollama-arena[all]'` | web dashboard, Plotly charts, HuggingFace datasets |
-| `pip install 'ollama-arena[hf]'` | in-process TransformersBackend (torch, transformers) |
-| `pip install 'ollama-arena[finetune]'` | Unsloth fine-tune pipeline — CUDA recommended |
+| `[all]` | web dashboard, Plotly charts, HuggingFace datasets |
+| `[hf]` | in-process TransformersBackend (torch, transformers) |
+| `[finetune]` | Unsloth fine-tune pipeline — CUDA recommended |
+
+```
+# clone for extras
+git clone https://github.com/nazkari86-lab/ollama-arena.git
+cd ollama-arena
+pip install '.[all]'
+```
 
 The HuggingFace and fine-tune extras pull large dependencies and are off by default.
 
