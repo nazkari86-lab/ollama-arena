@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.2
+
+- Trim `pyproject.toml` keywords; mark as Beta.
+- Drop the deprecated `OllamaClient` alias (use `OllamaBackend` or
+  `Arena(backend=...)` directly).
+- Rewrite examples in a terser style.
+- Add `Makefile` and `.editorconfig`.
+
 ## 2.1.1
 
 Docs and style pass. Behaviour unchanged.

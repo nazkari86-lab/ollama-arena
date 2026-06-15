@@ -35,12 +35,6 @@ class MatchResult:
     duration_s: float = 0.0
 
 
-# Backwards-compatible alias kept for the README and the original 1.0 examples
-class OllamaClient(OllamaBackend):
-    """Deprecated: use OllamaBackend or Arena(backend=...) directly."""
-    pass
-
-
 class Arena:
     """Pair-wise match driver with persistent ELO ratings.
 

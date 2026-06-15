@@ -4,28 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ollama-arena"
-version = "2.1.1"
-description = "Local LLM evaluation arena with ELO ratings. Multi-backend (Ollama, vLLM, LM Studio, OpenAI-compat), HuggingFace benchmark loaders, multi-language sandboxed code execution, performance metrics, and an Unsloth-based fine-tuning pipeline."
+version = "2.1.2"
+description = "Pair-wise ELO evaluation arena for local LLMs."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "nazkari86-lab" }]
-keywords = [
-    "ollama", "vllm", "lm-studio", "llama-cpp",
-    "llm", "benchmark", "elo", "arena", "evaluation",
-    "local-ai", "huggingface", "humaneval", "mbpp", "gsm8k", "mmlu",
-    "unsloth", "lora", "fine-tuning",
-]
+keywords = ["llm", "ollama", "benchmark", "elo", "evaluation"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
+    "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 requires-python = ">=3.9"
