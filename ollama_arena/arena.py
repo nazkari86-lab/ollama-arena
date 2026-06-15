@@ -1,21 +1,21 @@
 """
-Core arena engine — runs head-to-head LLM battles with ELO tracking.
+Core arena engine — multi-backend ELO battles for local LLMs.
 """
 from __future__ import annotations
-import json, logging, re, time
+import logging, time
 from dataclasses import dataclass, field
+from itertools import combinations
 from typing import Callable, Optional
 
-import requests
-
+from .backends import auto_backend, Backend, GenResult
+from .backends.ollama import OllamaBackend
+from .backends.openai_compat import OpenAICompatBackend
 from .elo import EloStore
 from .evaluator import evaluate
+from .performance import PerfTracker
 from .tasks import get_tasks
 
 log = logging.getLogger("arena")
-
-_DEFAULT_OLLAMA = "http://localhost:11434"
-_THINK_TAG = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
 @dataclass
@@ -37,104 +37,102 @@ class MatchResult:
     duration_s: float = 0.0
 
 
-class OllamaClient:
-    def __init__(self, base_url: str = _DEFAULT_OLLAMA, timeout: int = 120):
-        self.base = base_url.rstrip("/")
-        self.timeout = timeout
-
-    def generate(self, model: str, prompt: str) -> str:
-        """Stream response from Ollama, strip <think> tags (for DeepSeek-R1)."""
-        try:
-            r = requests.post(
-                f"{self.base}/api/generate",
-                json={
-                    "model": model, "prompt": prompt, "stream": True,
-                    "options": {"num_ctx": 4096, "temperature": 0.0, "num_predict": 1024},
-                },
-                timeout=self.timeout, stream=True,
-            )
-            text = ""
-            for line in r.iter_lines():
-                if not line:
-                    continue
-                try:
-                    chunk = json.loads(line)
-                    text += chunk.get("response", "")
-                    if chunk.get("done"):
-                        break
-                except json.JSONDecodeError:
-                    pass
-            return _THINK_TAG.sub("", text).strip()
-        except Exception as e:
-            log.warning(f"[ollama] {model}: {e}")
-            return ""
-
-    def list_models(self) -> list[str]:
-        try:
-            r = requests.get(f"{self.base}/api/tags", timeout=5)
-            return [m["name"] for m in r.json().get("models", [])]
-        except Exception:
-            return []
-
-    def is_alive(self) -> bool:
-        try:
-            requests.get(f"{self.base}/api/tags", timeout=3)
-            return True
-        except Exception:
-            return False
+# Backwards-compatible alias kept for the README and the original 1.0 examples
+class OllamaClient(OllamaBackend):
+    """Deprecated: use OllamaBackend or Arena(backend=...) directly."""
+    pass
 
 
 class Arena:
     """
-    Run ELO-rated head-to-head matches between Ollama models.
+    Run ELO-rated head-to-head matches between local LLMs.
 
-    Usage:
-        arena = Arena()
-        result = arena.run_match("llama3.2:3b", "qwen2.5:7b", category="coding", n=10)
-        print(arena.leaderboard())
+    Works with any of these backends:
+
+        Arena()                                # default: Ollama at :11434
+        Arena(backend="http://localhost:8000/v1")        # vLLM
+        Arena(backend="lmstudio")                        # LM Studio preset
+        Arena(backend="groq", api_key="gsk_...")         # Groq cloud
+        Arena(backend=OllamaBackend(...))                # explicit instance
     """
 
     def __init__(
         self,
-        ollama_url: str = _DEFAULT_OLLAMA,
+        ollama_url: str = "http://localhost:11434",
         db_path: str = "arena.db",
         on_task_done: Optional[Callable] = None,
+        backend: str | Backend | None = None,
+        api_key: str | None = None,
+        from_datasets: list[str] | None = None,
     ):
-        self.client  = OllamaClient(base_url=ollama_url)
-        self.elo     = EloStore(db_path=db_path)
-        self._on_task_done = on_task_done  # callback(task_id, score_a, score_b, outcome)
+        # Backend selection
+        if backend is None:
+            self.client = auto_backend(ollama_url)
+        elif isinstance(backend, str):
+            self.client = auto_backend(backend, api_key=api_key)
+        else:
+            self.client = backend
 
-    # ── Public API ──────────────────────────────────────────────────────────
+        self.elo  = EloStore(db_path=db_path)
+        self.perf = PerfTracker(db_path=db_path)
+        self._on_task_done = on_task_done
+        self._extra_tasks: dict[str, list[dict]] = {}
 
+        if from_datasets:
+            for name in from_datasets:
+                self.load_hf_dataset(name)
+
+    # ── Dataset injection ───────────────────────────────────────────────────
+    def load_hf_dataset(self, name: str, limit: int | None = None) -> int:
+        """Pull tasks from a HuggingFace dataset and add to the arena pool."""
+        from .datasets import load_dataset
+        tasks = load_dataset(name, limit=limit)
+        # Group by category for routing
+        for t in tasks:
+            cat = t.get("category", "coding")
+            self._extra_tasks.setdefault(cat, []).append(t)
+        log.info(f"[arena] loaded {len(tasks)} tasks from '{name}'")
+        return len(tasks)
+
+    def _gather_tasks(self, category: str, n: int,
+                      difficulty: str | None = None) -> list[dict]:
+        pool = list(get_tasks(category=category, difficulty=difficulty))
+        pool += self._extra_tasks.get(category, [])
+        if difficulty:
+            pool = [t for t in pool if t.get("difficulty") == difficulty]
+        return pool[:n]
+
+    # ── Single match ────────────────────────────────────────────────────────
     def run_match(
         self,
         model_a: str,
         model_b: str,
         category: str = "coding",
         n: int = 10,
-        difficulty: Optional[str] = None,
+        difficulty: str | None = None,
     ) -> MatchResult:
-        """
-        Run n tasks from `category` between model_a and model_b.
-        Updates ELO after every task. Returns MatchResult.
-        """
-        tasks = get_tasks(category=category, limit=n, difficulty=difficulty)
+        tasks = self._gather_tasks(category, n, difficulty)
         if not tasks:
-            raise ValueError(f"No tasks found for category='{category}' difficulty='{difficulty}'")
+            raise ValueError(
+                f"No tasks for category='{category}' difficulty='{difficulty}'. "
+                f"Available: {list(self._extra_tasks.keys())}"
+            )
 
         elo_a_before = self.elo.get(model_a)
         elo_b_before = self.elo.get(model_b)
-
         a_wins = b_wins = draws = 0
         task_results = []
         t0 = time.time()
 
         for task in tasks:
-            resp_a = self.client.generate(model_a, task["instruction"])
-            resp_b = self.client.generate(model_b, task["instruction"])
+            res_a = self.client.generate(model_a, task["instruction"])
+            res_b = self.client.generate(model_b, task["instruction"])
 
-            score_a = evaluate(task, resp_a)
-            score_b = evaluate(task, resp_b)
+            self._log_perf(model_a, res_a)
+            self._log_perf(model_b, res_b)
+
+            score_a = evaluate(task, res_a.text) if res_a.ok else 0.0
+            score_b = evaluate(task, res_b.text) if res_b.ok else 0.0
 
             if score_a > score_b:
                 outcome, a_wins = "a_wins", a_wins + 1
@@ -143,62 +141,69 @@ class Arena:
             else:
                 outcome, draws = "draw", draws + 1
 
-            # Per-task ELO update
             self.elo.record_match(model_a, model_b, category, score_a, score_b)
 
             task_results.append({
-                "task_id": task["id"],
+                "task_id":    task["id"],
                 "difficulty": task.get("difficulty", "?"),
-                "score_a": round(score_a, 3),
-                "score_b": round(score_b, 3),
-                "outcome": outcome,
+                "language":   task.get("language", "natural"),
+                "score_a":    round(score_a, 3),
+                "score_b":    round(score_b, 3),
+                "tps_a":      res_a.tps,
+                "tps_b":      res_b.tps,
+                "outcome":    outcome,
             })
 
             log.info(
-                f"[{task['id']}] {model_a}={score_a:.2f}  {model_b}={score_b:.2f}  → {outcome}"
+                f"[{task['id']}] {model_a}={score_a:.2f} ({res_a.tps:.0f}tps)  "
+                f"{model_b}={score_b:.2f} ({res_b.tps:.0f}tps)  → {outcome}"
             )
-
             if self._on_task_done:
                 self._on_task_done(task["id"], score_a, score_b, outcome)
 
         total = len(tasks)
-        elo_a_after = self.elo.get(model_a)
-        elo_b_after = self.elo.get(model_b)
-
         return MatchResult(
             model_a=model_a, model_b=model_b, category=category,
-            tasks_run=total,
-            a_wins=a_wins, b_wins=b_wins, draws=draws,
+            tasks_run=total, a_wins=a_wins, b_wins=b_wins, draws=draws,
             a_win_rate=round(a_wins / total, 3),
             b_win_rate=round(b_wins / total, 3),
             elo_a_before=elo_a_before, elo_b_before=elo_b_before,
-            elo_a_after=elo_a_after, elo_b_after=elo_b_after,
+            elo_a_after=self.elo.get(model_a),
+            elo_b_after=self.elo.get(model_b),
             task_results=task_results,
             duration_s=round(time.time() - t0, 1),
         )
 
+    # ── Tournament ──────────────────────────────────────────────────────────
     def run_tournament(
         self,
         models: list[str],
         category: str = "coding",
         n_per_match: int = 5,
     ) -> list[dict]:
-        """
-        Round-robin tournament: every model plays every other model.
-        Returns final leaderboard.
-        """
-        from itertools import combinations
         pairs = list(combinations(models, 2))
         log.info(f"[tournament] {len(models)} models × {len(pairs)} matches × {n_per_match} tasks")
-
         for i, (a, b) in enumerate(pairs, 1):
-            log.info(f"[tournament] Match {i}/{len(pairs)}: {a} vs {b}")
+            log.info(f"[tournament] {i}/{len(pairs)}: {a} vs {b}")
             self.run_match(a, b, category=category, n=n_per_match)
-
         return self.leaderboard()
 
+    # ── Read-only views ─────────────────────────────────────────────────────
     def leaderboard(self) -> list[dict]:
         return self.elo.leaderboard()
 
     def match_history(self, limit: int = 20) -> list[dict]:
         return self.elo.match_history(limit=limit)
+
+    def performance_stats(self) -> list[dict]:
+        return self.perf.stats()
+
+    # ── Internal ───────────────────────────────────────────────────────────
+    def _log_perf(self, model: str, res: GenResult):
+        if res.ok:
+            self.perf.record(
+                model=model, backend=self.client.name,
+                tokens_in=res.tokens_in, tokens_out=res.tokens_out,
+                latency_s=res.latency_s, tps=res.tps,
+                time_to_first=res.time_to_first,
+            )

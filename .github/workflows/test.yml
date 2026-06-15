@@ -1,0 +1,41 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,viz]"
+      - name: Lint
+        run: ruff check ollama_arena
+      - name: Smoke test imports
+        run: |
+          python -c "from ollama_arena import Arena, get_tasks, task_stats; print(task_stats())"
+          python -c "from ollama_arena.backends import OllamaBackend, OpenAICompatBackend, auto_backend"
+          python -c "from ollama_arena.sandboxes import run_in_language, available_languages; print(available_languages())"
+          python -c "from ollama_arena.evaluator import evaluate"
+          python -c "from ollama_arena.elo import EloStore, update_elo"
+          python -c "from ollama_arena.performance import PerfTracker"
+      - name: Run pytest (if any)
+        run: |
+          if [ -d tests ]; then pytest -q; fi
+        shell: bash

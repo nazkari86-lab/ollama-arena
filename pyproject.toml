@@ -1,20 +1,26 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "ollama-arena"
-version = "1.0.0"
-description = "⚔️ Local LLM ELO Arena — benchmark your Ollama models head-to-head"
+version = "2.0.0"
+description = "⚔️ Local LLM ELO Arena — multi-backend (Ollama / vLLM / LM Studio / OpenAI-compat), HuggingFace benchmarks, multi-language code execution, Unsloth fine-tune loop"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "nazkari86-lab" }]
-keywords = ["ollama", "llm", "benchmark", "elo", "arena", "evaluation", "local-ai"]
+keywords = [
+    "ollama", "vllm", "lm-studio", "llama-cpp",
+    "llm", "benchmark", "elo", "arena", "evaluation",
+    "local-ai", "huggingface", "humaneval", "mbpp", "gsm8k", "mmlu",
+    "unsloth", "lora", "fine-tuning",
+]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -33,27 +39,57 @@ web = [
     "fastapi>=0.100",
     "uvicorn[standard]>=0.22",
 ]
+viz = [
+    "plotly>=5.18",
+]
+datasets = [
+    "datasets>=2.14",
+    "huggingface_hub>=0.20",
+]
+finetune = [
+    "unsloth>=2024.8",
+    "transformers>=4.40",
+    "peft>=0.10",
+    "trl>=0.9",
+    "accelerate>=0.30",
+    "datasets>=2.14",
+    "torch>=2.2",
+    "bitsandbytes>=0.43; sys_platform != 'darwin'",
+]
+all = [
+    "fastapi>=0.100", "uvicorn[standard]>=0.22",
+    "plotly>=5.18",
+    "datasets>=2.14", "huggingface_hub>=0.20",
+]
 dev = [
     "pytest>=7",
     "pytest-cov",
     "ruff",
+    "mypy",
 ]
 
 [project.scripts]
 ollama-arena = "ollama_arena.cli:main"
+llm-arena   = "ollama_arena.cli:main"
 
 [project.urls]
-Homepage    = "https://github.com/nazkari86-lab/ollama-arena"
-Repository  = "https://github.com/nazkari86-lab/ollama-arena"
-Issues      = "https://github.com/nazkari86-lab/ollama-arena/issues"
+Homepage      = "https://github.com/nazkari86-lab/ollama-arena"
+Repository    = "https://github.com/nazkari86-lab/ollama-arena"
+Issues        = "https://github.com/nazkari86-lab/ollama-arena/issues"
+Documentation = "https://github.com/nazkari86-lab/ollama-arena#readme"
+Changelog     = "https://github.com/nazkari86-lab/ollama-arena/releases"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ollama_arena*"]
 
 [tool.setuptools.package-data]
-"*" = ["templates/*.html"]
+"*" = ["templates/*.html", "static/*"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"

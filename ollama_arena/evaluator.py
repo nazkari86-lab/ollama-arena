@@ -1,52 +1,76 @@
-"""Task evaluators for each benchmark category."""
+"""
+Universal evaluator — routes tasks to the right scorer based on category/id.
+Auto-scores: code execution (any language), exact-match reasoning, vuln detection.
+"""
 from __future__ import annotations
-import re
-import logging
+import logging, re
+from typing import Any
 
 log = logging.getLogger("arena.eval")
 
 
-def extract_code(text: str) -> str:
-    """Extract code block from LLM response."""
-    m = re.search(r"```(?:python|py|bash|sh)?\s*(.*?)```", text, re.DOTALL)
+# ── Code-block extraction ────────────────────────────────────────────────────
+_FENCED = re.compile(r"```(?:python|py|javascript|js|typescript|ts|rust|rs|go|cpp|c\+\+|bash|sh)?\s*(.*?)```",
+                     re.DOTALL | re.IGNORECASE)
+
+
+def extract_code(text: str, language: str = "python") -> str:
+    """Pull the code block from an LLM response, language-aware."""
+    m = _FENCED.search(text)
     if m:
         return m.group(1).strip()
     stripped = text.strip()
-    # Looks like raw code
-    if any(stripped.startswith(p) for p in ("import ", "from ", "def ", "class ", "#!", "async ")):
+    py_prefixes = ("import ", "from ", "def ", "class ", "async ", "#!", "if ", "@")
+    js_prefixes = ("import ", "const ", "let ", "var ", "function ", "class ", "async ")
+    rust_prefixes = ("use ", "fn ", "pub ", "struct ", "impl ", "mod ", "#[")
+    go_prefixes = ("package ", "import ", "func ")
+    cpp_prefixes = ("#include", "int ", "void ", "auto ", "class ", "namespace ", "using ")
+    prefix_map = {
+        "python": py_prefixes, "javascript": js_prefixes, "typescript": js_prefixes,
+        "rust": rust_prefixes, "go": go_prefixes, "cpp": cpp_prefixes,
+    }
+    prefixes = prefix_map.get(language, py_prefixes)
+    if any(stripped.startswith(p) for p in prefixes):
         return stripped
     return stripped
 
 
+# ── Coding (executable) ──────────────────────────────────────────────────────
 def eval_coding(task: dict, response: str) -> float:
-    """Execute generated code + assert tests. Returns 0.0 or 1.0."""
-    from .sandbox import run_with_tests
-    code = extract_code(response)
+    """Run code, execute test_code, score 1.0 if all asserts pass."""
+    from .sandboxes import run_in_language
+    language = task.get("language", "python")
+    code = extract_code(response, language)
     if not code:
         return 0.0
-    test_code = task.get("test_code", "")
-    if not test_code:
-        return 0.5  # no tests — partial credit
-    result = run_with_tests(code, test_code, timeout_sec=10)
+    test = task.get("test_code", "")
+    if not test:
+        return 0.5
+    full = code + "\n" + test
+    result = run_in_language(full, language=language, timeout=task.get("timeout", 15))
+    if result.blocked:
+        return 0.0
     if result.timed_out:
-        log.debug(f"[eval] {task['id']}: timeout")
-    elif result.error:
-        log.debug(f"[eval] {task['id']}: {result.error[:80]}")
+        return 0.0
     return 1.0 if result.accepted else 0.0
 
 
-def eval_reasoning(task: dict, response: str) -> float:
-    """Exact/contains/numeric match for reasoning tasks."""
+# ── Reasoning / math / knowledge (string match) ──────────────────────────────
+def eval_text_answer(task: dict, response: str) -> float:
+    """Exact/contains/numeric scoring."""
     resp = response.strip().lower()
-    expected = str(task.get("expected_answer", "")).lower()
+    expected = str(task.get("expected_answer", "")).strip().lower()
     check = task.get("check", "contains")
 
+    if not expected:
+        return 0.5
+
     if check == "exact":
-        # Allow answer anywhere in first 50 chars
-        return 1.0 if expected in resp[:80] else 0.0
+        return 1.0 if expected in resp[:120] else 0.0
 
     if check == "exact_prefix":
-        return 1.0 if resp.startswith(expected) else 0.0
+        cleaned = re.sub(r"^[^a-zA-Z0-9]+", "", resp)
+        return 1.0 if cleaned.startswith(expected) else 0.0
 
     if check == "contains":
         return 1.0 if expected in resp else 0.0
@@ -54,8 +78,8 @@ def eval_reasoning(task: dict, response: str) -> float:
     if check == "numeric_approx":
         tolerance = task.get("tolerance", 2)
         try:
-            nums = [float(n) for n in re.findall(r"-?\d+\.?\d*", resp)]
-            target = float(expected)
+            nums = [float(n.replace(",", "")) for n in re.findall(r"-?\d+\.?\d*", resp)]
+            target = float(expected.replace(",", ""))
             return 1.0 if any(abs(n - target) <= tolerance for n in nums) else 0.0
         except Exception:
             return 0.0
@@ -63,73 +87,67 @@ def eval_reasoning(task: dict, response: str) -> float:
     return 0.0
 
 
+# ── Security & inspection (keyword presence) ─────────────────────────────────
 def eval_security(task: dict, response: str) -> float:
-    """Score CVE/vulnerability detection by keyword matching."""
     resp = response.lower()
-    expected_vulns = [v.lower() for v in task.get("expected_vulns", [])]
+    expected = [v.lower() for v in task.get("expected_vulns", [])]
     expected_sev = task.get("expected_severity", "").lower()
-
-    if not expected_vulns:
+    if not expected:
         return 0.5
-
-    detected = sum(1 for v in expected_vulns if any(word in resp for word in v.split("_")))
-    vuln_score = detected / len(expected_vulns)
+    detected = sum(1 for v in expected if any(w in resp for w in v.split("_")))
+    vuln_score = detected / len(expected)
     sev_score = 1.0 if expected_sev and expected_sev in resp else 0.5
     return round(vuln_score * 0.7 + sev_score * 0.3, 3)
 
 
 def eval_inspection(task: dict, response: str) -> float:
-    """Precision/recall for code inspection tasks."""
     resp = response.lower()
     has_bug = task.get("has_bug", False)
-    expected_issues = [i.lower() for i in task.get("expected_issues", [])]
-
+    expected = [i.lower() for i in task.get("expected_issues", [])]
     if not has_bug:
-        if any(w in resp for w in ("clean", "no issue", "no vulnerabilit", "no bug", "looks good")):
+        if any(w in resp for w in ("clean", "no issue", "no vulnerabilit",
+                                     "no bug", "looks good", "looks safe")):
             return 1.0
-        return 0.3  # false positive penalty
-
-    if not expected_issues:
+        return 0.3
+    if not expected:
         return 0.5
-    detected = sum(1 for issue in expected_issues
-                   if any(word in resp for word in issue.split()))
-    return round(detected / len(expected_issues), 3)
+    detected = sum(1 for issue in expected if any(w in resp for w in issue.split()))
+    return round(detected / len(expected), 3)
 
 
 def eval_planning(task: dict, response: str) -> float:
-    """Keyword coverage + length heuristic for planning tasks."""
     resp = response.lower()
-    key_components = [c.lower() for c in task.get("key_components", [])]
-
-    if not key_components:
+    keys = [c.lower() for c in task.get("key_components", [])]
+    if not keys:
         return 0.5
-
-    found = sum(1 for c in key_components if c in resp)
-    component_score = found / len(key_components)
-
+    found = sum(1 for c in keys if c in resp)
+    component_score = found / len(keys)
     words = len(response.split())
     length_score = min(1.0, words / 150) if words < 150 else (1.0 if words <= 800 else 0.9)
-
     return round(component_score * 0.7 + length_score * 0.3, 3)
 
 
 # ── Router ──────────────────────────────────────────────────────────────────
-
 def evaluate(task: dict, response: str) -> float:
-    """Route task to correct evaluator. Returns score 0.0–1.0."""
     tid = task.get("id", "")
     cat = task.get("category", "")
 
-    if tid.startswith("code_") or cat == "coding":
+    if cat == "coding" or tid.startswith(("code_", "humaneval_", "mbpp_", "multipl_")):
         return eval_coding(task, response)
-    if tid.startswith("reas_") or cat == "reasoning":
-        return eval_reasoning(task, response)
-    if tid.startswith("sec_") or cat == "security":
+    if cat in ("math", "reasoning", "knowledge") or tid.startswith(
+        ("reas_", "gsm8k_", "mmlu_", "bbh_", "hellaswag_", "truthful_", "arc_")
+    ):
+        return eval_text_answer(task, response)
+    if cat == "security" or tid.startswith("sec_"):
         return eval_security(task, response)
-    if tid.startswith("insp_") or cat == "inspection":
+    if cat == "inspection" or tid.startswith("insp_"):
         return eval_inspection(task, response)
-    if tid.startswith("plan_") or cat == "planning":
+    if cat == "planning" or tid.startswith("plan_"):
         return eval_planning(task, response)
 
-    log.warning(f"[eval] unknown task type: {tid}")
+    log.warning(f"[eval] unknown task type: {tid} / cat={cat}")
     return 0.0
+
+
+# Back-compat aliases
+eval_reasoning = eval_text_answer

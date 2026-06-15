@@ -2,57 +2,77 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ollama Arena ⚔️</title>
+<script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
-  .header { background: linear-gradient(135deg, #161b22 0%, #1f2937 100%); padding: 24px 32px; border-bottom: 1px solid #30363d; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+
+  /* Header */
+  .header { background: linear-gradient(135deg, #161b22 0%, #1f2937 100%); padding: 24px 32px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
   .header h1 { font-size: 28px; font-weight: 700; }
   .header h1 span { color: #58a6ff; }
-  .header p { color: #8b949e; margin-top: 4px; font-size: 14px; }
-  .layout { display: grid; grid-template-columns: 1fr 360px; gap: 24px; padding: 24px 32px; max-width: 1400px; margin: 0 auto; }
-  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; }
-  .card h2 { font-size: 16px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }
+  .header p { color: #8b949e; font-size: 14px; margin-top: 4px; }
+  .badges { display: flex; gap: 10px; }
+  .badge { padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: #1a3a2e; color: #3fb950; }
+  .badge-blue  { background: #1c2e4a; color: #58a6ff; }
+
+  /* Tabs */
+  .tabs { display: flex; padding: 0 32px; background: #0d1117; border-bottom: 1px solid #30363d; gap: 4px; }
+  .tab { padding: 14px 22px; font-size: 14px; font-weight: 500; color: #8b949e; cursor: pointer; border-bottom: 2px solid transparent; transition: 0.15s; }
+  .tab:hover { color: #e6edf3; }
+  .tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+
+  /* Layout */
+  .container { padding: 24px 32px; max-width: 1500px; margin: 0 auto; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  .layout { display: grid; grid-template-columns: 1fr 380px; gap: 24px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 22px; margin-bottom: 20px; }
+  .card h2 { font-size: 14px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .card.full { grid-column: 1/-1; }
+
+  /* Tables */
   table { width: 100%; border-collapse: collapse; }
   th { text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 600; color: #8b949e; text-transform: uppercase; border-bottom: 1px solid #30363d; }
-  td { padding: 12px 12px; font-size: 14px; border-bottom: 1px solid #21262d; }
-  tr:last-child td { border-bottom: none; }
+  td { padding: 12px; font-size: 14px; border-bottom: 1px solid #21262d; }
   tr:hover td { background: #1f2937; }
+
   .rank-1 { color: #ffd700; font-weight: 700; }
   .rank-2 { color: #c0c0c0; font-weight: 700; }
   .rank-3 { color: #cd7f32; font-weight: 700; }
   .elo { font-weight: 700; color: #58a6ff; }
-  .win { color: #3fb950; }
+  .win  { color: #3fb950; }
   .loss { color: #f85149; }
   .draw { color: #8b949e; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
-  .badge-green { background: #1a3a2e; color: #3fb950; }
-  .badge-blue  { background: #1c2e4a; color: #58a6ff; }
-  .badge-red   { background: #3d1a1a; color: #f85149; }
-  .badge-yellow{ background: #3d3000; color: #e3b341; }
 
-  /* Match form */
-  .form-group { margin-bottom: 14px; }
-  label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; }
+  /* Form */
+  .form-group { margin-bottom: 12px; }
+  label { display: block; font-size: 11px; color: #8b949e; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
   select, input { width: 100%; background: #0d1117; border: 1px solid #30363d; color: #e6edf3; padding: 8px 12px; border-radius: 6px; font-size: 14px; }
   select:focus, input:focus { outline: none; border-color: #58a6ff; }
-  .btn { width: 100%; padding: 10px; background: #238636; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+
+  /* Button */
+  .btn { width: 100%; padding: 10px; background: #238636; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.15s; }
   .btn:hover { background: #2ea043; }
   .btn:disabled { background: #21262d; color: #8b949e; cursor: not-allowed; }
   .btn-blue { background: #1f6feb; }
   .btn-blue:hover { background: #388bfd; }
+  .btn-small { padding: 4px 10px; font-size: 12px; width: auto; }
 
-  /* Log */
-  .log { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 12px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 200px; overflow-y: auto; margin-top: 12px; }
-  .log-win  { color: #3fb950; }
-  .log-loss { color: #f85149; }
-  .log-draw { color: #8b949e; }
-
+  /* Status */
   .status { padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-top: 10px; display: none; }
   .status.running { background: #1c2e4a; color: #58a6ff; display: block; }
   .status.done    { background: #1a3a2e; color: #3fb950; display: block; }
   .status.error   { background: #3d1a1a; color: #f85149; display: block; }
+
+  /* Log */
+  .log { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 12px; font-family: ui-monospace, monospace; font-size: 12px; max-height: 220px; overflow-y: auto; margin-top: 12px; }
+  .log-win  { color: #3fb950; }
+  .log-loss { color: #f85149; }
+  .log-draw { color: #8b949e; }
 
   .history-item { padding: 10px 0; border-bottom: 1px solid #21262d; font-size: 13px; }
   .history-item:last-child { border-bottom: none; }
@@ -60,102 +80,179 @@
   .hist-meta { color: #8b949e; font-size: 12px; }
 
   .empty { text-align: center; color: #8b949e; padding: 40px; font-size: 14px; }
-  .refresh { float: right; font-size: 12px; color: #58a6ff; cursor: pointer; background: none; border: none; }
+  .refresh { font-size: 11px; color: #58a6ff; cursor: pointer; background: none; border: none; }
   .refresh:hover { text-decoration: underline; }
+
+  /* Stats grid */
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .stat-card { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 16px; }
+  .stat-num { font-size: 28px; font-weight: 700; color: #58a6ff; }
+  .stat-label { font-size: 12px; color: #8b949e; text-transform: uppercase; margin-top: 4px; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Dataset tab */
+  .dataset-card { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+  .dataset-name { font-weight: 700; color: #58a6ff; font-size: 15px; }
+  .dataset-desc { color: #8b949e; font-size: 13px; margin: 4px 0 10px; }
+  .dataset-meta { display: flex; gap: 8px; align-items: center; font-size: 12px; }
 </style>
 </head>
 <body>
+
 <div class="header">
-  <h1>⚔️ Ollama <span>Arena</span></h1>
-  <p>Local LLM ELO benchmark — your models, your leaderboard</p>
+  <div>
+    <h1>⚔️ Ollama <span>Arena</span></h1>
+    <p>Local LLM ELO benchmark · Multi-backend · HuggingFace datasets · Auto fine-tuning</p>
+  </div>
+  <div class="badges">
+    <span class="badge badge-green" id="backend-badge">Backend: ?</span>
+    <span class="badge badge-blue" id="version-badge">v2.0.0</span>
+  </div>
 </div>
 
-<div class="layout">
-  <div>
-    <!-- Leaderboard -->
-    <div class="card" style="margin-bottom:24px">
-      <h2>🏆 ELO Leaderboard <button class="refresh" onclick="loadLeaderboard()">↻ refresh</button></h2>
-      <div id="lb-table"><div class="empty">No matches yet. Run your first battle →</div></div>
+<div class="tabs">
+  <div class="tab active" data-tab="dashboard">📊 Dashboard</div>
+  <div class="tab" data-tab="battle">⚔️ Battle</div>
+  <div class="tab" data-tab="datasets">📚 Datasets</div>
+  <div class="tab" data-tab="performance">⚡ Performance</div>
+</div>
+
+<div class="container">
+
+  <!-- DASHBOARD -->
+  <div class="tab-content active" id="tab-dashboard">
+    <div class="card">
+      <h2>📈 Live Stats</h2>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-num" id="stat-models">0</div><div class="stat-label">Models tested</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-matches">0</div><div class="stat-label">Matches played</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-tasks">0</div><div class="stat-label">Tasks available</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-languages">0</div><div class="stat-label">Languages</div></div>
+      </div>
     </div>
 
-    <!-- History -->
     <div class="card">
-      <h2>📜 Recent Matches <button class="refresh" onclick="loadHistory()">↻ refresh</button></h2>
-      <div id="history"><div class="empty">No matches yet.</div></div>
+      <h2>🏆 ELO Leaderboard <button class="refresh" onclick="loadAll()">↻ refresh</button></h2>
+      <div id="leaderboard-table"><div class="empty">No matches yet.</div></div>
+    </div>
+
+    <div class="card full">
+      <h2>📊 ELO Over Time</h2>
+      <div id="chart-elo"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card"><h2>📡 Capability Radar</h2><div id="chart-radar"><div class="empty">Need more matches…</div></div></div>
+      <div class="card"><h2>⚔️ Head-to-Head Win Rate</h2><div id="chart-heatmap"><div class="empty">Need more matches…</div></div></div>
+    </div>
+
+    <div class="card">
+      <h2>📜 Recent Matches</h2>
+      <div id="history"></div>
     </div>
   </div>
 
-  <!-- Sidebar -->
-  <div>
-    <div class="card" style="margin-bottom:24px">
-      <h2>⚔️ Run Battle</h2>
-      <div class="form-group">
-        <label>Model A</label>
-        <select id="model-a"><option value="">Loading...</option></select>
+  <!-- BATTLE -->
+  <div class="tab-content" id="tab-battle">
+    <div class="layout">
+      <div class="card">
+        <h2>📊 Quick Stats</h2>
+        <div id="leaderboard-table-2"><div class="empty">No matches yet.</div></div>
       </div>
-      <div class="form-group">
-        <label>Model B</label>
-        <select id="model-b"><option value="">Loading...</option></select>
-      </div>
-      <div class="form-group">
-        <label>Category</label>
-        <select id="category">
-          <option value="coding">Coding</option>
-          <option value="reasoning">Reasoning</option>
-          <option value="security">Security</option>
-          <option value="planning">Planning</option>
-          <option value="inspection">Inspection</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Tasks per match</label>
-        <input type="number" id="n-tasks" value="5" min="1" max="30">
-      </div>
-      <button class="btn" id="run-btn" onclick="runMatch()">⚔️ Start Battle</button>
-      <div class="status" id="match-status"></div>
-      <div class="log" id="match-log" style="display:none"></div>
-    </div>
 
-    <!-- Task stats -->
-    <div class="card">
-      <h2>📋 Benchmarks</h2>
-      <div id="task-stats"><div class="empty">Loading...</div></div>
+      <div class="card">
+        <h2>⚔️ Configure Match</h2>
+        <div class="form-group">
+          <label>Model A</label>
+          <select id="model-a"><option value="">Loading…</option></select>
+        </div>
+        <div class="form-group">
+          <label>Model B</label>
+          <select id="model-b"><option value="">Loading…</option></select>
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <select id="category">
+            <option value="coding">Coding (Python, JS, Rust, Go, TS, C++)</option>
+            <option value="reasoning">Reasoning</option>
+            <option value="security">Security</option>
+            <option value="planning">Planning</option>
+            <option value="inspection">Inspection</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Tasks per match</label>
+          <input type="number" id="n-tasks" value="5" min="1" max="50">
+        </div>
+        <button class="btn" id="run-btn" onclick="runMatch()">⚔️ Start Battle</button>
+        <div class="status" id="match-status"></div>
+        <div class="log" id="match-log" style="display:none"></div>
+      </div>
     </div>
   </div>
+
+  <!-- DATASETS -->
+  <div class="tab-content" id="tab-datasets">
+    <div class="card">
+      <h2>📚 HuggingFace Benchmark Datasets</h2>
+      <p style="color:#8b949e;font-size:13px;margin-bottom:16px">
+        Real-world benchmarks from the HF Hub. Click "pull" to download and cache locally.
+      </p>
+      <div id="datasets-list"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- PERFORMANCE -->
+  <div class="tab-content" id="tab-performance">
+    <div class="card full">
+      <h2>⚡ Throughput vs Latency</h2>
+      <div id="chart-perf"><div class="empty">Run some matches first…</div></div>
+    </div>
+    <div class="card">
+      <h2>📐 Per-Model Performance</h2>
+      <div id="perf-table"><div class="empty">No samples yet.</div></div>
+    </div>
+  </div>
+
 </div>
 
 <script>
-const api = async (path, opts) => {
-  const r = await fetch(path, opts);
-  return r.json();
-};
+const api = async (path, opts) => { const r = await fetch(path, opts); return r.json(); };
+const html = async (path) => (await fetch(path)).text();
+
+// Tabs
+document.querySelectorAll('.tab').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('tab-' + el.dataset.tab).classList.add('active');
+    if (el.dataset.tab === 'dashboard') loadCharts();
+    if (el.dataset.tab === 'datasets')  loadDatasets();
+    if (el.dataset.tab === 'performance') loadPerf();
+  });
+});
 
 async function loadModels() {
   const models = await api('/api/models');
   const opts = models.map(m => `<option value="${m}">${m}</option>`).join('');
-  document.getElementById('model-a').innerHTML = opts || '<option>No models found</option>';
-  document.getElementById('model-b').innerHTML = opts || '<option>No models found</option>';
+  ['model-a','model-b'].forEach(id => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = opts || '<option>No models found</option>';
+  });
   if (models.length >= 2) document.getElementById('model-b').selectedIndex = 1;
 }
 
 async function loadLeaderboard() {
   const board = await api('/api/leaderboard');
-  if (!board.length) { document.getElementById('lb-table').innerHTML = '<div class="empty">No matches yet.</div>'; return; }
-  const medals = {1:'🥇',2:'🥈',3:'🥉'};
-  const rows = board.map(e => `
-    <tr>
-      <td class="${e.rank<=3?`rank-${e.rank}`:''}">${medals[e.rank]||e.rank}</td>
-      <td><strong>${e.model}</strong></td>
-      <td class="elo">${e.elo}</td>
-      <td class="win">${e.wins}</td><td class="loss">${e.losses}</td><td class="draw">${e.draws}</td>
-      <td>${e.matches}</td>
-      <td>${(e.win_rate*100).toFixed(0)}%</td>
-    </tr>`).join('');
-  document.getElementById('lb-table').innerHTML = `
-    <table>
-      <thead><tr><th>Rank</th><th>Model</th><th>ELO</th><th>W</th><th>L</th><th>D</th><th>Matches</th><th>Win%</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+  const matches = await api('/api/history?limit=10000');
+  document.getElementById('stat-models').textContent = board.length;
+  document.getElementById('stat-matches').textContent = matches.length;
+  const lbHtml = await html('/charts/leaderboard');
+  document.getElementById('leaderboard-table').innerHTML = lbHtml;
+  document.getElementById('leaderboard-table-2').innerHTML = lbHtml;
 }
 
 async function loadHistory() {
@@ -164,88 +261,150 @@ async function loadHistory() {
   const items = hist.map(h => {
     const da = (h.elo_a_after - h.elo_a_before).toFixed(0);
     const db = (h.elo_b_after - h.elo_b_before).toFixed(0);
-    const date = new Date(h.ts * 1000).toLocaleString();
+    const d = new Date(h.ts * 1000).toLocaleString();
     return `<div class="history-item">
       <div class="hist-models">${h.model_a} <span style="color:#8b949e">vs</span> ${h.model_b}</div>
       <div class="hist-meta">
         <span class="badge badge-blue">${h.category}</span>
         &nbsp; ELO: ${da>0?'+':''}${da} / ${db>0?'+':''}${db}
-        &nbsp; <span style="float:right">${date}</span>
+        &nbsp; <span style="float:right">${d}</span>
       </div>
     </div>`;
   }).join('');
   document.getElementById('history').innerHTML = items;
 }
 
-async function loadTaskStats() {
+async function loadCategories() {
   const data = await api('/api/categories');
-  const rows = Object.entries(data.stats).map(([cat, n]) =>
-    `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #21262d">
-      <span>${cat}</span>
-      <span class="badge badge-blue">${n} tasks</span>
+  document.getElementById('stat-tasks').textContent =
+    Object.values(data.stats).reduce((a,b)=>a+b, 0);
+  document.getElementById('stat-languages').textContent = (data.languages || []).length;
+}
+
+async function loadCharts() {
+  // Fetch each chart as HTML, drop into container, then execute scripts so Plotly renders.
+  for (const [path, target] of [
+    ['/charts/elo', 'chart-elo'],
+    ['/charts/radar', 'chart-radar'],
+    ['/charts/heatmap', 'chart-heatmap'],
+  ]) {
+    try {
+      const h = await html(path);
+      const el = document.getElementById(target);
+      el.innerHTML = h;
+      el.querySelectorAll('script').forEach(s => {
+        const ns = document.createElement('script');
+        if (s.src) ns.src = s.src; else ns.textContent = s.textContent;
+        s.parentNode.replaceChild(ns, s);
+      });
+    } catch (e) { console.error('chart', path, e); }
+  }
+}
+
+async function loadPerf() {
+  const h = await html('/charts/perf');
+  const el = document.getElementById('chart-perf');
+  el.innerHTML = h;
+  el.querySelectorAll('script').forEach(s => {
+    const ns = document.createElement('script');
+    if (s.src) ns.src = s.src; else ns.textContent = s.textContent;
+    s.parentNode.replaceChild(ns, s);
+  });
+
+  const stats = await api('/api/perf');
+  if (!stats.length) { document.getElementById('perf-table').innerHTML = '<div class="empty">No samples yet.</div>'; return; }
+  const rows = stats.map(s => `
+    <tr><td><strong>${s.model}</strong></td>
+    <td>${s.n_samples}</td>
+    <td class="elo">${s.tps_mean.toFixed(1)}</td>
+    <td>${s.tps_p95.toFixed(1)}</td>
+    <td>${s.latency_mean_s.toFixed(2)}s</td>
+    <td>${s.latency_p95_s.toFixed(2)}s</td>
+    <td>${s.ttft_mean_s.toFixed(2)}s</td></tr>`).join('');
+  document.getElementById('perf-table').innerHTML = `
+    <table><thead><tr><th>Model</th><th>Samples</th><th>TPS mean</th><th>TPS p95</th>
+      <th>Lat mean</th><th>Lat p95</th><th>TTFT</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function loadDatasets() {
+  const ds = await api('/api/datasets');
+  document.getElementById('datasets-list').innerHTML = ds.map(d => `
+    <div class="dataset-card">
+      <div class="dataset-name">${d.name} <span style="color:#8b949e;font-size:12px;font-weight:400">— ${d.hf_id}</span></div>
+      <div class="dataset-desc">${d.description}</div>
+      <div class="dataset-meta">
+        <span class="badge badge-blue">${d.category}</span>
+        <span class="badge badge-${d.cached?'green':'blue'}">${d.cached?'cached':'remote'}</span>
+        <span style="color:#8b949e">license: ${d.license}</span>
+        <button class="btn btn-blue btn-small" style="margin-left:auto" onclick="pullDataset('${d.name}')">↓ pull</button>
+      </div>
     </div>`).join('');
-  document.getElementById('task-stats').innerHTML = rows;
+}
+
+async function pullDataset(name) {
+  await api('/api/pull_dataset', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({name, limit: 50}),
+  });
+  alert(`Started pulling '${name}'. Check terminal logs. Will be available after download.`);
 }
 
 let pollInterval = null;
-
 async function runMatch() {
   const ma = document.getElementById('model-a').value;
   const mb = document.getElementById('model-b').value;
   const cat = document.getElementById('category').value;
   const n = parseInt(document.getElementById('n-tasks').value) || 5;
-
   if (!ma || !mb || ma === mb) { alert('Select two different models'); return; }
-
   const btn = document.getElementById('run-btn');
-  btn.disabled = true; btn.textContent = '⏳ Running...';
-
+  btn.disabled = true; btn.textContent = '⏳ Running…';
   const log = document.getElementById('match-log');
   const status = document.getElementById('match-status');
   log.style.display = 'block'; log.innerHTML = '';
   status.className = 'status running'; status.textContent = `⚔️ ${ma} vs ${mb} — running ${n} tasks...`;
 
   const {job_id} = await api('/api/match', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({model_a: ma, model_b: mb, category: cat, n}),
   });
-
-  let lastLen = 0;
+  let last = 0;
   pollInterval = setInterval(async () => {
     const job = await api(`/api/job/${encodeURIComponent(job_id)}`);
-    const entries = job.log || [];
-    for (let i = lastLen; i < entries.length; i++) {
-      const e = entries[i];
+    for (let i = last; i < (job.log || []).length; i++) {
+      const e = job.log[i];
       const icon = e.outcome === 'a_wins' ? '✅' : e.outcome === 'b_wins' ? '❌' : '🤝';
       const cls = e.outcome === 'a_wins' ? 'log-win' : e.outcome === 'b_wins' ? 'log-loss' : 'log-draw';
       log.innerHTML += `<div class="${cls}">${icon} ${e.task_id}: ${e.score_a.toFixed(2)} vs ${e.score_b.toFixed(2)}</div>`;
       log.scrollTop = log.scrollHeight;
     }
-    lastLen = entries.length;
-
+    last = (job.log || []).length;
     if (job.status === 'done') {
       clearInterval(pollInterval);
       const r = job.result;
       const winner = r.a_wins > r.b_wins ? ma : r.b_wins > r.a_wins ? mb : 'Draw';
       status.className = 'status done';
-      status.textContent = `✅ Done! Winner: ${winner}  ELO: ${r.elo_a_after?.toFixed(0)} / ${r.elo_b_after?.toFixed(0)}`;
+      status.textContent = `✅ Done in ${r.duration_s}s! Winner: ${winner}  ELO: ${r.elo_a_after.toFixed(0)} / ${r.elo_b_after.toFixed(0)}`;
       btn.disabled = false; btn.textContent = '⚔️ Start Battle';
-      loadLeaderboard(); loadHistory();
+      loadAll();
     } else if (job.status === 'error') {
       clearInterval(pollInterval);
-      status.className = 'status error'; status.textContent = `❌ Error: ${job.error}`;
+      status.className = 'status error'; status.textContent = `❌ ${job.error}`;
       btn.disabled = false; btn.textContent = '⚔️ Start Battle';
     }
   }, 1500);
 }
 
+async function loadAll() {
+  await loadLeaderboard();
+  await loadHistory();
+  loadCharts();
+}
+
 // Init
 loadModels();
-loadLeaderboard();
-loadHistory();
-loadTaskStats();
-setInterval(() => { loadLeaderboard(); loadHistory(); }, 15000);
+loadCategories();
+loadAll();
+setInterval(loadAll, 20000);
 </script>
 </body>
 </html>
