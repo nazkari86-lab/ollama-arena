@@ -38,14 +38,18 @@ ELO rather than Glicko-2 because (a) the implementation is two lines, and
 ## Install
 
 ```
-pip install ollama-arena                  # core
-pip install 'ollama-arena[all]'           # +web +viz +datasets
-pip install 'ollama-arena[hf]'            # +transformers backend
-pip install 'ollama-arena[finetune]'      # +unsloth (CUDA recommended)
+pip install ollama-arena
 ```
 
-The HuggingFace and fine-tune extras pull large dependencies (datasets,
-torch, transformers, unsloth) and are off by default.
+Optional extras:
+
+| Extra | Adds |
+|---|---|
+| `pip install 'ollama-arena[all]'` | web dashboard, Plotly charts, HuggingFace datasets |
+| `pip install 'ollama-arena[hf]'` | in-process TransformersBackend (torch, transformers) |
+| `pip install 'ollama-arena[finetune]'` | Unsloth fine-tune pipeline — CUDA recommended |
+
+The HuggingFace and fine-tune extras pull large dependencies and are off by default.
 
 ## Quick start
 
