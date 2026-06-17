@@ -1,36 +1,10 @@
 """Per-task scorers and a router from task id/category to the right one."""
 from __future__ import annotations
-import logging, re
+import logging, re, os
 from typing import Any
+from .utils import extract_code
 
 log = logging.getLogger("arena.eval")
-
-
-# Code-block extraction
-_FENCED = re.compile(r"```(?:python|py|javascript|js|typescript|ts|rust|rs|go|cpp|c\+\+|bash|sh)?\s*(.*?)```",
-                     re.DOTALL | re.IGNORECASE)
-
-
-def extract_code(text: str, language: str = "python") -> str:
-    """Pull the first fenced code block; fall back to raw text if it
-    already looks like source in the requested language."""
-    m = _FENCED.search(text)
-    if m:
-        return m.group(1).strip()
-    stripped = text.strip()
-    py_prefixes = ("import ", "from ", "def ", "class ", "async ", "#!", "if ", "@")
-    js_prefixes = ("import ", "const ", "let ", "var ", "function ", "class ", "async ")
-    rust_prefixes = ("use ", "fn ", "pub ", "struct ", "impl ", "mod ", "#[")
-    go_prefixes = ("package ", "import ", "func ")
-    cpp_prefixes = ("#include", "int ", "void ", "auto ", "class ", "namespace ", "using ")
-    prefix_map = {
-        "python": py_prefixes, "javascript": js_prefixes, "typescript": js_prefixes,
-        "rust": rust_prefixes, "go": go_prefixes, "cpp": cpp_prefixes,
-    }
-    prefixes = prefix_map.get(language, py_prefixes)
-    if any(stripped.startswith(p) for p in prefixes):
-        return stripped
-    return stripped
 
 
 # Coding (executable)
@@ -45,11 +19,21 @@ def eval_coding(task: dict, response: str) -> float:
     if not test:
         return 0.5
     full = code + "\n" + test
-    result = run_in_language(full, language=language, timeout=task.get("timeout", 15))
+
+    # Default to Docker unless explicitly disabled via environment variable
+    use_docker = os.environ.get("ARENA_NO_DOCKER", "0") != "1"
+    
+    result = run_in_language(full, language=language, timeout=task.get("timeout", 15), use_docker=use_docker)
+    
     if result.blocked:
+        log.warning(f"[eval_coding] Blocked pattern detected: {result.error}")
         return 0.0
     if result.timed_out:
+        log.warning(f"[eval_coding] Execution timed out ({task.get('id', 'unknown')})")
         return 0.0
+    if not result.accepted:
+        log.info(f"[eval_coding] Execution failed ({task.get('id', 'unknown')}) with exit code {result.exit_code}: {result.error}")
+        
     return 1.0 if result.accepted else 0.0
 
 
@@ -81,6 +65,14 @@ def eval_text_answer(task: dict, response: str) -> float:
         except Exception:
             return 0.0
 
+    if check == "contains_all":
+        items = [str(i).strip().lower() for i in task.get("check_items", [expected])]
+        return 1.0 if all(i in resp for i in items) else 0.0
+
+    if check == "contains_any":
+        items = [str(i).strip().lower() for i in task.get("check_items", [expected])]
+        return 1.0 if any(i in resp for i in items) else 0.0
+
     return 0.0
 
 
@@ -97,14 +89,29 @@ def eval_security(task: dict, response: str) -> float:
     return round(vuln_score * 0.7 + sev_score * 0.3, 3)
 
 
+_CLEAN_PHRASES = (
+    "clean", "no issue", "no bug", "no vulnerabilit", "no problem",
+    "no flaw", "no error", "looks good", "looks safe", "looks correct",
+    "looks fine", "appears clean", "appears safe", "no security",
+    "nothing wrong", "nothing suspicious", "all good", "seems fine",
+    "seems safe", "seems correct", "well written", "well-written",
+    "no concern", "no weakness", "passes inspection",
+)
+_BUG_WORDS = ("vulnerabilit", "bug", "issue", "flaw", "error", "problem",
+               "insecure", "unsafe", "wrong", "incorrect", "exploit")
+
+
 def eval_inspection(task: dict, response: str) -> float:
     resp = response.lower()
     has_bug = task.get("has_bug", False)
     expected = [i.lower() for i in task.get("expected_issues", [])]
     if not has_bug:
-        if any(w in resp for w in ("clean", "no issue", "no vulnerabilit",
-                                     "no bug", "looks good", "looks safe")):
+        has_clean_phrase = any(p in resp for p in _CLEAN_PHRASES)
+        has_bug_word = any(w in resp for w in _BUG_WORDS)
+        if has_clean_phrase and not has_bug_word:
             return 1.0
+        if has_clean_phrase:
+            return 0.6
         return 0.3
     if not expected:
         return 0.5
@@ -124,11 +131,63 @@ def eval_planning(task: dict, response: str) -> float:
     return round(component_score * 0.7 + length_score * 0.3, 3)
 
 
+# JSON Evaluation
+def eval_json(task: dict, response: str) -> float:
+    """Evaluate JSON format conformance against expected_schema."""
+    import json
+    text = response.strip()
+    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL | re.IGNORECASE)
+    if m:
+        text = m.group(1).strip()
+    else:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            text = text[start:end+1]
+            
+    try:
+        data = json.loads(text)
+    except Exception:
+        return 0.0
+
+    schema = task.get("expected_schema")
+    if not schema:
+        return 1.0
+
+    if not isinstance(data, dict):
+        return 0.0
+
+    correct_keys = 0
+    for key, expected_type in schema.items():
+        if key not in data:
+            continue
+        val = data[key]
+        if expected_type == "string" and isinstance(val, str):
+            correct_keys += 1
+        elif expected_type == "integer" and isinstance(val, int) and not isinstance(val, bool):
+            correct_keys += 1
+        elif expected_type == "number" and isinstance(val, (int, float)) and not isinstance(val, bool):
+            correct_keys += 1
+        elif expected_type == "boolean" and isinstance(val, bool):
+            correct_keys += 1
+        elif expected_type == "list" and isinstance(val, list):
+            correct_keys += 1
+        elif expected_type == "dict" and isinstance(val, dict):
+            correct_keys += 1
+
+    total_keys = len(schema)
+    if total_keys == 0:
+        return 1.0
+    return round(correct_keys / total_keys, 3)
+
+
 # Router
 def evaluate(task: dict, response: str) -> float:
     tid = task.get("id", "")
     cat = task.get("category", "")
 
+    if cat == "json_format" or tid.startswith("json_"):
+        return eval_json(task, response)
     if cat == "coding" or tid.startswith(("code_", "humaneval_", "mbpp_", "multipl_")):
         return eval_coding(task, response)
     if cat in ("math", "reasoning", "knowledge") or tid.startswith(
@@ -141,6 +200,10 @@ def evaluate(task: dict, response: str) -> float:
         return eval_inspection(task, response)
     if cat == "planning" or tid.startswith("plan_"):
         return eval_planning(task, response)
+
+    if cat == "creative" or tid.startswith("crea_"):
+        # Judge-scored tasks fall back to 0.5 when no judge is available.
+        return 0.5
 
     log.warning(f"[eval] unknown task type: {tid} / cat={cat}")
     return 0.0
