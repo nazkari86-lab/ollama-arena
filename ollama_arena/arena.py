@@ -76,6 +76,16 @@ class Arena:
         self.scheduler = MemoryScheduler(ollama_base=ollama_url)
         # Caller hook for "we're about to enter pipeline phase X" events.
         self._on_phase: Optional[Callable] = None
+        
+        # v4.0: MCP Orchestration
+        from .mcp_client import MCPOrchestrator
+        # Default config: SQLite + Playwright + SearXNG
+        mcp_config = {
+            "sqlite": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-sqlite"]},
+            "playwright": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-playwright"]},
+            "searxng": {"url": "http://localhost:8080"}
+        }
+        self.mcp = MCPOrchestrator(mcp_config)
 
         self.judge = None
         if judge_model:
@@ -196,8 +206,22 @@ class Arena:
                                  latency_s=0.0), True
             if unload_first:
                 self.scheduler.unload(unload_first)
-            return client.generate(model, task["instruction"],
-                                   _timeout=_gen_timeout), False
+
+            # v4.0: Inject MCP tools if category is tool_use
+            if task.get("category") == "tool_use":
+                import asyncio
+                try:
+                    # Note: Arena.run_match is synchronous, but MCP is async.
+                    # We use a temporary event loop or the existing one.
+                    loop = asyncio.get_event_loop()
+                    tools = loop.run_until_complete(self.mcp.get_all_tools())
+                    if tools:
+                        messages = [{"role": "user", "content": task["instruction"]}]
+                        return client.generate_with_tools(model, messages, tools), False
+                except Exception as e:
+                    log.error(f"[arena] MCP tool fetching failed: {e}")
+
+            return client.generate(model, task["instruction"]), False
 
         def _execute_concurrent(task):
             res_a, ca = _gen(model_a, client_a, task)

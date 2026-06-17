@@ -915,7 +915,8 @@ def main():
     pm.add_argument("--models",     required=True, metavar="A,B[,C...]")
     pm.add_argument("--category",   default="coding",
                     choices=["coding","reasoning","security","planning",
-                             "inspection","math","knowledge","creative","json_format","all"])
+                             "inspection","math","knowledge","creative",
+                             "json_format","tool_use","all"])
     pm.add_argument("--difficulty", default=None, choices=["easy","medium","hard"])
     pm.add_argument("-n",           type=int, default=10)
     pm.add_argument("--verbose", "-v", action="store_true",
