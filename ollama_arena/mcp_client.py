@@ -159,7 +159,19 @@ class MCPOrchestrator:
         server_configs: Optional[Dict[str, Dict[str, Any]]] = None,
         *,
         use_mock: Optional[bool] = None,
+        config_path: Optional[str] = None,
     ):
+        # If no server_configs given, try loading from MCPConfig file
+        if server_configs is None:
+            try:
+                from .mcp_config import load_mcp_config
+                file_cfg = load_mcp_config(config_path)
+                server_configs = {
+                    name: {"command": srv.command, "args": srv.args, "env": srv.env}
+                    for name, srv in file_cfg.servers.items()
+                }
+            except Exception:
+                server_configs = {}
         self.configs = server_configs or {}
         self.use_mock = (
             use_mock
