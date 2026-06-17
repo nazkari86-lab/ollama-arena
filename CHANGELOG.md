@@ -1,5 +1,27 @@
 # Changelog
 
+## [5.0.0] - 2026-06-17
+### Added
+- **Stateful Agentic Evaluation (Phase 1):** The Arena now tests models as autonomous agents rather than static text generators.
+- **Agent Loop (`agent_loop.py`):** Added a multi-step execution loop that handles the conversation between the model, tool calls, and tool execution results.
+- **MCP Orchestrator (`mcp_client.py`):** Rebuilt the client to act as a full Model Context Protocol (MCP) orchestrator.
+- **Trajectory Evaluation:** The evaluator now supports `subsequence` checking against `expected_tools`, awarding partial scores based on the correct sequence of tools called.
+- **Database Migration 5:** Expanded `task_detail` schema to include `tool_call_a` and `tool_call_b` to persistently log the agent trace.
+
+## [4.0.0] - 2026-06-17
+### Added
+- **Zero Trust Execution Sandbox:** Integrated AST-based static analysis to block introspection and obfuscated Python sandbox escapes.
+- **Mandatory Docker Enforcement:** Removed the local-execution fallback. All coding tasks run in containers with Seccomp syscall filtering.
+- **Web UI Hardening:** Implemented DOMPurify for XSS protection and SlowAPI for rate limiting on all endpoints.
+- **Open WebUI Bridge:** Added `webui_bridge.py` to synchronize Arena ELO rankings with Open WebUI.
+
+## [3.0.0] - 2026-06-17
+### Added
+- **Memory-Adaptive Pipeline Tournament:** Added `MemoryScheduler` with CONCURRENT, HOT_SWAP, and PIPELINE strategies to run 14GB+ models on 16GB RAM devices.
+- **Database Migrations:** Implemented a lightweight, forward-only SQLite migration runner (`migrations.py`).
+- **Cloud Provider Presets:** Added extensive support for cloud models (DeepSeek, Grok, Anthropic, etc.) in `OpenAICompatBackend`.
+- **Visual Diffing:** Added line-level visual diffing to the Inspect view using `jsdiff`.
+
 ## 2.4.0
 
 - 229 built-in tasks — up from 114 — across 8 categories (coding, reasoning, math, knowledge, security, planning, inspection, creative).
