@@ -20,6 +20,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js"
         integrity="sha384-eEu5CTj3qGvu9PdJuS+YlkNi7d2XxQROAFYOr59zgObtlcux1ae1Il3u7jvdCSWu"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- jsdiff for Inspect-view diff hunks (3.1) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/8.0.0/diff.min.js"
+        integrity="sha384-tx/QFuFzdzRut7nP+Xdtxd2C8/8bPSXhHk1eD+u2HV+YLcruFxA8L4Dj74XVqI0/"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@500;600;800&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -728,6 +732,12 @@
             <input type="number" id="concurrency" value="1" min="1" max="10">
             <p style="font-size:11px; color:var(--text-muted); margin-top:8px">Increase for multi-GPU or remote APIs.</p>
           </div>
+          <div class="form-group">
+            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:400;" data-tip="Hide model names until the match finishes — fair LMSYS-style scoring">
+              <input type="checkbox" id="battle-blind-mode" style="width:18px; height:18px; accent-color: var(--accent-blue);">
+              <span>🎭 Blind Mode <span style="color:var(--text-muted); font-weight:400; font-size:11px; margin-left:6px;">— models hidden as X / Y until results</span></span>
+            </label>
+          </div>
           <button class="btn primary" id="run-btn" onclick="runMatch()">Engage Combat</button>
         </div>
       </div>
@@ -1217,6 +1227,17 @@ function connectWS() {
   socket.onclose = () => setTimeout(connectWS, 2000);
 }
 
+// ── Blind Arena: replace model names with X / Y until match completes ──
+let _blindModeActive = false;
+let _blindMapping = { a: '', b: '' };   // remembered real names for reveal
+function _blindize(text) {
+  if (!_blindModeActive || !text) return text;
+  let out = String(text);
+  if (_blindMapping.a) out = out.split(_blindMapping.a).join('Model X');
+  if (_blindMapping.b) out = out.split(_blindMapping.b).join('Model Y');
+  return out;
+}
+
 // ── Synthetic Parallel Replay — Pipeline UI illusion ───────────────────
 // In PIPELINE mode, the backend really runs Model A on all tasks first,
 // then Model B on all tasks. WS events arrive sequentially. We buffer A's
@@ -1256,9 +1277,10 @@ function handleWSEvent(d) {
       // phase_start / phase_progress
       const which = d.phase === 1 ? 'A' : 'B';
       if (d.type === 'strategy_event' && d.model) {
-        // phase_start carries .model and .total
+        // phase_start carries .model and .total — mask in blind mode
+        const shown = _blindModeActive ? `Model ${which}` : d.model;
         log.innerHTML += `<div style="color:var(--accent-blue); margin:8px 0; padding-left:8px;">
-          ▶ Phase ${d.phase}/2 — running <b>${escText(d.model)}</b> on ${d.total} tasks…
+          ▶ Phase ${d.phase}/2 — running <b>${escText(shown)}</b> on ${d.total} tasks…
         </div>`;
         if (d.phase === 1) _replay.phase = 1;
         else if (d.phase === 2) _replay.phase = 2;
@@ -1292,6 +1314,14 @@ function handleWSEvent(d) {
       toast(`🔁 PIPELINE match complete — ran two big models on tight RAM without OOM.`, 'success', 6000);
     }
     _replay.active = false;
+    // Blind Arena reveal — names appear only after match completes
+    if (_blindModeActive) {
+      const winner = r.a_wins > r.b_wins ? _blindMapping.a
+                   : r.b_wins > r.a_wins ? _blindMapping.b
+                   : 'Tie';
+      toast(`🎭 <b>Reveal</b> — Model X was <b>${escText(_blindMapping.a)}</b>, Model Y was <b>${escText(_blindMapping.b)}</b>. Winner: <b>${escText(winner)}</b>`, 'success', 8000);
+      _blindModeActive = false;
+    }
     loadAll();
     setTimeout(() => {
       document.getElementById('battle-arena-card').style.display = 'none';
@@ -1520,6 +1550,13 @@ async function runMatch() {
   const concurrency = parseInt(document.getElementById('concurrency').value);
   if (ma === mb) return alert('Neural models must be distinct entities');
 
+  // Blind Arena bookkeeping — captured here so WS events know how to mask
+  _blindModeActive = !!document.getElementById('battle-blind-mode')?.checked;
+  _blindMapping = { a: ma, b: mb };
+  if (_blindModeActive) {
+    toast('🎭 <b>Blind Mode</b> — names hidden until match completes.', 'info', 3500);
+  }
+
   document.getElementById('battle-leaderboard-card').style.display = 'none';
   document.getElementById('battle-arena-card').style.display = 'block';
   
@@ -1747,6 +1784,75 @@ async function pullDataset(n) {
   alert(`Dataset ${n} pull initiated.`);
 }
 
+// ═══════════════════════════════════════════════════════════════
+// 3.1 — Visual Diff Viewer (jsdiff line-level)
+// 3.2 — Retry Task (per-task rerun via /api/retry_task)
+// ═══════════════════════════════════════════════════════════════
+function _renderDiff(a, b) {
+  // Falls back to "diff unavailable" if the CDN is blocked
+  if (!window.Diff || !window.Diff.diffLines) return null;
+  const parts = window.Diff.diffLines(String(a || ''), String(b || ''));
+  let out = '';
+  for (const p of parts) {
+    const lines = String(p.value).split('\n').filter(l => l !== '');
+    for (const line of lines) {
+      const safe = escText(line);
+      if (p.added) {
+        out += `<div style="background:rgba(63,185,80,0.12); border-left:3px solid var(--accent-green); padding:3px 10px; color:var(--accent-green); font-family:'JetBrains Mono',monospace;">+ ${safe}</div>`;
+      } else if (p.removed) {
+        out += `<div style="background:rgba(248,81,73,0.12); border-left:3px solid var(--accent-red); padding:3px 10px; color:var(--accent-red); font-family:'JetBrains Mono',monospace;">- ${safe}</div>`;
+      } else {
+        out += `<div style="padding:3px 10px; color:var(--text-muted); font-family:'JetBrains Mono',monospace;">  ${safe}</div>`;
+      }
+    }
+  }
+  return out;
+}
+function toggleDiff(btn, runIdx) {
+  const card = btn.closest('[data-task-id]');
+  if (!card) return;
+  // Find the i-th pair within the inspect results
+  const cards = document.querySelectorAll('#inspect-results [data-task-id]');
+  const target = cards[runIdx] || card;
+  const aBox = target.querySelector('.resp-a');
+  const bBox = target.querySelector('.resp-b');
+  if (!aBox || !bBox) return;
+  const isOn = target.dataset.diffOn === '1';
+  if (isOn) {
+    aBox.innerHTML = formatCodeBlocks(aBox.dataset.raw);
+    bBox.innerHTML = formatCodeBlocks(bBox.dataset.raw);
+    target.dataset.diffOn = '0';
+    btn.style.background = 'rgba(88,166,255,0.12)';
+    btn.textContent = '↔ Diff';
+  } else {
+    const d = _renderDiff(aBox.dataset.raw, bBox.dataset.raw);
+    if (d == null) { toast('Diff library failed to load', 'warn'); return; }
+    // Show the SAME diff in both panes; reading either gives the picture.
+    aBox.innerHTML = `<div style="font-size:11px;">${safeHTML(d)}</div>`;
+    bBox.innerHTML = `<div style="font-size:11px;">${safeHTML(d)}</div>`;
+    target.dataset.diffOn = '1';
+    btn.style.background = 'rgba(88,166,255,0.25)';
+    btn.textContent = '↔ Diff ON';
+  }
+}
+async function retryTask(taskId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '↻ Running…'; }
+  try {
+    const d = await api(`/api/retry_task/${encodeURIComponent(taskId)}`, {method:'POST'});
+    const winner = d.outcome === 'a_wins' ? d.model_a
+                 : d.outcome === 'b_wins' ? d.model_b
+                 : 'Tie';
+    toast(`Retry done — Winner: <b>${escText(winner)}</b> (A: ${(d.score_a*100).toFixed(0)}% vs B: ${(d.score_b*100).toFixed(0)}%)`, 'success', 4500);
+    // Refresh the inspect view so the new run shows up at the top
+    document.getElementById('inspect-task-id').value = taskId;
+    await loadInspect();
+  } catch(e) {
+    toast(`Retry failed: ${escText(e.message)}`, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Retry'; }
+  }
+}
+
 async function loadInspect() {
   const tid = document.getElementById('inspect-task-id').value.trim();
   if(!tid) return;
@@ -1775,10 +1881,14 @@ async function loadInspect() {
         return safeHTML(withCode);
       };
 
-      h += `<div class="card" style="margin-bottom: 32px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom: 1px solid var(--border-color); padding-bottom: 16px;">
+      h += `<div class="card" style="margin-bottom: 32px;" data-task-id="${escText(info.task_id)}">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom: 1px solid var(--border-color); padding-bottom: 16px; gap:12px; flex-wrap:wrap;">
           <h3 style="font-weight:800; color:var(--text-main); font-size:15px; text-transform:uppercase; letter-spacing:1px;">Simulation Run #${i+1}</h3>
-          <span class="badge ${r.outcome === 'draw' ? 'badge-blue' : 'badge-green'}" style="font-size:12px; padding:6px 16px;">${r.outcome.replace('_', ' ').toUpperCase()}</span>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button class="btn" data-tip="Toggle line-level diff between the two responses" style="width:auto; padding:5px 12px; font-size:11px; background:rgba(88,166,255,0.12); border-color:rgba(88,166,255,0.3); color:var(--accent-blue);" onclick="toggleDiff(this, ${i})">↔ Diff</button>
+            <button class="btn" data-tip="Re-run this single task — useful after a Docker/network blip" style="width:auto; padding:5px 12px; font-size:11px; background:rgba(245,158,11,0.12); border-color:rgba(245,158,11,0.3); color:#f59e0b;" onclick="retryTask('${escText(info.task_id)}', this)">↻ Retry</button>
+            <span class="badge ${r.outcome === 'draw' ? 'badge-blue' : 'badge-green'}" style="font-size:12px; padding:6px 16px;">${r.outcome.replace('_', ' ').toUpperCase()}</span>
+          </div>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px">
 
@@ -1787,7 +1897,7 @@ async function loadInspect() {
               <strong style="color:var(--accent-blue); font-size:14px;">${escText(r.model_a)}</strong>
               <div style="font-size:12px; color:var(--text-muted); font-weight:600;">Score: <b style="color:${isAWinner?'var(--accent-green)':'var(--text-main)'}; font-size:14px;">${(r.score_a*100).toFixed(1)}%</b></div>
             </div>
-            <div style="padding: 20px; font-size:13px; line-height:1.7; max-height: 500px; overflow-y: auto;">
+            <div class="resp-a" data-raw="${escText(r.response_a)}" style="padding: 20px; font-size:13px; line-height:1.7; max-height: 500px; overflow-y: auto;">
               ${formatCode(r.response_a)}
             </div>
           </div>
@@ -1797,7 +1907,7 @@ async function loadInspect() {
               <strong style="color:var(--accent-blue); font-size:14px;">${escText(r.model_b)}</strong>
               <div style="font-size:12px; color:var(--text-muted); font-weight:600;">Score: <b style="color:${isBWinner?'var(--accent-green)':'var(--text-main)'}; font-size:14px;">${(r.score_b*100).toFixed(1)}%</b></div>
             </div>
-            <div style="padding: 20px; font-size:13px; line-height:1.7; max-height: 500px; overflow-y: auto;">
+            <div class="resp-b" data-raw="${escText(r.response_b)}" style="padding: 20px; font-size:13px; line-height:1.7; max-height: 500px; overflow-y: auto;">
               ${formatCode(r.response_b)}
             </div>
           </div>

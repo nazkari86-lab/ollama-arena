@@ -302,6 +302,19 @@ def run_web(
     def api_task_history(task_id: str):
         return arena.elo.task_history(task_id)
 
+    @app.post("/api/retry_task/{task_id}")
+    @limiter.limit("8/minute")
+    def api_retry_task(task_id: str, request: Request):
+        """Re-run a single task using the same model_a/model_b/instruction
+        captured in the latest task_detail row. Recomputes ELO incrementally."""
+        try:
+            return arena.retry_task(task_id)
+        except ValueError as e:
+            raise HTTPException(404, str(e))
+        except Exception as e:
+            log.exception(f"retry_task({task_id}) failed")
+            raise HTTPException(500, str(e))
+
     @app.get("/api/report/{model}")
     def api_report(model: str):
         return arena.elo.category_stats(model)

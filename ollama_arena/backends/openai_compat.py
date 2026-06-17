@@ -17,26 +17,69 @@ _THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 class OpenAICompatBackend:
     name = "openai-compat"
 
-    # Convenience presets
+    # Convenience presets — every value is an OpenAI-/chat-completions-compatible
+    # endpoint. Pair with an env var named like the key in upper-case +
+    # "_API_KEY" (e.g. DEEPSEEK_API_KEY, XAI_API_KEY, ANTHROPIC_API_KEY) and
+    # the backend will pick it up automatically.
     PRESETS: dict[str, str] = {
+        # Local runtimes
         "vllm":       "http://localhost:8000/v1",
         "lmstudio":   "http://localhost:1234/v1",
         "llamacpp":   "http://localhost:8080/v1",
+        # Hosted, OpenAI-compatible
         "openai":     "https://api.openai.com/v1",
         "groq":       "https://api.groq.com/openai/v1",
         "together":   "https://api.together.xyz/v1",
         "openrouter": "https://openrouter.ai/api/v1",
         "deepinfra":  "https://api.deepinfra.com/v1/openai",
         "fireworks":  "https://api.fireworks.ai/inference/v1",
+        # ── Added: top cloud models so you can A/B local vs frontier ──
+        "deepseek":   "https://api.deepseek.com/v1",         # DEEPSEEK_API_KEY
+        "xai":        "https://api.x.ai/v1",                 # XAI_API_KEY (Grok)
+        "grok":       "https://api.x.ai/v1",                 # alias
+        "cerebras":   "https://api.cerebras.ai/v1",          # CEREBRAS_API_KEY
+        "anthropic":  "https://api.anthropic.com/v1",        # ANTHROPIC_API_KEY
+        "mistral":    "https://api.mistral.ai/v1",           # MISTRAL_API_KEY
+        "perplexity": "https://api.perplexity.ai",           # PERPLEXITY_API_KEY
+        "sambanova":  "https://api.sambanova.ai/v1",         # SAMBANOVA_API_KEY
+        "novita":     "https://api.novita.ai/v3/openai",     # NOVITA_API_KEY
+    }
+
+    # Per-preset env-var override (if the standard `<KEY>_API_KEY` doesn't fit)
+    _ENV_KEY_MAP: dict[str, str] = {
+        "openai":     "OPENAI_API_KEY",
+        "groq":       "GROQ_API_KEY",
+        "together":   "TOGETHER_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "deepinfra":  "DEEPINFRA_API_KEY",
+        "fireworks":  "FIREWORKS_API_KEY",
+        "deepseek":   "DEEPSEEK_API_KEY",
+        "xai":        "XAI_API_KEY",
+        "grok":       "XAI_API_KEY",
+        "cerebras":   "CEREBRAS_API_KEY",
+        "anthropic":  "ANTHROPIC_API_KEY",
+        "mistral":    "MISTRAL_API_KEY",
+        "perplexity": "PERPLEXITY_API_KEY",
+        "sambanova":  "SAMBANOVA_API_KEY",
+        "novita":     "NOVITA_API_KEY",
     }
 
     def __init__(self, base_url: str = "http://localhost:8000/v1",
                  api_key: str | None = None, timeout: int = 180):
-        # Resolve preset names
-        if base_url in self.PRESETS:
-            base_url = self.PRESETS[base_url]
+        # Remember the preset name so we can resolve the right env-var key
+        preset = base_url if base_url in self.PRESETS else None
+        if preset:
+            base_url = self.PRESETS[preset]
         self.base = base_url.rstrip("/")
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "EMPTY")
+        # If the caller didn't pass an API key, look in the preset-specific
+        # env var first, then fall back to OPENAI_API_KEY for backward compat.
+        env_key = self._ENV_KEY_MAP.get(preset or "", "OPENAI_API_KEY")
+        self.api_key = (
+            api_key
+            or os.environ.get(env_key)
+            or os.environ.get("OPENAI_API_KEY")
+            or "EMPTY"
+        )
         self.timeout = timeout
         self._headers = {
             "Authorization": f"Bearer {self.api_key}",

@@ -20,6 +20,9 @@ class OllamaBackend:
         opts.setdefault("num_ctx", 4096)
         opts.setdefault("temperature", 0.0)
         opts.setdefault("num_predict", 1024)
+        # Per-call timeout override (used by Arena when scheduler picks
+        # PIPELINE/HOT_SWAP — large models can take much longer than 180 s).
+        call_timeout = opts.pop("_timeout", None) or self.timeout
 
         t0 = time.time()
         ttft = 0.0
@@ -27,7 +30,7 @@ class OllamaBackend:
             r = requests.post(
                 f"{self.base}/api/generate",
                 json={"model": model, "prompt": prompt, "stream": True, "options": opts},
-                timeout=self.timeout, stream=True,
+                timeout=call_timeout, stream=True,
             )
             text = ""
             first = True

@@ -39,66 +39,10 @@ class EloStore:
         return sqlite3.connect(self.db, timeout=30.0, isolation_level="IMMEDIATE")
 
     def _init_db(self):
-        with self._conn() as cx:
-            # Enable WAL mode for high concurrency
-            cx.execute("PRAGMA journal_mode=WAL;")
-            cx.execute("PRAGMA synchronous=NORMAL;")
-            cx.executescript("""
-                CREATE TABLE IF NOT EXISTS ratings (
-                    model TEXT PRIMARY KEY,
-                    elo   REAL DEFAULT 1200,
-                    wins  INTEGER DEFAULT 0,
-                    losses INTEGER DEFAULT 0,
-                    draws INTEGER DEFAULT 0,
-                    matches INTEGER DEFAULT 0,
-                    updated_at REAL
-                );
-                CREATE TABLE IF NOT EXISTS match_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    model_a TEXT,
-                    model_b TEXT,
-                    category TEXT,
-                    score_a REAL,
-                    score_b REAL,
-                    elo_a_before REAL,
-                    elo_b_before REAL,
-                    elo_a_after REAL,
-                    elo_b_after REAL,
-                    ts REAL
-                );
-                CREATE TABLE IF NOT EXISTS task_detail (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    match_id INTEGER,
-                    task_id TEXT,
-                    category TEXT,
-                    difficulty TEXT,
-                    language TEXT,
-                    instruction TEXT,
-                    response_a TEXT,
-                    response_b TEXT,
-                    expected TEXT,
-                    score_a REAL,
-                    score_b REAL,
-                    outcome TEXT,
-                    tps_a REAL,
-                    tps_b REAL,
-                    latency_a REAL,
-                    latency_b REAL,
-                    ts REAL
-                );
-                CREATE INDEX IF NOT EXISTS idx_task_detail_task
-                    ON task_detail(task_id);
-                CREATE INDEX IF NOT EXISTS idx_task_detail_match
-                    ON task_detail(match_id);
-                CREATE TABLE IF NOT EXISTS benchmark_runs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    model TEXT,
-                    score REAL,
-                    scores_by_category TEXT,
-                    n_tasks INTEGER,
-                    ts REAL
-                );
-            """)
+        # Schema lives in `migrations.py` — forward-only, version-tracked
+        # via `PRAGMA user_version`. Safe to call on every boot.
+        from .migrations import apply_migrations
+        apply_migrations(self.db)
 
     def get(self, model: str) -> float:
         try:

@@ -177,6 +177,15 @@ class Arena:
                     "score_a": score_a, "score_b": score_b,
                     "outcome": outcome}
 
+        # Dynamic timeout — large models on PIPELINE need more wall-clock
+        # because they swap to SSD; HOT_SWAP needs the unload+reload time too.
+        _timeout_for_strategy = {
+            Strategy.CONCURRENT: 180,
+            Strategy.HOT_SWAP:   480,
+            Strategy.PIPELINE:   900,
+        }
+        _gen_timeout = _timeout_for_strategy.get(decision.strategy, 180)
+
         def _gen(model: str, client: Backend, task: dict,
                  unload_first: Optional[str] = None) -> tuple[GenResult, bool]:
             """Return (GenResult, was_cached). Honors `unload_first` for HOT_SWAP."""
@@ -187,7 +196,8 @@ class Arena:
                                  latency_s=0.0), True
             if unload_first:
                 self.scheduler.unload(unload_first)
-            return client.generate(model, task["instruction"]), False
+            return client.generate(model, task["instruction"],
+                                   _timeout=_gen_timeout), False
 
         def _execute_concurrent(task):
             res_a, ca = _gen(model_a, client_a, task)
@@ -350,6 +360,82 @@ class Arena:
             log.info(f"[tournament] {i}/{len(pairs)}: {a} vs {b}")
             self.run_match(a, b, category=category, n=n_per_match)
         return self.leaderboard()
+
+    def retry_task(self, task_id: str) -> dict:
+        """Rerun the most recent record of ``task_id``.
+
+        Cheap one-shot reruns let the user re-do a single task when a
+        Docker error / network blip / OOM truncated one side's response.
+        Pulls the original instruction, model_a, model_b, category, and
+        expected from the last task_detail row, regenerates both, scores,
+        updates ELO with that single sample, and returns the new pair.
+        """
+        runs = self.elo.task_history(task_id)
+        if not runs:
+            raise ValueError(f"No prior record for task_id={task_id!r}")
+        last = runs[0]
+        model_a, model_b = last["model_a"], last["model_b"]
+        category         = last.get("category", "coding")
+        instruction      = last["instruction"]
+        expected         = last.get("expected", "")
+        # Build a synthetic task object that evaluate() understands
+        task = {
+            "id":               task_id,
+            "instruction":      instruction,
+            "expected_answer":  expected,
+            "category":         category,
+            "difficulty":       last.get("difficulty", "unknown"),
+            "language":         "natural",
+        }
+        client_a = spec_backend_for_model(model_a) or self.client
+        client_b = spec_backend_for_model(model_b) or self.client
+        res_a = client_a.generate(model_a, instruction)
+        res_b = client_b.generate(model_b, instruction)
+
+        if self.judge and task.get("use_judge"):
+            jr = self.judge.grade_pair(instruction, res_a.text, res_b.text,
+                                       reference=expected)
+            score_a, score_b = jr.score_a, jr.score_b
+        else:
+            score_a = evaluate(task, res_a.text) if res_a.ok else 0.0
+            score_b = evaluate(task, res_b.text) if res_b.ok else 0.0
+        if score_a > score_b: outcome = "a_wins"
+        elif score_b > score_a: outcome = "b_wins"
+        else: outcome = "draw"
+
+        # ELO + persistence (a single-sample update)
+        self.elo.record_match(model_a, model_b, category, score_a, score_b)
+        match_id = self.elo.last_match_id()
+        self.elo.save_task_detail(
+            match_id=match_id, task_id=task_id, category=category,
+            difficulty=task["difficulty"], language=task["language"],
+            instruction=instruction,
+            response_a=res_a.text if res_a.ok else f"[ERROR: {res_a.error}]",
+            response_b=res_b.text if res_b.ok else f"[ERROR: {res_b.error}]",
+            expected=str(expected),
+            score_a=round(score_a, 3), score_b=round(score_b, 3),
+            outcome=outcome,
+            tps_a=res_a.tps, tps_b=res_b.tps,
+            latency_a=res_a.latency_s, latency_b=res_b.latency_s,
+        )
+        self._log_perf(model_a, res_a)
+        self._log_perf(model_b, res_b)
+
+        return {
+            "ok": True,
+            "task_id":   task_id,
+            "model_a":   model_a,
+            "model_b":   model_b,
+            "response_a": res_a.text if res_a.ok else f"[ERROR: {res_a.error}]",
+            "response_b": res_b.text if res_b.ok else f"[ERROR: {res_b.error}]",
+            "score_a":   round(score_a, 3),
+            "score_b":   round(score_b, 3),
+            "outcome":   outcome,
+            "tps_a":     res_a.tps, "tps_b": res_b.tps,
+            "latency_a": res_a.latency_s, "latency_b": res_b.latency_s,
+            "elo_a_after": self.elo.get(model_a),
+            "elo_b_after": self.elo.get(model_b),
+        }
 
     def leaderboard(self) -> list[dict]:
         return self.elo.leaderboard()
