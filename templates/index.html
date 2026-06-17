@@ -13,6 +13,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 <script src="/static/arena3d.js"></script>
+<script src="/static/agent_trace.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <!-- XSS defense: sanitize any HTML derived from model output before it ever
@@ -775,13 +776,17 @@
 <div class="tabs" role="tablist">
   <div class="tab active" role="tab" tabindex="0" data-tab="dashboard">📊 Dashboard</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="battle">⚔️ Arena Match</div>
+  <div class="tab" role="tab" tabindex="-1" data-tab="royale">👑 Battle Royale</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="tournament">🏆 Tournament</div>
+  <div class="tab" role="tab" tabindex="-1" data-tab="history">📜 History</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="playground">🎮 Playground</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="inspect">🔍 Inspect</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="report">📈 Report</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="datasets">📚 Datasets</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="performance">⚡ Performance</div>
+  <div class="tab" role="tab" tabindex="-1" data-tab="hallucinations">🍄 Hallucinations</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="spec">🚀 Spec Decode</div>
+
 </div>
 
 <div class="container">
@@ -884,36 +889,38 @@
 
   <!-- TOURNAMENT -->
   <div class="tab-content" id="tab-tournament" role="tabpanel">
+    ... (unchanged tournament layout) ...
+  </div>
+
+  <!-- BATTLE ROYALE (N-WAY) -->
+  <div class="tab-content" id="tab-royale" role="tabpanel">
     <div class="layout-battle">
       <div>
         <div class="card">
-          <h2>Grand Tournament Bracket</h2>
-          <div id="tournament-progress" style="padding: 32px 20px; text-align: center; color: var(--text-muted); border: 1px dashed var(--border-color); border-radius: var(--radius-inner);">
-            Select models and start the tournament to see the bracket progression.
+          <h2>Neural Battleground</h2>
+          <div id="royale-progress" style="padding: 40px 20px; text-align: center; color: var(--text-muted); border: 1px dashed var(--border-color); border-radius: var(--radius-inner);">
+            Select multiple models to initiate an N-way simulation.
           </div>
-          <div class="log" id="tournament-log" style="display:none; max-height: 500px; margin-top: 24px;" aria-live="polite"></div>
+          <div class="log" id="royale-log" style="display:none; max-height: 500px; margin-top: 24px;" aria-live="polite"></div>
+          <div id="royale-rankings" style="display:none; margin-top: 32px;"></div>
         </div>
       </div>
       <div>
         <div class="card">
-          <h2>Tournament Config</h2>
+          <h2>Royale Config</h2>
           <div class="form-group">
-            <label for="tourney-models">Contenders <span style="font-weight:400; color:var(--text-muted)">(Hold Cmd/Ctrl)</span></label>
-            <select id="tourney-models" multiple style="height: 180px; padding: 12px;"></select>
+            <label for="royale-models">Contenders (3-8 models)</label>
+            <select id="royale-models" multiple style="height: 200px; padding: 12px;"></select>
           </div>
           <div class="form-group">
-            <label for="tourney-category">Task Domain</label>
-            <select id="tourney-category"></select>
+            <label for="royale-category">Task Domain</label>
+            <select id="royale-category"></select>
           </div>
           <div class="form-group">
-            <label for="tourney-n">Rounds per Match</label>
-            <input type="number" id="tourney-n" value="3" min="1" max="100">
+            <label for="royale-n">Match Cycles (Rounds)</label>
+            <input type="number" id="royale-n" value="5" min="1" max="50">
           </div>
-          <div class="form-group">
-            <label for="tourney-concurrency">Neural Concurrency</label>
-            <input type="number" id="tourney-concurrency" value="2" min="1" max="10">
-          </div>
-          <button class="btn primary" id="tourney-run-btn" onclick="runTournament()">Commence Tournament</button>
+          <button class="btn primary" id="royale-run-btn" onclick="runRoyale()">Initiate Royale</button>
         </div>
       </div>
     </div>
@@ -978,6 +985,14 @@
     </div>
   </div>
 
+  <!-- HISTORY -->
+  <div class="tab-content" id="tab-history" role="tabpanel">
+    <div class="card">
+      <h2>Match History & Archives</h2>
+      <div id="history-table" style="overflow-x: auto;"></div>
+    </div>
+  </div>
+
   <!-- INSPECT -->
   <div class="tab-content" id="tab-inspect" role="tabpanel">
     <div class="card" style="max-width: 1000px; margin: 0 auto;">
@@ -1019,6 +1034,18 @@
     <div class="card">
       <h2>Latency & Throughput Metrics</h2>
       <div id="perf-table" style="overflow-x:auto;"></div>
+    </div>
+  </div>
+
+  <!-- HALLUCINATIONS -->
+  <div class="tab-content" id="tab-hallucinations" role="tabpanel">
+    <div class="card">
+      <h2>Anti-Leaderboard: Hallucination Rate</h2>
+      <p style="color:var(--text-muted); font-size:13px; margin-bottom:20px;">
+        Ranked by the percentage of tasks where a judge model detected a hallucination or factual error. 
+        <b>Lower is better.</b> Requires running matches with <code>--judge</code>.
+      </p>
+      <div id="anti-leaderboard-table" style="overflow-x: auto;"></div>
     </div>
   </div>
 
@@ -1503,13 +1530,51 @@ function handleWSEvent(d) {
     toast('Tournament complete! 🏆', 'success', 5000);
   } else if (d.type === 'job_error') {
     const tbtn = document.getElementById('tourney-run-btn');
-    if (tbtn && tbtn.disabled) {
-      tbtn.disabled = false;
-      tbtn.textContent = 'Commence Tournament';
+    if (btn && btn.disabled) {
+      btn.disabled = false;
+      btn.textContent = 'Commence Tournament';
       document.getElementById('tournament-log').innerHTML += `<div style="color:var(--accent-red); margin-top:8px;">Error: ${escText(d.error)}</div>`;
     }
+    const rbtn = document.getElementById('royale-run-btn');
+    if (rbtn && rbtn.disabled) {
+      rbtn.disabled = false;
+      rbtn.textContent = 'Initiate Royale';
+      document.getElementById('royale-log').innerHTML += `<div style="color:var(--accent-red); margin-top:8px;">Error: ${escText(d.error)}</div>`;
+    }
+  } else if (d.type === 'royale_task_done') {
+    const log = document.getElementById('royale-log');
+    log.innerHTML += `<div style="color:var(--text-muted); margin-bottom:4px;">Task <b>[${escText(d.task_id)}]</b> concluded for all contenders.</div>`;
+    log.scrollTop = log.scrollHeight;
+  } else if (d.type === 'royale_done') {
+    const prog = document.getElementById('royale-progress');
+    const rRank = document.getElementById('royale-rankings');
+    const btn = document.getElementById('royale-run-btn');
+    
+    prog.innerHTML = `<div style="font-size:24px; font-weight:800; color:var(--accent-green)">BATTLE CONCLUDED</div>`;
+    btn.disabled = false;
+    btn.textContent = 'Initiate Royale';
+    
+    let rankHtml = `<h2 style="color:var(--accent-blue)">👑 Final Standings</h2><table><thead><tr><th>Rank</th><th>Model</th><th>Score</th><th>ELO</th></tr></thead><tbody>`;
+    d.result.rankings.forEach(r => {
+      rankHtml += `<tr>
+        <td style="font-weight:700; color:var(--accent-blue)">#${r.rank}</td>
+        <td><strong>${escText(r.model)}</strong></td>
+        <td>${r.total_score.toFixed(2)}</td>
+        <td style="color:var(--accent-green); font-weight:700;">${r.elo_after.toFixed(0)}</td>
+      </tr>`;
+    });
+    rankHtml += `</tbody></table>`;
+    rankHtml += `<div style="margin-top:16px; font-size:12px; color:var(--text-muted);">Winner: 🏆 <b>${escText(d.result.winner)}</b> | Duration: ${d.result.duration_s}s | Royale #${d.result.royale_id}</div>`;
+    
+    rRank.innerHTML = rankHtml;
+    rRank.style.display = 'block';
+    
+    loadAll();
+    fireConfetti(100);
+    toast(`Royale concluded — <b>${escText(d.result.winner)}</b> is the champion!`, 'success', 6000);
   }
 }
+
 
 document.querySelectorAll('.tab').forEach(el => {
   el.addEventListener('click', () => {
@@ -1526,7 +1591,7 @@ document.querySelectorAll('.tab').forEach(el => {
     document.getElementById('tab-' + el.dataset.tab).classList.add('active');
     
     savePref('lastTab', el.dataset.tab);
-    const m = { dashboard: loadCharts, datasets: loadDatasets, performance: loadPerf, spec: loadSpec, tournament: () => {} };
+    const m = { dashboard: loadCharts, datasets: loadDatasets, performance: loadPerf, hallucinations: loadHallucinations, spec: loadSpec, tournament: () => {}, royale: () => {}, history: loadHistory };
     if (m[el.dataset.tab]) m[el.dataset.tab]();
   });
   
@@ -1595,7 +1660,7 @@ function schedulePreviewStrategy() {
 async function loadModels() {
   const models = await api('/api/models');
   const opts = models.map(m => `<option value="${m}">${m}</option>`).join('');
-  ['model-a','model-b', 'play-model-a', 'play-model-b', 'report-model', 'tourney-models'].forEach(id => {
+  ['model-a','model-b', 'play-model-a', 'play-model-b', 'report-model', 'tourney-models', 'royale-models'].forEach(id => {
     const s = document.getElementById(id);
     if (s) s.innerHTML = opts;
   });
@@ -1624,6 +1689,12 @@ async function loadModels() {
     if (tModels && models.length >= 3) {
       for(let i=0; i<Math.min(models.length, 4); i++) tModels.options[i].selected = true;
     }
+    
+    const rModels = document.getElementById('royale-models');
+    if (rModels && models.length >= 3) {
+      for(let i=0; i<Math.min(models.length, 3); i++) rModels.options[i].selected = true;
+    }
+
     // Now that defaults are set, preview the strategy
     schedulePreviewStrategy();
   }
@@ -1724,6 +1795,34 @@ async function runMatch() {
     });
     currentJobId = data.job_id;
   }, 100);
+}
+
+async function runRoyale() {
+  const s = document.getElementById('royale-models');
+  const models = Array.from(s.selectedOptions).map(opt => opt.value);
+  if (models.length < 3) return alert("Battle Royale requires at least 3 contenders.");
+  const cat = document.getElementById('royale-category').value;
+  const n = parseInt(document.getElementById('royale-n').value);
+
+  const btn = document.getElementById('royale-run-btn');
+  btn.disabled = true; btn.textContent = 'Initiating...';
+  document.getElementById('royale-log').innerHTML = '';
+  document.getElementById('royale-log').style.display = 'block';
+  document.getElementById('royale-rankings').style.display = 'none';
+  const prog = document.getElementById('royale-progress');
+  prog.innerHTML = `<div style="font-size:24px; font-weight:800; color:var(--accent-blue)">Awaiting battleground initialization...</div>`;
+
+  try {
+    const data = await api('/api/royale', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({models, category: cat, n})
+    });
+    currentJobId = data.job_id;
+  } catch(e) { 
+    alert(e.message); 
+    btn.disabled = false; 
+    btn.textContent = 'Initiate Royale'; 
+  }
 }
 
 async function runTournament() {
@@ -1990,6 +2089,62 @@ async function loadCharts() {
   });
 }
 
+async function loadHistory() {
+  const history = await api('/api/history?limit=100');
+  const el = document.getElementById('history-table');
+  if (!history || history.length === 0) {
+    el.innerHTML = '<div style="color:var(--text-muted); padding:20px; text-align:center">No matches recorded yet.</div>';
+    return;
+  }
+  
+  let h = `<table><thead><tr><th>ID</th><th>Contenders</th><th>Category</th><th>Score</th><th>Date</th><th>Action</th></tr></thead><tbody>`;
+  history.forEach(m => {
+    const date = new Date(m.ts * 1000).toLocaleString();
+    h += `<tr>
+      <td style="color:var(--accent-blue); font-weight:700">#${m.id}</td>
+      <td><strong>${m.model_a}</strong> <span style="color:var(--text-muted)">vs</span> <strong>${m.model_b}</strong></td>
+      <td><span class="badge badge-blue">${m.category}</span></td>
+      <td><b>${m.score_a}</b> - <b>${m.score_b}</b></td>
+      <td style="font-size:11px; color:var(--text-muted)">${date}</td>
+      <td><button class="btn" style="width:auto; padding:4px 12px; font-size:10px;" onclick="exportMatch(${m.id}, this)">Export</button></td>
+    </tr>`;
+  });
+  h += '</tbody></table>';
+  el.innerHTML = h;
+}
+
+async function exportMatch(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    const res = await api(`/api/export_match/${id}`);
+    toast(`Report exported to: <b>${res.path}</b>`, 'success', 5000);
+  } catch(e) { toast(`Export failed: ${e.message}`, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Export'; } }
+}
+
+async function loadHallucinations() {
+  const board = await api('/api/anti-leaderboard');
+  if (!board || board.length === 0) {
+    document.getElementById('anti-leaderboard-table').innerHTML = '<div style="color:var(--text-muted); padding:20px; text-align:center">No hallucination data recorded yet. Run matches with <code>--judge</code> enabled.</div>';
+    return;
+  }
+  
+  let h = `<table><thead><tr><th>Rank</th><th>Model</th><th>Halluc Rate</th><th>Count</th><th>Checked</th></tr></thead><tbody>`;
+  board.forEach(e => {
+    const rate = (e.halluc_rate * 100).toFixed(1) + '%';
+    const rateColor = e.halluc_rate > 0.2 ? 'var(--accent-red)' : (e.halluc_rate > 0.05 ? '#f59e0b' : 'var(--accent-green)');
+    h += `<tr>
+      <td style="font-weight:700">#${e.rank}</td>
+      <td><strong>${e.model}</strong></td>
+      <td style="color:${rateColor}; font-weight:800;">${rate}</td>
+      <td>${e.hallucinations}</td>
+      <td>${e.total_checked}</td>
+    </tr>`;
+  });
+  h += '</tbody></table>';
+  document.getElementById('anti-leaderboard-table').innerHTML = h;
+}
+
 async function loadPerf() {
   document.getElementById('chart-perf').innerHTML = await html('/charts/perf');
   const stats = await api('/api/perf');
@@ -2004,6 +2159,7 @@ async function loadCategories() {
   const opts = Object.keys(d.stats).map(c => `<option value="${c}">${c.toUpperCase()}</option>`).join('');
   document.getElementById('category').innerHTML = opts;
   document.getElementById('tourney-category').innerHTML = opts;
+  document.getElementById('royale-category').innerHTML = opts;
 }
 
 async function loadDatasets() {

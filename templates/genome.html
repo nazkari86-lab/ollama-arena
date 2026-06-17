@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Genome Explorer — Ollama Arena</title>
+<style>
+  :root { --bg: #0d1117; --surface: #161b22; --border: #30363d;
+          --text: #e6edf3; --accent: #58a6ff; --green: #3fb950; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+  header { padding: 1rem 2rem; border-bottom: 1px solid var(--border);
+           display: flex; align-items: center; gap: 1rem; }
+  header h1 { font-size: 1.25rem; color: var(--accent); }
+  #controls { padding: 1rem 2rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+  #controls input { background: var(--surface); border: 1px solid var(--border);
+                    color: var(--text); padding: 0.5rem 1rem; border-radius: 6px;
+                    font-size: 0.9rem; width: 300px; }
+  #controls button { background: var(--accent); color: #000; border: none;
+                     padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer;
+                     font-weight: 600; }
+  #controls button:hover { opacity: 0.85; }
+  #graph { width: 100%; height: calc(100vh - 140px); }
+  #tooltip { position: fixed; background: var(--surface); border: 1px solid var(--border);
+             padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.85rem;
+             pointer-events: none; opacity: 0; transition: opacity 0.15s;
+             max-width: 280px; z-index: 100; }
+  .legend { position: fixed; bottom: 2rem; left: 2rem; background: var(--surface);
+            border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.5rem;
+                 font-size: 0.8rem; margin: 0.25rem 0; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧬 LLM Genome Explorer</h1>
+  <a href="/" style="color: var(--text); text-decoration: none; font-size: 0.85rem;">← Back to Arena</a>
+</header>
+<div id="controls">
+  <input id="search" type="text" placeholder="Filter by model name or family...">
+  <button onclick="scanModels()">🔍 Scan Local Models</button>
+  <button onclick="loadTree(null)">Show All Families</button>
+  <span id="status" style="font-size:0.85rem; color:#888;"></span>
+</div>
+<div id="graph"></div>
+<div id="tooltip"></div>
+<div class="legend">
+  <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.5rem;">Lineage Relations</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>fine_tuned_from</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>distilled_from</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div>merged_from</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#e3b341"></div>trained_from</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="/static/genome.js"></script>
+<script>
+  loadTree(null);
+  document.getElementById('search').addEventListener('input', e => {
+    const q = e.target.value.trim();
+    if (q.length >= 2) loadTree(q);
+    else if (q.length === 0) loadTree(null);
+  });
+  async function scanModels() {
+    document.getElementById('status').textContent = 'Scanning...';
+    await fetch('/api/genome/scan', {method: 'POST'});
+    setTimeout(() => { loadTree(null); document.getElementById('status').textContent = ''; }, 2000);
+  }
+</script>
+</body>
+</html>

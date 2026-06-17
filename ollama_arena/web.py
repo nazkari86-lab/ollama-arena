@@ -216,6 +216,10 @@ def run_web(
         _lb_cache["t"] = now; _lb_cache["data"] = data
         return data
 
+    @app.get("/api/anti-leaderboard")
+    def api_anti_leaderboard():
+        return arena.elo.anti_leaderboard()
+
     @app.get("/api/history")
     def api_history(limit: int = 50):
         now = time.time()
@@ -327,6 +331,35 @@ def run_web(
     @app.get("/api/report/{model}")
     def api_report(model: str):
         return arena.elo.category_stats(model)
+
+    @app.get("/api/export_match/{match_id}")
+    def api_export_match(match_id: int):
+        from .visualize import export_match_report
+        tasks = arena.elo.tasks_for_match(match_id)
+        history = arena.elo.match_history(limit=1000)
+        info = next((m for m in history if m["id"] == match_id), None)
+        if not info:
+            raise HTTPException(404, f"Match {match_id} not found")
+        path = export_match_report(match_id, info, tasks)
+        return {"path": path, "filename": Path(path).name}
+
+    @app.get("/api/export_royale/{royale_id}")
+    def api_export_royale(royale_id: int):
+        from .visualize import export_royale_report
+        entries = arena.elo.royale_entries(royale_id)
+        if not entries:
+            raise HTTPException(404, f"Royale {royale_id} not found")
+        # We need model names and category for royale report
+        # Let's get them from royale_log
+        try:
+            with sqlite3.connect(db_path) as cx:
+                row = cx.execute("SELECT category FROM royale_log WHERE id=?", (royale_id,)).fetchone()
+                category = row[0] if row else "unknown"
+        except: category = "unknown"
+        
+        models = sorted(list(set(e["model"] for e in entries)))
+        path = export_royale_report(royale_id, category, models, entries)
+        return {"path": path, "filename": Path(path).name}
 
     # Charts (HTML fragments rendered via Plotly)
     @app.get("/charts/elo")
@@ -545,6 +578,60 @@ def run_web(
             }))
 
         tasks.add_task(_run_tournament)
+        return {"job_id": jid}
+
+    @app.post("/api/royale")
+    @limiter.limit(_RL_MATCH)
+    def api_run_royale(request: Request, body: dict, tasks: BackgroundTasks):
+        models = body.get("models", [])
+        cat = body.get("category", "coding")
+        n = int(body.get("n", 5))
+        if len(models) < 3:
+            raise HTTPException(400, "Battle Royale requires at least 3 models")
+
+        jid = f"royale_{cat}_{n}_{int(time.time())}"
+        jobs[jid] = {"status": "running", "log": [], "type": "royale", "models": models}
+
+        import asyncio
+
+        def _run_royale():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            def on_task(tid, sa, sb, outcome, instruction="", resp_a="", resp_b="", expected=""):
+                # In royale, we just show round progress for now
+                event = {"type": "royale_task_done", "job_id": jid, "task_id": tid}
+                jobs[jid]["log"].append(event)
+                loop.run_until_complete(manager.broadcast(event))
+
+            arena._on_task_done = on_task
+            try:
+                r = arena.run_royale(models, category=cat, n=n)
+                jobs[jid]["status"] = "done"
+                result_data = {
+                    "winner": r.winner,
+                    "rankings": r.rankings,
+                    "duration_s": r.duration_s,
+                    "royale_id": r.royale_id,
+                    "strategy": r.strategy
+                }
+                jobs[jid]["result"] = result_data
+                loop.run_until_complete(manager.broadcast({
+                    "type": "royale_done",
+                    "job_id": jid,
+                    "result": result_data
+                }))
+            except Exception as e:
+                log.exception("Royale failed")
+                jobs[jid]["status"] = "error"
+                jobs[jid]["error"] = str(e)
+                loop.run_until_complete(manager.broadcast({
+                    "type": "job_error",
+                    "job_id": jid,
+                    "error": str(e)
+                }))
+
+        tasks.add_task(_run_royale)
         return {"job_id": jid}
 
     # Playground A/B endpoints
@@ -919,6 +1006,89 @@ def run_web(
             "ok": res.ok,
             "error": res.error,
         }
+
+    # ── Genome Explorer API ───────────────────────────────────────────────────
+    try:
+        from .genome.db import GenomeStore as _GenomeStore
+        from .genome.registry import CanonicalRegistry as _CanonicalRegistry
+        from .genome.scanner import OllamaScanner as _OllamaScanner
+        from .genome.resolver import GenomeResolver as _GenomeResolver
+        from .genome.graph import GraphEngine as _GraphEngine
+
+        _genome_db_path = db_path.replace("arena.db", "genome.db")
+        _genome_store = _GenomeStore(db_path=_genome_db_path)
+        _genome_registry = _CanonicalRegistry()
+        _genome_resolver = _GenomeResolver(store=_genome_store, registry=_genome_registry)
+        _genome_graph = _GraphEngine(_genome_store)
+
+        @app.get("/genome", response_class=HTMLResponse)
+        async def genome_page():
+            tmpl = HERE.parent / "templates" / "genome.html"
+            if tmpl.exists():
+                return HTMLResponse(tmpl.read_text())
+            return HTMLResponse("<h1>genome.html not found</h1>")
+
+        @app.get("/api/genome/tree")
+        async def genome_tree(model: str | None = None):
+            if model:
+                gid = _genome_registry.match_by_name(model)
+                data = _genome_graph.subtree(gid or model)
+            else:
+                data = _genome_graph.to_d3()
+            return JSONResponse(data)
+
+        @app.get("/api/genome/local")
+        async def genome_local():
+            return JSONResponse({"models": _genome_store.list_local()})
+
+        @app.post("/api/genome/scan")
+        async def genome_scan(background_tasks: BackgroundTasks):
+            def _do_scan():
+                scanner = _OllamaScanner(ollama_url=ollama_url)
+                local = scanner.scan_local()
+                _genome_resolver.scan_and_resolve_all(local)
+            background_tasks.add_task(_do_scan)
+            return JSONResponse({"started": True})
+
+        @app.get("/api/genome/model/{model_name:path}")
+        async def genome_model(model_name: str):
+            gid = _genome_registry.match_by_name(model_name)
+            canonical = _genome_registry.get(gid) if gid else None
+            local_rows = _genome_store.list_local()
+            local_match = next((r for r in local_rows if r["name"] == model_name), None)
+            return JSONResponse({"canonical": canonical, "local": local_match})
+
+        @app.get("/api/agent_trace/{match_id}")
+        async def agent_trace(match_id: int):
+            import json as _json
+            tasks = arena.elo.tasks_for_match(match_id)
+            result = []
+            for t in tasks:
+                trace_a, trace_b = None, None
+                raw_a = t.get("tool_call_a")
+                raw_b = t.get("tool_call_b")
+                try:
+                    trace_a = _json.loads(raw_a) if raw_a else None
+                except (_json.JSONDecodeError, TypeError):
+                    pass
+                try:
+                    trace_b = _json.loads(raw_b) if raw_b else None
+                except (_json.JSONDecodeError, TypeError):
+                    pass
+                result.append({
+                    "task_id": t["task_id"],
+                    "category": t.get("category"),
+                    "instruction": t.get("instruction", "")[:200],
+                    "score_a": t.get("score_a"),
+                    "score_b": t.get("score_b"),
+                    "trace_a": trace_a,
+                    "trace_b": trace_b,
+                })
+            return JSONResponse({"match_id": match_id, "tasks": result})
+
+    except ImportError as _e:
+        import logging as _logging
+        _logging.getLogger("arena.web").warning(f"Genome API unavailable: {_e}")
 
     from ._banner import print_banner
     print_banner(__version__)
