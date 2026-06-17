@@ -93,6 +93,28 @@ def cmd_leaderboard(args):
     console.print(t)
 
 
+def cmd_anti_leaderboard(args):
+    """Show models ranked by hallucination rate (highest first)."""
+    console = _console()
+    from rich.table import Table
+    from .elo import EloStore
+    board = EloStore(db_path=args.db).anti_leaderboard()
+    if not board:
+        console.print("[yellow]No hallucination data yet (run matches with --judge).[/yellow]"); return
+
+    t = Table(title="Anti-Leaderboard (Hallucination Rate)")
+    t.add_column("Rank", justify="right", style="cyan")
+    t.add_column("Model", style="bold")
+    t.add_column("Rate", justify="right", style="red")
+    t.add_column("Count", justify="center")
+    t.add_column("Checked", justify="right")
+    for e in board:
+        t.add_row(str(e["rank"]), e["model"], f"{e['halluc_rate']:.1%}",
+                  str(e["hallucinations"]), str(e["total_checked"]))
+    console.print(t)
+    console.print("\n[dim]Note: Lower is better. Rate = detected hallucinations / tasks checked by judge.[/dim]")
+
+
 # ── match ─────────────────────────────────────────────────────────────────────
 def cmd_match(args):
     console = _console()
@@ -271,6 +293,10 @@ def cmd_benchmark(args):
         f"Models: [cyan]{', '.join(models)}[/cyan]",
         title="ollama-arena benchmark"))
 
+    if not arena.judge and ("creative" in categories or "all" in categories):
+        console.print("[yellow]⚠ Warning: 'creative' category included but no judge model is provided.[/yellow]")
+        console.print("[dim]Creative tasks will be skipped as they require an LLM judge for scoring.[/dim]\n")
+
     results: dict[str, dict[str, list[float]]] = {m: {} for m in models}
 
     total_tasks = len(models) * len(categories) * n_per_cat
@@ -287,7 +313,9 @@ def cmd_benchmark(args):
                     res = arena.client.generate(model, task["instruction"])
                     from .evaluator import evaluate
                     score = evaluate(task, res.text) if res.ok else 0.0
-                    scores.append(score)
+                    
+                    if score is not None:
+                        scores.append(score)
                     prog.advance(task_bar)
                 results[model][cat] = scores
 
@@ -367,6 +395,70 @@ def cmd_tournament(args):
     cmd_leaderboard(args)
 
 
+# ── royale ───────────────────────────────────────────────────────────────────
+def cmd_royale(args):
+    """N-way Battle Royale: all models fight on the same tasks simultaneously."""
+    console = _console()
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from rich.rule import Rule
+
+    models = [m.strip() for m in args.models.split(",")]
+    if len(models) < 3:
+        console.print("[red]Battle Royale requires at least 3 models (found {len(models)})[/red]")
+        sys.exit(1)
+
+    arena = _make_arena(args)
+    if not arena.client.is_alive():
+        console.print("[red]✗ Backend not reachable.[/red]"); sys.exit(1)
+
+    n = args.n
+    category = args.category
+
+    console.print(Panel(
+        f"Battle Royale (N-way Match)\n"
+        f"Models  : {', '.join(models)}\n"
+        f"Category: [yellow]{category}[/yellow]   Tasks: [yellow]{n}[/yellow]",
+        title="ollama-arena royale"))
+
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                  console=console, transient=True) as prog:
+        prog.add_task(f"Generating responses for all {len(models)} models…", total=None)
+        r = arena.run_royale(models, category=category, n=n, difficulty=args.difficulty)
+
+    console.print(Rule(f"[bold]Final Rankings: {category}[/bold]"))
+    
+    t = Table(show_lines=True)
+    t.add_column("Rank", style="bold yellow", width=6)
+    t.add_column("Model", style="bold cyan", min_width=22)
+    t.add_column("Score", justify="right")
+    t.add_column("ELO", style="bold green", justify="right")
+    
+    for entry in r.rankings:
+        t.add_row(
+            str(entry["rank"]),
+            entry["model"],
+            f"{entry['total_score']:.2f}",
+            f"{entry['elo_after']:.0f}"
+        )
+    
+    console.print(t)
+    console.print(f"\n  Winner: [bold green]🏆 {r.winner}[/bold green]  ({r.duration_s:.0f}s)  royale #{r.royale_id}")
+    console.print(f"  Strategy: [dim]{r.strategy}[/dim]")
+    
+    # Auto-export royale report
+    from .visualize import export_royale_report
+    # We need to fetch the entries we just saved
+    entries = arena.elo.royale_entries(r.royale_id)
+    if entries:
+        out = export_royale_report(r.royale_id, category, models, entries)
+        console.print(f"  [green]✓ Royale report exported to: [bold]{out}[/bold][/green]")
+    
+    console.print()
+    cmd_leaderboard(args)
+
+
 # ── tasks ─────────────────────────────────────────────────────────────────────
 def cmd_tasks(args):
     console = _console()
@@ -435,6 +527,14 @@ def cmd_results(args):
 
     if args.match:
         _show_match_detail(console, store, args.match, args.full)
+        if args.export:
+            from .visualize import export_match_report
+            tasks = store.tasks_for_match(args.match)
+            history = store.match_history(limit=200)
+            info = next((m for m in history if m["id"] == args.match), None)
+            if info:
+                out = export_match_report(args.match, info, tasks)
+                console.print(f"\n  [green]✓ Match report exported to: [bold]{out}[/bold][/green]")
         return
 
     # List recent matches
@@ -711,6 +811,99 @@ def cmd_finetune(args):
 
 
 # ── perf ──────────────────────────────────────────────────────────────────────
+def cmd_genome(args):
+    console = _console()
+    from .genome.db import GenomeStore
+    from .genome.registry import CanonicalRegistry
+    from .genome.scanner import OllamaScanner
+    from .genome.resolver import GenomeResolver
+    from .genome.graph import GraphEngine
+
+    db_path = getattr(args, "genome_db", "genome.db")
+    store = GenomeStore(db_path=db_path)
+    registry = CanonicalRegistry()
+    resolver = GenomeResolver(store=store, registry=registry)
+
+    genome_cmd = getattr(args, "genome_cmd", None)
+
+    if genome_cmd == "scan":
+        from rich.table import Table
+        scanner = OllamaScanner(ollama_url=args.ollama)
+        local = scanner.scan_local()
+        if not local:
+            console.print("[yellow]No local Ollama models found.[/yellow]")
+            return
+        results = resolver.scan_and_resolve_all(local)
+        table = Table(title="Genome Scan Results")
+        table.add_column("Local Model", style="cyan")
+        table.add_column("Canonical ID", style="green")
+        table.add_column("Confidence", style="yellow")
+        table.add_column("Size GB", justify="right")
+        local_map = {l.name: l for l in local}
+        for r in results:
+            linfo = local_map.get(r["name"])
+            size = f"{linfo.size_gb:.1f}" if linfo else "?"
+            table.add_row(r["name"], r.get("genome_id") or "Unknown",
+                          r["confidence"], size)
+        console.print(table)
+
+    elif genome_cmd == "tree":
+        from rich import print as rprint
+        engine = GraphEngine(store)
+        if args.model:
+            gid = registry.match_by_name(args.model)
+            data = engine.subtree(gid or args.model)
+        else:
+            data = engine.to_d3()
+        targets = {l["target"] for l in data["links"]}
+        roots = [n for n in data["nodes"] if n["id"] not in targets]
+        if not roots:
+            roots = data["nodes"][:1]
+
+        def add_children(rich_node, parent_id: str, depth: int = 0):
+            if depth > 6:
+                return
+            try:
+                from rich.tree import Tree as RichTree
+            except ImportError:
+                return
+            children = [l["source"] for l in data["links"] if l["target"] == parent_id]
+            for cid in children:
+                cnode = next((n for n in data["nodes"] if n["id"] == cid), None)
+                if cnode:
+                    pb = cnode.get("params_b", 0) or 0
+                    label = f"[cyan]{cnode['name']}[/] ({pb:.1f}B)"
+                    branch = rich_node.add(label)
+                    add_children(branch, cid, depth + 1)
+
+        try:
+            from rich.tree import Tree as RichTree
+            for root in roots[:5]:
+                pb = root.get("params_b", 0) or 0
+                rich_tree = RichTree(f"[bold]{root['name']}[/] ({pb:.1f}B)")
+                add_children(rich_tree, root["id"])
+                rprint(rich_tree)
+        except ImportError:
+            console.print("[yellow]Install rich for tree view.[/yellow]")
+
+    elif genome_cmd == "show":
+        match_id = registry.match_by_name(args.model)
+        canonical = registry.get(match_id) if match_id else None
+        local_rows = store.list_local()
+        local_match = next((r for r in local_rows if r["name"] == args.model), None)
+        if canonical:
+            console.print(f"\n[bold cyan]{canonical['name']}[/bold cyan]")
+            console.print(f"Family: {canonical.get('family','')}  |  Org: {canonical.get('org','')}")
+            arch = canonical.get("architecture", {})
+            console.print(f"Params: {arch.get('params_b','?')}B | Layers: {arch.get('n_layers','?')} | Context: {arch.get('context_length','?')}")
+            if local_match:
+                console.print(f"Local: [green]{local_match['confidence']}[/green] confidence  |  {local_match.get('size_gb',0):.1f} GB")
+        else:
+            console.print(f"[yellow]No canonical genome entry found for '{args.model}'[/yellow]")
+    else:
+        console.print("[yellow]Usage: arena genome <scan|tree|show>[/yellow]")
+
+
 def cmd_perf(args):
     console = _console()
     from rich.table import Table
@@ -746,10 +939,12 @@ def cmd_export(args):
     leaderboard = store.leaderboard()
     matches = store.match_history(limit=1000)
     perf = PerfTracker(args.db).stats()
+    anti_leaderboard = store.anti_leaderboard()
 
     out = export_dashboard(
         args.out, leaderboard=leaderboard, matches=matches,
         categories=list_categories(), performance=perf,
+        anti_leaderboard=anti_leaderboard,
     )
     console.print(f"  dashboard exported → [cyan]{out}[/cyan]")
     console.print(f"     open file://{Path(out).absolute()}")
@@ -934,9 +1129,26 @@ def main():
     add_common(pt)
     pt.set_defaults(func=cmd_tournament)
 
+    # royale
+    pr = sub.add_parser("royale", help="N-way simultaneous battle royale")
+    pr.add_argument("--models",   required=True, metavar="A,B,C[,D...]",
+                    help="At least 3 models comma-separated")
+    pr.add_argument("--category", default="coding",
+                    choices=["coding","reasoning","security","planning",
+                             "inspection","math","knowledge","creative",
+                             "json_format","tool_use","all"])
+    pr.add_argument("--difficulty", default=None, choices=["easy","medium","hard"])
+    pr.add_argument("-n",           type=int, default=5)
+    add_common(pr)
+    pr.set_defaults(func=cmd_royale)
+
     # leaderboard
     sub.add_parser("leaderboard", aliases=["lb"],
                    help="Show ELO rankings").set_defaults(func=cmd_leaderboard)
+
+    # anti-leaderboard
+    sub.add_parser("anti-leaderboard", aliases=["alb"],
+                   help="Show hallucination rankings").set_defaults(func=cmd_anti_leaderboard)
 
     # list
     sub.add_parser("list",
@@ -955,6 +1167,8 @@ def main():
                     help="How many recent matches to list (default 10)")
     pr.add_argument("--full",   action="store_true",
                     help="Print complete (untruncated) prompts and responses")
+    pr.add_argument("--export", action="store_true",
+                    help="Export match results to HTML/JSON in /reports folder")
     pr.set_defaults(func=cmd_results)
 
     # inspect
@@ -1007,6 +1221,19 @@ def main():
     pp = sub.add_parser("publish", help="Upload ELO leaderboard and results to GitHub Gist")
     pp.add_argument("--public", action="store_true", help="Make the Gist public")
     pp.set_defaults(func=cmd_publish)
+
+    # genome
+    pg = sub.add_parser("genome", help="LLM Genome Explorer — lineage and identity")
+    genome_sub = pg.add_subparsers(dest="genome_cmd")
+    pg_scan = genome_sub.add_parser("scan", help="Scan local Ollama models and resolve lineage")
+    pg_scan.add_argument("--genome-db", default="genome.db", metavar="PATH")
+    pg_tree = genome_sub.add_parser("tree", help="Print lineage tree in terminal")
+    pg_tree.add_argument("--model", default=None, help="Filter to subtree of this model")
+    pg_tree.add_argument("--genome-db", default="genome.db", metavar="PATH")
+    pg_show = genome_sub.add_parser("show", help="Show genome card for a model")
+    pg_show.add_argument("model", help="Local model name (e.g. llama3.1:8b)")
+    pg_show.add_argument("--genome-db", default="genome.db", metavar="PATH")
+    pg.set_defaults(func=cmd_genome)
 
     # web
     pw = sub.add_parser("web", help="Launch web dashboard")
