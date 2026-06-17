@@ -200,6 +200,91 @@ def _arc(row: dict, idx: int) -> dict:
     }
 
 
+# ── 2024-25 dataset fetchers ─────────────────────────────────────────────────
+
+def _livecode(row: dict, idx: int = 0) -> dict:
+    import json as _json
+    code = row.get("starter_code", "")
+    tests_raw = row.get("public_test_cases", "[]")
+    try:
+        tests = _json.loads(tests_raw)
+        test_code = "\n".join(
+            f"assert solution({t.get('input','')!r}) == {t.get('output','')!r}"
+            for t in tests[:3] if t.get("input") and t.get("output")
+        )
+    except Exception:
+        test_code = ""
+    return {
+        "id":          f"livecode_{row.get('question_id', abs(hash(row.get('question_content',''))))}",
+        "category":    "coding",
+        "difficulty":  row.get("difficulty", "medium").lower(),
+        "language":    "python",
+        "instruction": f"{row.get('question_content','')}\n\n{code}".strip(),
+        "test_code":   test_code,
+        "source":      "livecode",
+    }
+
+
+def _math500(row: dict, idx: int = 0) -> dict:
+    import re as _re
+    solution = row.get("solution", "")
+    m = _re.search(r"\\boxed\{([^}]+)\}", solution)
+    answer = m.group(1).strip() if m else solution.split("=")[-1].strip()
+    return {
+        "id":              f"math500_{abs(hash(row.get('problem','')))}",
+        "category":        "math",
+        "difficulty":      row.get("level", "Level 3").replace("Level ", "").strip(),
+        "language":        "natural",
+        "instruction":     row.get("problem", ""),
+        "expected_answer": answer,
+        "check":           "numeric_approx",
+        "tolerance":       1e-6,
+        "source":          "math500",
+    }
+
+
+def _gpqa_diamond(row: dict, idx: int = 0) -> dict:
+    return {
+        "id":              f"gpqa_{row.get('Record ID', abs(hash(row.get('Question',''))))}",
+        "category":        "knowledge",
+        "difficulty":      "hard",
+        "language":        "natural",
+        "instruction":     row.get("Question", ""),
+        "expected_answer": row.get("Correct Answer", ""),
+        "check_items":     [row.get("Correct Answer", "")],
+        "check":           "contains_any",
+        "source":          "gpqa_diamond",
+    }
+
+
+def _ifeval(row: dict, idx: int = 0) -> dict:
+    return {
+        "id":          f"ifeval_{row.get('key', abs(hash(row.get('prompt',''))))}",
+        "category":    "reasoning",
+        "difficulty":  "medium",
+        "language":    "natural",
+        "instruction": row.get("prompt", ""),
+        "use_judge":   True,
+        "judge_rubric": (
+            "Evaluate whether the response follows ALL instructions: "
+            + ", ".join(row.get("instruction_id_list", []))
+        ),
+        "source":      "ifeval",
+    }
+
+
+def _bigcodebench(row: dict, idx: int = 0) -> dict:
+    return {
+        "id":          f"bcb_{row.get('task_id','x').replace('/', '_')}",
+        "category":    "coding",
+        "difficulty":  "medium",
+        "language":    "python",
+        "instruction": row.get("prompt", ""),
+        "test_code":   row.get("test", ""),
+        "source":      "bigcodebench",
+    }
+
+
 # Registry
 REGISTRY: dict[str, DatasetInfo] = {
     "humaneval": DatasetInfo(
@@ -263,6 +348,43 @@ REGISTRY: dict[str, DatasetInfo] = {
         category="knowledge", description="AI2 Science questions",
         fetcher=_arc, license="cc-by-sa-4.0",
         url="https://huggingface.co/datasets/ai2_arc",
+    ),
+    # ── 2024-25 datasets ──────────────────────────────────────────────────────
+    "livecode": DatasetInfo(
+        name="livecode", hf_id="livecodebench/code_generation_lite", split="test",
+        category="coding",
+        description="LiveCodeBench: contamination-free coding tasks from 2024 contests",
+        fetcher=_livecode, license="CC-BY-4.0",
+        url="https://livecodebench.github.io",
+    ),
+    "math500": DatasetInfo(
+        name="math500", hf_id="lighteval/MATH-Hard", split="train",
+        category="math",
+        description="MATH-500: competition-level math (AMC, AIME, Olympiad)",
+        fetcher=_math500, license="MIT",
+        url="https://huggingface.co/datasets/lighteval/MATH-Hard",
+    ),
+    "gpqa_diamond": DatasetInfo(
+        name="gpqa_diamond", hf_id="Idavidrein/gpqa", split="train",
+        config="gpqa_diamond",
+        category="knowledge",
+        description="GPQA Diamond: expert-level science Q&A (PhD-level, 198 questions)",
+        fetcher=_gpqa_diamond, license="CC-BY-4.0",
+        url="https://arxiv.org/abs/2311.12022",
+    ),
+    "ifeval": DatasetInfo(
+        name="ifeval", hf_id="google/IFEval", split="train",
+        category="reasoning",
+        description="IFEval: instruction-following evaluation (541 verifiable instructions)",
+        fetcher=_ifeval, license="Apache-2.0",
+        url="https://huggingface.co/datasets/google/IFEval",
+    ),
+    "bigcodebench": DatasetInfo(
+        name="bigcodebench", hf_id="bigcode/bigcodebench", split="v0.1.2",
+        category="coding",
+        description="BigCodeBench: 1140 function-level coding tasks with realistic test suites",
+        fetcher=_bigcodebench, license="Apache-2.0",
+        url="https://bigcode-bench.github.io",
     ),
 }
 
