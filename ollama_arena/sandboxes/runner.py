@@ -10,11 +10,10 @@ import os, re, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 
 from .base import Language, RunResult, normalize
+from .security import is_safe_python
 
 
-# Static deny-list. This is necessary but not sufficient — relies on the
-# subprocess timeout and the fact that arena code is run on tasks generated
-# by trusted models. For untrusted input use the docker path.
+# Static deny-list for non-python languages.
 _BLOCKED_PATTERNS = [
     r"\brm\s+-rf\b",
     r"\bsudo\b",
@@ -32,7 +31,10 @@ _BLOCKED_PATTERNS = [
 ]
 
 
-def _check_safe(code: str) -> tuple[bool, str]:
+def _check_safe(code: str, language: str) -> tuple[bool, str]:
+    if language == "python":
+        return is_safe_python(code)
+        
     for pat in _BLOCKED_PATTERNS:
         if re.search(pat, code, re.IGNORECASE):
             return False, pat
@@ -183,8 +185,26 @@ _DOCKER_IMAGES = {
 }
 
 
-def _run_in_docker(code: str, lang: Language, timeout: int) -> RunResult:
-    """Run code in an isolated docker container (read-only, no network)."""
+# Path to Seccomp profile — applied to every container.
+_SECCOMP_PROFILE = Path(__file__).parent / "seccomp.json"
+
+
+def _run_in_docker(code: str, lang: Language, timeout: int,
+                   memory: str = "512m", cpus: str = "0.5",
+                   pids: int = 64) -> RunResult:
+    """
+    Run code in a hardened docker container.
+
+    Defense layers (in order of importance):
+      1. --network=none           — no outbound traffic at all
+      2. --security-opt=no-new-privileges  — block setuid escalation
+      3. --cap-drop=ALL           — drop every Linux capability
+      4. --security-opt seccomp=…  — block mount/ptrace/kexec/etc.
+      5. --read-only + tmpfs      — rootfs is immutable
+      6. --memory + --cpus        — kill OOM / CPU hogs
+      7. --pids-limit             — prevent fork bombs
+      8. --user 65534:65534       — run as `nobody`
+    """
     if not _has("docker"):
         return RunResult(error="Docker not installed", language=lang.value)
     image = _DOCKER_IMAGES[lang]
@@ -197,22 +217,46 @@ def _run_in_docker(code: str, lang: Language, timeout: int) -> RunResult:
         Language.RUST:       ["sh", "-c", "rustc --edition=2021 -O /code/main.rs -o /tmp/m && /tmp/m"],
         Language.GO:         ["go", "run", "/code/main.go"],
         Language.CPP:        ["sh", "-c", "g++ -O2 -std=c++17 /code/main.cpp -o /tmp/m && /tmp/m"],
-        Language.BASH:       ["bash", "/code/main.sh"],
+        Language.BASH:       ["sh", "/code/main.sh"],
     }
     with tempfile.TemporaryDirectory() as tmp:
         tp = Path(tmp)
         (tp / f"main.{ext}").write_text(code)
         t0 = time.time()
-        proc = subprocess.run(
-            ["docker", "run", "--rm",
-             "--network=none",
-             "--memory=512m", "--cpus=1",
-             "--read-only", "--tmpfs=/tmp:rw,size=64m",
-             "-v", f"{tmp}:/code:ro",
-             "-w", "/code",
-             image] + cmd_map[lang],
-            capture_output=True, text=True, timeout=timeout,
-        )
+        docker_cmd = [
+            "docker", "run", "--rm",
+            # — Network isolation
+            "--network=none",
+            # — Capability drop
+            "--cap-drop=ALL",
+            # — Privilege escalation
+            "--security-opt=no-new-privileges",
+            # — Seccomp syscall filter (if profile present)
+            *(["--security-opt", f"seccomp={_SECCOMP_PROFILE}"]
+              if _SECCOMP_PROFILE.is_file() else []),
+            # — Resource quotas
+            "--memory", memory,
+            "--memory-swap", memory,        # disallow swap (otherwise default=2×memory)
+            "--cpus", cpus,
+            "--pids-limit", str(pids),
+            "--ulimit", "nofile=128:128",   # max 128 open files
+            "--ulimit", "nproc=64:64",
+            # — Filesystem
+            "--read-only",
+            "--tmpfs=/tmp:rw,noexec,nosuid,size=64m",
+            "-v", f"{tmp}:/code:ro",
+            "-w", "/code",
+            # — Drop to unprivileged user
+            "--user", "65534:65534",
+            image,
+        ] + cmd_map[lang]
+        try:
+            proc = subprocess.run(
+                docker_cmd, capture_output=True, text=True, timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return RunResult(error="Timeout", timed_out=True,
+                             duration_s=float(timeout), language=lang.value)
         return RunResult(
             accepted=(proc.returncode == 0),
             output=proc.stdout[:2000],
@@ -228,7 +272,7 @@ def run_in_language(
     code: str,
     language: str | Language = "python",
     timeout: int = 15,
-    use_docker: bool = False,
+    use_docker: bool = True,
 ) -> RunResult:
     """
     Execute `code` in the given language.
@@ -243,11 +287,13 @@ def run_in_language(
         RunResult with output, error, exit_code, duration.
     """
     lang = normalize(language)
-    safe, pat = _check_safe(code)
+    safe, pat = _check_safe(code, lang.value)
     if not safe:
         return RunResult(blocked=True, error=f"BLOCKED: {pat}", language=lang.value)
 
     if use_docker:
+        if not _has("docker"):
+            return RunResult(error="Docker is required for safe execution but is not installed.", language=lang.value)
         return _run_in_docker(code, lang, timeout)
 
     runner = _RUNNERS.get(lang)

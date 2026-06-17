@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.4.0
+
+- 229 built-in tasks — up from 114 — across 8 categories (coding, reasoning, math, knowledge, security, planning, inspection, creative).
+- New: `math` category — 50 offline tasks: arithmetic, algebra, geometry, combinatorics, number theory, statistics, finance, logic.
+- New: `knowledge` category — 50 offline tasks: physics, chemistry, biology, history, geography, CS, general.
+- New: `creative` category — 15 tasks judged by LLM (`use_judge=True`): haiku, dialogue, story, ad copy, cover letters.
+- Evaluator: added `contains_all` and `contains_any` check types for multi-answer tasks.
+- Evaluator: `eval_inspection` clean-code detection expanded from 6 phrases to 24 synonyms.
+- Benchmark command: now covers 7 categories (added math + knowledge) × 6 tasks each.
+- Web UI: **Inspect** tab — enter any task ID to see all model responses side-by-side.
+- Web UI: **Report** tab — select a model to see per-category win rates and strength/weakness verdict.
+- Web UI: category dropdown in Match tab now populated dynamically from `/api/categories`.
+- Web UI: version badge now reads from `/api/version` instead of hardcoded "v2.0.0".
+- `match --category` now accepts `creative` in addition to existing choices.
+
 ## 2.3.0
 
 - `benchmark MODEL[,MODEL2]` — standardized 30-task Score (0–100) across 5 categories.

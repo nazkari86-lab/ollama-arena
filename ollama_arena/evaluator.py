@@ -20,10 +20,8 @@ def eval_coding(task: dict, response: str) -> float:
         return 0.5
     full = code + "\n" + test
 
-    # Default to Docker unless explicitly disabled via environment variable
-    use_docker = os.environ.get("ARENA_NO_DOCKER", "0") != "1"
-    
-    result = run_in_language(full, language=language, timeout=task.get("timeout", 15), use_docker=use_docker)
+    # STRICT DOCKER ENFORCEMENT for safety
+    result = run_in_language(full, language=language, timeout=task.get("timeout", 15), use_docker=True)
     
     if result.blocked:
         log.warning(f"[eval_coding] Blocked pattern detected: {result.error}")

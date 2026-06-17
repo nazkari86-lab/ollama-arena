@@ -4,6 +4,10 @@ from .reasoning           import REASONING_TASKS
 from .security            import SECURITY_TASKS
 from .planning            import PLANNING_TASKS
 from .inspection          import INSPECTION_TASKS
+from .math                import MATH_TASKS
+from .knowledge           import KNOWLEDGE_TASKS
+from .creative            import CREATIVE_TASKS
+from .structured_json    import JSON_TASKS
 from .coding_multilang    import (
     CODING_JS_TASKS, CODING_TS_TASKS, CODING_RUST_TASKS,
     CODING_GO_TASKS, CODING_CPP_TASKS, ALL_MULTILANG_TASKS,
@@ -13,11 +17,15 @@ from .coding_multilang    import (
 _ALL_CODING = CODING_TASKS + ALL_MULTILANG_TASKS
 
 ALL_TASKS: dict[str, list] = {
-    "coding":     _ALL_CODING,
-    "reasoning":  REASONING_TASKS,
-    "security":   SECURITY_TASKS,
-    "planning":   PLANNING_TASKS,
-    "inspection": INSPECTION_TASKS,
+    "coding":      _ALL_CODING,
+    "json_format": JSON_TASKS,
+    "reasoning":   REASONING_TASKS,
+    "math":        MATH_TASKS,
+    "knowledge":   KNOWLEDGE_TASKS,
+    "security":    SECURITY_TASKS,
+    "planning":    PLANNING_TASKS,
+    "inspection":  INSPECTION_TASKS,
+    "creative":    CREATIVE_TASKS,
 }
 
 

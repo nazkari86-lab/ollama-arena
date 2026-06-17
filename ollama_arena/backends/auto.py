@@ -15,20 +15,43 @@ _PORT_HINTS = {
     8000:  "vllm",
     1234:  "lmstudio",
     8080:  "llamacpp",
+    # Speculative decoding llama-server ports
+    8888:  "speculative",
+    8889:  "speculative",
+    8890:  "speculative",
+    8891:  "speculative",
+    8892:  "speculative",
+    8893:  "speculative",
+    8894:  "speculative",
+    8895:  "speculative",
+    8896:  "speculative",
+    8897:  "speculative",
 }
 
 
 def detect_backend(url: str | None = None) -> str:
-    """Guess backend type from a URL. Returns 'ollama' or 'openai-compat'."""
+    """Guess backend type from a URL. Returns 'ollama', 'openai-compat', or 'speculative'."""
     if not url:
         return "ollama"
     u = urlparse(url)
     if u.port in _PORT_HINTS:
         kind = _PORT_HINTS[u.port]
-        return "ollama" if kind == "ollama" else "openai-compat"
+        if kind == "ollama":
+            return "ollama"
+        if kind == "speculative":
+            return "speculative"
+        return "openai-compat"
     if "11434" in url:
         return "ollama"
     return "openai-compat"
+
+
+def spec_backend_for_model(model: str) -> Backend | None:
+    """Return a SpeculativeBackend if model is a spec: prefixed name, else None."""
+    from .spec import is_spec_model, SpeculativeBackend, SPEC_SERVERS
+    if is_spec_model(model) and model in SPEC_SERVERS:
+        return SpeculativeBackend(model)
+    return None
 
 
 def auto_backend(url: str | None = None, api_key: str | None = None) -> Backend:

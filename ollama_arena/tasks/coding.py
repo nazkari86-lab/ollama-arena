@@ -157,4 +157,104 @@ CODING_TASKS = [
         "instruction": "Write a Python function `minimax(board, depth, maximizing)` for a tic-tac-toe board (3x3 list of lists with 'X','O',None). Return the best score for the current player. Also write `best_move(board)` that returns (row, col) of the best move for 'X'.",
         "test_code": "board = [['X','O','X'],['O','X',None],['O',None,None]]\nmove = best_move(board)\nassert move == (2,1) or isinstance(move, tuple)",
     },
+    {
+        "id": "code_031", "difficulty": "easy", "role": "coder",
+        "instruction": "Write a Python function `is_anagram(s1, s2)` that returns True if two strings are anagrams (ignoring spaces, case, and punctuation).",
+        "test_code": "assert is_anagram('listen', 'silent') == True\nassert is_anagram('hello', 'billion') == False\nassert is_anagram('A gentleman', 'Elegant man') == True",
+    },
+    {
+        "id": "code_032", "difficulty": "easy", "role": "coder",
+        "instruction": "Write a Python function `factorial(n)` that returns the factorial of n using recursion.",
+        "test_code": "assert factorial(0) == 1\nassert factorial(1) == 1\nassert factorial(5) == 120",
+    },
+    {
+        "id": "code_033", "difficulty": "easy", "role": "coder",
+        "instruction": "Write a Python function `transpose_matrix(matrix)` that transposes a 2D matrix (list of lists).",
+        "test_code": "assert transpose_matrix([[1, 2], [3, 4]]) == [[1, 3], [2, 4]]\nassert transpose_matrix([[1, 2, 3], [4, 5, 6]]) == [[1, 4], [2, 5], [3, 6]]",
+    },
+    {
+        "id": "code_034", "difficulty": "easy", "role": "coder",
+        "instruction": "Write a Python function `common_elements(a, b)` that returns a list of unique common elements between two lists without using external libraries, preserving no specific order.",
+        "test_code": "res = common_elements([1, 2, 2, 3], [2, 3, 4])\nassert sorted(res) == [2, 3]\nassert common_elements([], [1]) == []",
+    },
+    {
+        "id": "code_035", "difficulty": "easy", "role": "coder",
+        "instruction": "Write a Python function `is_perfect_square(n)` that returns True if a number is a perfect square, and False otherwise.",
+        "test_code": "assert is_perfect_square(16) == True\nassert is_perfect_square(15) == False\nassert is_perfect_square(0) == True",
+    },
+    {
+        "id": "code_036", "difficulty": "easy", "role": "coder",
+        "instruction": "Write a Python function `sum_digits(n)` that returns the sum of the digits of a non-negative integer.",
+        "test_code": "assert sum_digits(1234) == 10\nassert sum_digits(0) == 0\nassert sum_digits(9) == 9",
+    },
+    {
+        "id": "code_037", "difficulty": "easy", "role": "coder",
+        "instruction": "Write a Python function `chunk_list(lst, size)` that splits a list into chunks of a given size.",
+        "test_code": "assert chunk_list([1, 2, 3, 4, 5], 2) == [[1, 2], [3, 4], [5]]\nassert chunk_list([], 3) == []",
+    },
+    {
+        "id": "code_038", "difficulty": "medium", "role": "coder",
+        "instruction": "Write a Python function `longest_common_prefix(strs)` that finds the longest common prefix among a list of strings.",
+        "test_code": "assert longest_common_prefix(['flower', 'flow', 'flight']) == 'fl'\nassert longest_common_prefix(['dog', 'racecar', 'car']) == ''\nassert longest_common_prefix([]) == ''",
+    },
+    {
+        "id": "code_039", "difficulty": "medium", "role": "coder",
+        "instruction": "Write a Python function `run_length_encode(s)` that performs basic run-length compression on a string.",
+        "test_code": "assert run_length_encode('aabcccccaaa') == 'a2b1c5a3'\nassert run_length_encode('') == ''\nassert run_length_encode('abcd') == 'a1b1c1d1'",
+    },
+    {
+        "id": "code_040", "difficulty": "medium", "role": "coder",
+        "instruction": "Write a Python function `run_length_decode(s)` that decodes a run-length compressed string.",
+        "test_code": "assert run_length_decode('a2b1c5a3') == 'aabcccccaaa'\nassert run_length_decode('') == ''\nassert run_length_decode('a1b1c1d1') == 'abcd'",
+    },
+    {
+        "id": "code_041", "difficulty": "medium", "role": "coder",
+        "instruction": "Write a Python function `valid_parentheses(s)` that returns True if bracket types `()`, `[]`, `{}` in a string are closed in the correct order.",
+        "test_code": "assert valid_parentheses('()[]{}') == True\nassert valid_parentheses('(]') == False\nassert valid_parentheses('([)]') == False\nassert valid_parentheses('') == True",
+    },
+    {
+        "id": "code_042", "difficulty": "medium", "role": "coder",
+        "instruction": "Write a Python function `binary_tree_lca(root, p, q)` that returns the Lowest Common Ancestor node of p and q in a binary tree. Nodes have `.left`, `.right`, and `.val` attributes.",
+        "test_code": "class Node:\n    def __init__(self, val, l=None, r=None):\n        self.val, self.left, self.right = val, l, r\nroot = Node(3, Node(5), Node(1))\nassert binary_tree_lca(root, root.left, root.right) == root",
+    },
+    {
+        "id": "code_043", "difficulty": "medium", "role": "coder",
+        "instruction": "Write a Python function `longest_consecutive(nums)` that finds the length of the longest consecutive elements sequence in an unsorted array.",
+        "test_code": "assert longest_consecutive([100, 4, 200, 1, 3, 2]) == 4\nassert longest_consecutive([]) == 0",
+    },
+    {
+        "id": "code_044", "difficulty": "medium", "role": "coder",
+        "instruction": "Write a Python function `subarray_sum(nums, k)` that returns the total number of continuous subarrays whose sum equals k.",
+        "test_code": "assert subarray_sum([1, 1, 1], 2) == 2\nassert subarray_sum([1, 2, 3], 3) == 2\nassert subarray_sum([], 1) == 0",
+    },
+    {
+        "id": "code_045", "difficulty": "hard", "role": "coder",
+        "instruction": "Write a Python function `merge_intervals(intervals)` that merges all overlapping intervals (each interval is a list of two ints).",
+        "test_code": "assert merge_intervals([[1, 3], [2, 6], [8, 10], [15, 18]]) == [[1, 6], [8, 10], [15, 18]]\nassert merge_intervals([[1, 4], [4, 5]]) == [[1, 5]]",
+    },
+    {
+        "id": "code_046", "difficulty": "hard", "role": "coder",
+        "instruction": "Write a Python function `dijkstra(graph, start)` that implements Dijkstra's algorithm to find shortest paths from start to all other nodes in a weighted graph represented as a dictionary `{u: {v: w}}`.",
+        "test_code": "r = dijkstra({'A': {'B': 1, 'C': 4}, 'B': {'C': 2}, 'C': {}}, 'A')\nassert r['C'] == 3\nassert r['A'] == 0",
+    },
+    {
+        "id": "code_047", "difficulty": "hard", "role": "coder",
+        "instruction": "Write a Python function `knapsack(weights, values, capacity)` that solves the 0/1 knapsack problem and returns the maximum value that can be obtained.",
+        "test_code": "assert knapsack([1, 2, 3], [60, 100, 120], 5) == 220\nassert knapsack([10, 20, 30], [60, 100, 120], 50) == 220",
+    },
+    {
+        "id": "code_048", "difficulty": "hard", "role": "coder",
+        "instruction": "Write a Python function `regex_match(s, p)` that supports '.' and '*' matching for regular expressions.",
+        "test_code": "assert regex_match('aa', 'a*') == True\nassert regex_match('ab', '.*') == True\nassert regex_match('aab', 'c*a*b') == True\nassert regex_match('mississippi', 'mis*is*ip*.') == True",
+    },
+    {
+        "id": "code_049", "difficulty": "hard", "role": "coder",
+        "instruction": "Write a Python function `edit_distance_path(s1, s2)` that returns the sequence of operations (insert, delete, replace, keep) as a list of tuples like `('keep', 'c')` or `('replace', 'a', 'u')` to transform s1 to s2 with minimum edit distance.",
+        "test_code": "res = edit_distance_path('cat', 'cut')\nassert isinstance(res, list)\nassert len(res) == 3\nassert any(op[0] == 'replace' for op in res)",
+    },
+    {
+        "id": "code_050", "difficulty": "hard", "role": "coder",
+        "instruction": "Write a Python class `CircularQueue(k)` that implements a double-ended circular queue (Deque) with insertFront, insertLast, deleteFront, deleteLast, getFront, getRear, isEmpty, isFull methods.",
+        "test_code": "q = CircularQueue(3)\nassert q.insertLast(1) == True\nassert q.insertLast(2) == True\nassert q.getRear() == 2\nassert q.insertFront(3) == True\nassert q.isFull() == True",
+    },
 ]

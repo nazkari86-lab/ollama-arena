@@ -262,7 +262,7 @@ def cmd_benchmark(args):
     if not arena.client.is_alive():
         console.print("[red]✗ Backend not reachable.[/red]"); sys.exit(1)
 
-    categories = ["coding", "reasoning", "security", "planning", "inspection"]
+    categories = ["coding", "reasoning", "math", "knowledge", "security", "planning", "inspection"]
     n_per_cat = _BENCHMARK_TASKS_PER_CAT
 
     console.print(Panel(
@@ -755,6 +755,122 @@ def cmd_export(args):
     console.print(f"     open file://{Path(out).absolute()}")
 
 
+# ── publish ───────────────────────────────────────────────────────────────────
+def cmd_publish(args):
+    console = _console()
+    import os
+    import requests
+    from .elo import EloStore
+    from .performance import PerfTracker
+
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token:
+        console.print("[red]Error: GITHUB_TOKEN or GH_TOKEN environment variable not set.[/red]")
+        console.print("Please set it to your GitHub Personal Access Token (with 'gist' scope) or run:")
+        console.print("  [cyan]export GITHUB_TOKEN=your_token_here[/cyan]")
+        sys.exit(1)
+
+    store = EloStore(db_path=args.db)
+    leaderboard = store.leaderboard()
+    matches = store.recent_matches_summary(limit=20)
+    perf_tracker = PerfTracker(args.db)
+    perf = perf_tracker.stats()
+    benchmarks = store.benchmark_history(limit=20)
+
+    # Build markdown report
+    md = []
+    md.append("# ollama-arena ELO Leaderboard & Results")
+    md.append(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+    md.append("## ELO Leaderboard")
+    if not leaderboard:
+        md.append("No matches yet.\n")
+    else:
+        md.append("| Rank | Model | ELO | Wins | Losses | Draws | Matches | Win Rate |")
+        md.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
+        for e in leaderboard:
+            md.append(f"| {e['rank']} | {e['model']} | {e['elo']:.1f} | {e['wins']} | {e['losses']} | {e['draws']} | {e['matches']} | {e['win_rate']:.1%} |")
+        md.append("")
+
+    md.append("## Recent Matches")
+    if not matches:
+        md.append("No matches recorded yet.\n")
+    else:
+        md.append("| ID | Model A | Model B | Category | Tasks | A Wins | B Wins | Draws | Winner | Date |")
+        md.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
+        for m in matches:
+            dt = datetime.fromtimestamp(m["ts"]).strftime("%Y-%m-%d %H:%M")
+            md.append(f"| {m['id']} | {m['model_a']} | {m['model_b']} | {m['category']} | {m['tasks']} | {m['a_wins']} | {m['b_wins']} | {m['draws']} | {m['winner']} | {dt} |")
+        md.append("")
+
+    md.append("## Benchmark Runs")
+    if not benchmarks:
+        md.append("No benchmark runs recorded yet.\n")
+    else:
+        md.append("| Model | Score | Total Tasks | Date |")
+        md.append("| :--- | :--- | :--- | :--- |")
+        for b in benchmarks:
+            dt = datetime.fromtimestamp(b["ts"]).strftime("%Y-%m-%d %H:%M")
+            md.append(f"| {b['model']} | {b['score']:.1f} | {b['n_tasks']} | {dt} |")
+        md.append("")
+
+    md.append("## Performance Stats")
+    if not perf:
+        md.append("No performance data recorded yet.\n")
+    else:
+        md.append("| Model | Samples | TPS Mean | TPS P95 | Latency Mean (s) | Latency P95 (s) | TTFT Mean (s) |")
+        md.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
+        for s in perf:
+            md.append(f"| {s['model']} | {s['n_samples']} | {s['tps_mean']:.1f} | {s['tps_p95']:.1f} | {s['latency_mean_s']:.2f} | {s['latency_p95_s']:.2f} | {s['ttft_mean_s']:.2f} |")
+        md.append("")
+
+    report_content = "\n".join(md)
+
+    # Build JSON report
+    import json
+    data = {
+        "leaderboard": leaderboard,
+        "recent_matches": matches,
+        "benchmarks": benchmarks,
+        "performance": perf,
+        "updated_at": datetime.now().isoformat()
+    }
+    json_content = json.dumps(data, indent=2)
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+
+    payload = {
+        "description": "ollama-arena ELO Leaderboard & Results",
+        "public": args.public,
+        "files": {
+            "ollama_arena_results.md": {
+                "content": report_content
+            },
+            "ollama_arena_data.json": {
+                "content": json_content
+            }
+        }
+    }
+
+    try:
+        console.print("[cyan]Uploading results to GitHub Gist...[/cyan]")
+        r = requests.post("https://api.github.com/gists", json=payload, headers=headers)
+        if r.status_code == 201:
+            gist_url = r.json().get("html_url")
+            console.print(f"[green]Successfully published! Gist URL:[/green] [cyan]{gist_url}[/cyan]")
+        else:
+            console.print(f"[red]Error publishing to Gist (status code {r.status_code}):[/red]")
+            console.print(r.text)
+            sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error publishing to Gist:[/red] {e}")
+        sys.exit(1)
+
+
 # ── web ───────────────────────────────────────────────────────────────────────
 def cmd_web(args):
     from .web import run_web
@@ -799,7 +915,7 @@ def main():
     pm.add_argument("--models",     required=True, metavar="A,B[,C...]")
     pm.add_argument("--category",   default="coding",
                     choices=["coding","reasoning","security","planning",
-                             "inspection","math","knowledge","all"])
+                             "inspection","math","knowledge","creative","json_format","all"])
     pm.add_argument("--difficulty", default=None, choices=["easy","medium","hard"])
     pm.add_argument("-n",           type=int, default=10)
     pm.add_argument("--verbose", "-v", action="store_true",
@@ -885,6 +1001,11 @@ def main():
     pex = sub.add_parser("export", help="Export shareable HTML dashboard")
     pex.add_argument("--out", default="arena_dashboard.html")
     pex.set_defaults(func=cmd_export)
+
+    # publish
+    pp = sub.add_parser("publish", help="Upload ELO leaderboard and results to GitHub Gist")
+    pp.add_argument("--public", action="store_true", help="Make the Gist public")
+    pp.set_defaults(func=cmd_publish)
 
     # web
     pw = sub.add_parser("web", help="Launch web dashboard")

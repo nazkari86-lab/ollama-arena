@@ -8,6 +8,8 @@ from typing import Callable, Optional
 from .backends import auto_backend, Backend, GenResult
 from .backends.ollama import OllamaBackend
 from .backends.openai_compat import OpenAICompatBackend
+from .backends.auto import spec_backend_for_model
+from .memory_scheduler import MemoryScheduler, Strategy, StrategyDecision
 from .elo import EloStore
 from .evaluator import evaluate
 from .performance import PerfTracker
@@ -34,6 +36,8 @@ class MatchResult:
     task_results: list[dict] = field(default_factory=list)
     duration_s: float = 0.0
     match_id: int = 0
+    strategy:  str = "CONCURRENT"            # CONCURRENT | HOT_SWAP | PIPELINE
+    strategy_reason: str = ""                # why the scheduler picked it
 
 
 class Arena:
@@ -65,6 +69,13 @@ class Arena:
         self.perf = PerfTracker(db_path=db_path)
         self._on_task_done = on_task_done
         self._extra_tasks: dict[str, list[dict]] = {}
+        # Memory-Adaptive Pipeline Tournament — auto-picks CONCURRENT /
+        # HOT_SWAP / PIPELINE so that big models on small machines stop
+        # OOM-ing the arena.
+        ollama_url = ollama_url if isinstance(ollama_url, str) else "http://localhost:11434"
+        self.scheduler = MemoryScheduler(ollama_base=ollama_url)
+        # Caller hook for "we're about to enter pipeline phase X" events.
+        self._on_phase: Optional[Callable] = None
 
         self.judge = None
         if judge_model:
@@ -99,7 +110,21 @@ class Arena:
         category: str = "coding",
         n: int = 10,
         difficulty: str | None = None,
+        concurrency: int = 1,
     ) -> MatchResult:
+        # Clear Ollama cache / unload loaded models before the match
+        if getattr(self.client, "name", "") == "ollama" and hasattr(self.client, "base"):
+            try:
+                import requests
+                r = requests.get(f"{self.client.base}/api/ps", timeout=3)
+                if r.ok:
+                    for m in r.json().get("models", []):
+                        requests.post(f"{self.client.base}/api/generate", 
+                                      json={"model": m["name"], "keep_alive": 0}, 
+                                      timeout=3)
+            except Exception as e:
+                log.warning(f"Failed to clear Ollama memory cache: {e}")
+
         tasks = self._gather_tasks(category, n, difficulty)
         if not tasks:
             raise ValueError(
@@ -114,13 +139,27 @@ class Arena:
         t0 = time.time()
         last_match_id = 0
 
-        for task in tasks:
-            res_a = self.client.generate(model_a, task["instruction"])
-            res_b = self.client.generate(model_b, task["instruction"])
+        from concurrent.futures import ThreadPoolExecutor
 
-            self._log_perf(model_a, res_a)
-            self._log_perf(model_b, res_b)
+        # Per-model backend routing: spec: models get their own llama-server backend
+        client_a = spec_backend_for_model(model_a) or self.client
+        client_b = spec_backend_for_model(model_b) or self.client
 
+        # ── NEW: pick a memory-aware execution strategy ──────────────────
+        decision = self.scheduler.choose(model_a, model_b)
+        log.info(f"[scheduler] {decision.strategy.value}: {decision.reason}")
+        if self._on_phase:
+            try:
+                self._on_phase({"type": "strategy", **decision.to_dict()})
+            except Exception:
+                pass
+        if decision.strategy is Strategy.INSUFFICIENT:
+            raise RuntimeError(
+                f"Not enough memory to run this match. {decision.reason}"
+            )
+
+        def _score_and_pack(task, res_a: GenResult, res_b: GenResult,
+                            cached_a: bool, cached_b: bool) -> dict:
             if self.judge and task.get("use_judge"):
                 jr = self.judge.grade_pair(
                     task["instruction"], res_a.text, res_b.text,
@@ -130,13 +169,106 @@ class Arena:
             else:
                 score_a = evaluate(task, res_a.text) if res_a.ok else 0.0
                 score_b = evaluate(task, res_b.text) if res_b.ok else 0.0
+            if score_a > score_b:   outcome = "a_wins"
+            elif score_b > score_a: outcome = "b_wins"
+            else:                   outcome = "draw"
+            return {"task": task, "res_a": res_a, "res_b": res_b,
+                    "cached_a": cached_a, "cached_b": cached_b,
+                    "score_a": score_a, "score_b": score_b,
+                    "outcome": outcome}
 
-            if score_a > score_b:
-                outcome, a_wins = "a_wins", a_wins + 1
-            elif score_b > score_a:
-                outcome, b_wins = "b_wins", b_wins + 1
-            else:
-                outcome, draws = "draw", draws + 1
+        def _gen(model: str, client: Backend, task: dict,
+                 unload_first: Optional[str] = None) -> tuple[GenResult, bool]:
+            """Return (GenResult, was_cached). Honors `unload_first` for HOT_SWAP."""
+            cached = self.elo.get_cached_response(
+                model, task["id"], task["instruction"])
+            if cached:
+                return GenResult(text=cached, model=model, tps=0.0,
+                                 latency_s=0.0), True
+            if unload_first:
+                self.scheduler.unload(unload_first)
+            return client.generate(model, task["instruction"]), False
+
+        def _execute_concurrent(task):
+            res_a, ca = _gen(model_a, client_a, task)
+            res_b, cb = _gen(model_b, client_b, task)
+            return _score_and_pack(task, res_a, res_b, ca, cb)
+
+        def _execute_hotswap(task):
+            # Evict B before generating A, then evict A before generating B.
+            # Inside a single task the model stays loaded; the swap happens
+            # *between* tasks naturally on the next call.
+            res_a, ca = _gen(model_a, client_a, task, unload_first=model_b)
+            res_b, cb = _gen(model_b, client_b, task, unload_first=model_a)
+            return _score_and_pack(task, res_a, res_b, ca, cb)
+
+        def _execute_pipelined(tasks_list):
+            """The breakthrough: generate ALL tasks vs A, unload, ALL vs B."""
+            # Phase 1 — model A
+            self.scheduler.unload_all_except([model_a])
+            if self._on_phase:
+                try: self._on_phase({"type":"phase_start","phase":1,
+                                     "model":model_a,"total":len(tasks_list)})
+                except Exception: pass
+            a_outs: list[tuple[GenResult, bool]] = []
+            # Pre-warm B's blob into OS page cache while A is generating
+            self.scheduler.prefetch(model_b)
+            for i, task in enumerate(tasks_list, 1):
+                res, c = _gen(model_a, client_a, task)
+                a_outs.append((res, c))
+                if self._on_phase:
+                    try: self._on_phase({"type":"phase_progress","phase":1,
+                                         "i":i,"total":len(tasks_list),
+                                         "task_id":task["id"]})
+                    except Exception: pass
+            # Phase 2 — unload A, run model B on every task
+            self.scheduler.unload(model_a)
+            self.scheduler.unload_all_except([model_b])
+            if self._on_phase:
+                try: self._on_phase({"type":"phase_start","phase":2,
+                                     "model":model_b,"total":len(tasks_list)})
+                except Exception: pass
+            b_outs: list[tuple[GenResult, bool]] = []
+            for i, task in enumerate(tasks_list, 1):
+                res, c = _gen(model_b, client_b, task)
+                b_outs.append((res, c))
+                if self._on_phase:
+                    try: self._on_phase({"type":"phase_progress","phase":2,
+                                         "i":i,"total":len(tasks_list),
+                                         "task_id":task["id"]})
+                    except Exception: pass
+            # Phase 3 — score every pair
+            return [
+                _score_and_pack(tasks_list[i], a_outs[i][0], b_outs[i][0],
+                                a_outs[i][1], b_outs[i][1])
+                for i in range(len(tasks_list))
+            ]
+
+        # ── dispatch by strategy ────────────────────────────────────────
+        if decision.strategy is Strategy.PIPELINE:
+            results = _execute_pipelined(tasks)
+        elif decision.strategy is Strategy.HOT_SWAP:
+            # HOT_SWAP serialized for memory safety — concurrency=1 only
+            results = [_execute_hotswap(t) for t in tasks]
+        else:
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                results = list(executor.map(_execute_concurrent, tasks))
+
+        for r in results:
+            task = r["task"]
+            res_a, res_b = r["res_a"], r["res_b"]
+            cached_a, cached_b = r["cached_a"], r["cached_b"]
+            score_a, score_b = r["score_a"], r["score_b"]
+            outcome = r["outcome"]
+
+            if not cached_a:
+                self._log_perf(model_a, res_a)
+            if not cached_b:
+                self._log_perf(model_b, res_b)
+
+            if outcome == "a_wins": a_wins += 1
+            elif outcome == "b_wins": b_wins += 1
+            else: draws += 1
 
             self.elo.record_match(model_a, model_b, category, score_a, score_b)
             last_match_id = self.elo.last_match_id()
@@ -202,6 +334,8 @@ class Arena:
             task_results=task_results,
             duration_s=round(time.time() - t0, 1),
             match_id=last_match_id,
+            strategy=decision.strategy.value,
+            strategy_reason=decision.reason,
         )
 
     def run_tournament(
@@ -228,8 +362,9 @@ class Arena:
 
     def _log_perf(self, model: str, res: GenResult):
         if res.ok:
+            backend_name = res.backend_type or self.client.name
             self.perf.record(
-                model=model, backend=self.client.name,
+                model=model, backend=backend_name,
                 tokens_in=res.tokens_in, tokens_out=res.tokens_out,
                 latency_s=res.latency_s, tps=res.tps,
                 time_to_first=res.time_to_first,
