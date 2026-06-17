@@ -8,7 +8,7 @@ from __future__ import annotations
 import json, logging, os, re, time
 import requests
 
-from .base import GenResult
+from .base import GenResult, ChatTurnResult
 
 log = logging.getLogger("arena.backend.openai")
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
@@ -90,8 +90,10 @@ class OpenAICompatBackend:
         messages = [{"role": "user", "content": prompt}]
         return self.generate_with_tools(model, messages, tools=[], **opts)
 
-    def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
-        """Multi-turn tool execution loop."""
+    def chat_turn(
+        self, model: str, messages: list[dict], tools: list[dict], **opts
+    ) -> ChatTurnResult:
+        """One chat completion turn; returns content and/or tool_calls separately."""
         body = {
             "model":       model,
             "messages":    messages,
@@ -107,16 +109,17 @@ class OpenAICompatBackend:
         text = ""
         first = True
         tokens_in = tokens_out = 0
+        tool_calls: list[dict] = []
+        finish_reason = "stop"
         try:
             r = requests.post(
                 f"{self.base}/chat/completions",
                 json=body, headers=self._headers, stream=True, timeout=self.timeout,
             )
             if r.status_code != 200:
-                return GenResult(text="", model=model, error=r.text, latency_s=round(time.time() - t0, 3))
-
-            # Temporary capture of tool calls
-            tool_calls = []
+                return ChatTurnResult(
+                    error=r.text, latency_s=round(time.time() - t0, 3),
+                )
 
             for line in r.iter_lines(decode_unicode=True):
                 if not line or not line.startswith("data:"):
@@ -128,22 +131,28 @@ class OpenAICompatBackend:
                     chunk = json.loads(data)
                 except json.JSONDecodeError:
                     continue
-                
+
                 if (usage := chunk.get("usage")):
                     tokens_in  = usage.get("prompt_tokens", tokens_in)
                     tokens_out = usage.get("completion_tokens", tokens_out)
-                
+
                 choices = chunk.get("choices") or []
                 if not choices:
                     continue
-                delta = choices[0].get("delta", {})
-                
-                # Check for tool_calls delta
+                choice = choices[0]
+                if fr := choice.get("finish_reason"):
+                    finish_reason = fr
+                delta = choice.get("delta", {})
+
                 if "tool_calls" in delta:
                     for tc in delta["tool_calls"]:
                         idx = tc.get("index", 0)
                         while len(tool_calls) <= idx:
-                            tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                            tool_calls.append({
+                                "id": "",
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""},
+                            })
                         if tc.get("id"):
                             tool_calls[idx]["id"] = tc["id"]
                         if tc.get("function", {}).get("name"):
@@ -158,25 +167,48 @@ class OpenAICompatBackend:
                 text += piece
 
             latency = time.time() - t0
-            
-            # If the model called tools, return the tool call list as the text result (serialized)
-            # for the evaluator to process.
-            if tool_calls:
-                text = json.dumps(tool_calls)
-
             text = _THINK.sub("", text).strip()
-            tps = tokens_out / latency if latency > 0 and tokens_out > 0 else (
-                len(text.split()) * 1.3 / latency if latency > 0 else 0.0
-            )
-            return GenResult(
-                text=text, model=model,
-                tokens_in=tokens_in, tokens_out=tokens_out,
-                latency_s=round(latency, 3), tps=round(tps, 1),
+            return ChatTurnResult(
+                text=text,
+                tool_calls=tool_calls,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                latency_s=round(latency, 3),
                 time_to_first=round(ttft, 3),
+                finish_reason=finish_reason,
             )
         except Exception as e:
-            return GenResult(text="", model=model, error=str(e),
-                             latency_s=round(time.time() - t0, 3))
+            return ChatTurnResult(
+                error=str(e), latency_s=round(time.time() - t0, 3),
+            )
+
+    def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
+        """Single-turn completion; legacy path for backends without AgentLoop."""
+        turn = self.chat_turn(model, messages, tools, **opts)
+        if turn.error:
+            return GenResult(
+                text="", model=model, error=turn.error, latency_s=turn.latency_s,
+            )
+        text = turn.text
+        if turn.tool_calls and not text:
+            text = json.dumps(turn.tool_calls)
+        tps = (
+            turn.tokens_out / turn.latency_s
+            if turn.latency_s > 0 and turn.tokens_out > 0
+            else (len(text.split()) * 1.3 / turn.latency_s if turn.latency_s > 0 else 0.0)
+        )
+        return GenResult(
+            text=text,
+            model=model,
+            tokens_in=turn.tokens_in,
+            tokens_out=turn.tokens_out,
+            latency_s=turn.latency_s,
+            tps=round(tps, 1),
+            time_to_first=turn.time_to_first,
+            finish_reason=turn.finish_reason,
+            tool_calls=turn.tool_calls,
+            backend_type=self.name,
+        )
 
     def list_models(self) -> list[str]:
         try:

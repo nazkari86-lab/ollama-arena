@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from ollama_arena.mcp_client import MCPOrchestrator
 
@@ -18,7 +20,9 @@ async def test_mcp_orchestrator_loads_tools():
 async def test_mcp_tool_execution():
     orchestrator = MCPOrchestrator({"sqlite": {}})
     result = await orchestrator.execute_tool("sqlite_query", {"query": "SELECT * FROM users"})
-    assert "Mock DB result" in result
+    rows = json.loads(result)
+    assert isinstance(rows, list)
+    assert rows and rows[0].get("name") == "Alice"
     
     error_result = await orchestrator.execute_tool("non_existent", {})
     assert "not found" in error_result

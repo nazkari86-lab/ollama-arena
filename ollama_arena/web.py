@@ -4,7 +4,7 @@
 # MODULE globals and fail to see `Request` / `BackgroundTasks` (they're
 # imported inside `run_web`'s try/except). The visible effect was every
 # route's `request: Request` being misclassified as a query parameter.
-import logging, os, time
+import json, logging, os, time
 from pathlib import Path
 
 # Imported at module scope so annotation resolution in run_web() succeeds.
@@ -300,7 +300,16 @@ def run_web(
 
     @app.get("/api/task/{task_id}")
     def api_task_history(task_id: str):
-        return arena.elo.task_history(task_id)
+        runs = arena.elo.task_history(task_id)
+        for r in runs:
+            for k in ("tool_call_a", "tool_call_b"):
+                raw = r.get(k)
+                if raw and isinstance(raw, str):
+                    try:
+                        r[k] = json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+        return {"runs": runs}
 
     @app.post("/api/retry_task/{task_id}")
     @limiter.limit("8/minute")
@@ -544,12 +553,26 @@ def run_web(
     def api_playground_generate_single(request: Request, body: dict):
         model = body.get("model", "")
         prompt = body.get("prompt", "")
+        enable_tools = body.get("enable_tools", False)
         if not model or not prompt:
             raise HTTPException(400, "model and prompt required")
 
+        if enable_tools and hasattr(arena, 'mcp') and arena.mcp:
+            from .agent_loop import run_agent_sync
+            res = run_agent_sync(arena.client, model, prompt, arena.mcp, max_steps=8)
+            arena._log_perf(model, res)
+            trace = getattr(res, 'agent_trace', None) or []
+            return {
+                "model": model,
+                "response": res.text if res.ok else f"[ERROR: {res.error}]",
+                "tps": res.tps,
+                "latency_s": res.latency_s,
+                "agent_trace": trace,
+                "finish_reason": getattr(res, 'finish_reason', 'stop'),
+            }
+
         res = arena.client.generate(model, prompt)
         arena._log_perf(model, res)
-
         return {
             "model": model,
             "response": res.text if res.ok else f"[ERROR: {res.error}]",
@@ -611,6 +634,8 @@ def run_web(
         tps_y = float(body.get("tps_y", 0.0))
         latency_x = float(body.get("latency_x", 0.0))
         latency_y = float(body.get("latency_y", 0.0))
+        agent_trace_x = body.get("agent_trace_x")
+        agent_trace_y = body.get("agent_trace_y")
 
         if not model_a_name or not model_b_name or not voted_for or not model_x_name:
             raise HTTPException(400, f"Missing required vote parameters. Got: a={model_a_name}, b={model_b_name}, v={voted_for}, x={model_x_name}")
@@ -649,6 +674,8 @@ def run_web(
             tps_b=tps_y,
             latency_a=latency_x,
             latency_b=latency_y,
+            tool_call_a=json.dumps(agent_trace_x) if agent_trace_x else None,
+            tool_call_b=json.dumps(agent_trace_y) if agent_trace_y else None,
         )
 
         return {

@@ -1,10 +1,14 @@
 """Pair-wise match driver and ELO bookkeeping."""
 from __future__ import annotations
-import logging, time
+import json
+import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 from itertools import combinations
 from typing import Callable, Optional
 
+from .agent_loop import run_agent_sync
 from .backends import auto_backend, Backend, GenResult
 from .backends.ollama import OllamaBackend
 from .backends.openai_compat import OpenAICompatBackend
@@ -13,9 +17,19 @@ from .memory_scheduler import MemoryScheduler, Strategy, StrategyDecision
 from .elo import EloStore
 from .evaluator import evaluate
 from .performance import PerfTracker
-from .tasks import get_tasks
+from .tasks import get_task, get_tasks
 
 log = logging.getLogger("arena")
+
+
+def _agent_trace_json(res: GenResult) -> str | None:
+    trace = getattr(res, "agent_trace", None) or []
+    if not trace:
+        return None
+    try:
+        return json.dumps(trace)
+    except (TypeError, ValueError):
+        return None
 
 
 @dataclass
@@ -177,8 +191,10 @@ class Arena:
                 )
                 score_a, score_b = jr.score_a, jr.score_b
             else:
-                score_a = evaluate(task, res_a.text) if res_a.ok else 0.0
-                score_b = evaluate(task, res_b.text) if res_b.ok else 0.0
+                trace_a = getattr(res_a, "agent_trace", None) if res_a.ok else None
+                trace_b = getattr(res_b, "agent_trace", None) if res_b.ok else None
+                score_a = evaluate(task, res_a.text, trace=trace_a) if res_a.ok else 0.0
+                score_b = evaluate(task, res_b.text, trace=trace_b) if res_b.ok else 0.0
             if score_a > score_b:   outcome = "a_wins"
             elif score_b > score_a: outcome = "b_wins"
             else:                   outcome = "draw"
@@ -207,19 +223,26 @@ class Arena:
             if unload_first:
                 self.scheduler.unload(unload_first)
 
-            # v4.0: Inject MCP tools if category is tool_use
             if task.get("category") == "tool_use":
-                import asyncio
                 try:
-                    # Note: Arena.run_match is synchronous, but MCP is async.
-                    # We use a temporary event loop or the existing one.
-                    loop = asyncio.get_event_loop()
-                    tools = loop.run_until_complete(self.mcp.get_all_tools())
-                    if tools:
-                        messages = [{"role": "user", "content": task["instruction"]}]
-                        return client.generate_with_tools(model, messages, tools), False
+                    with ThreadPoolExecutor(max_workers=1) as pool:
+                        fut = pool.submit(
+                            run_agent_sync,
+                            client,
+                            model,
+                            task["instruction"],
+                            self.mcp,
+                        )
+                        return fut.result(timeout=_gen_timeout), False
+                except FuturesTimeoutError:
+                    return GenResult(
+                        text="",
+                        model=model,
+                        error=f"agent timeout after {_gen_timeout}s",
+                    ), False
                 except Exception as e:
-                    log.error(f"[arena] MCP tool fetching failed: {e}")
+                    log.error(f"[arena] agent loop failed: {e}")
+                    return GenResult(text="", model=model, error=str(e)), False
 
             return client.generate(model, task["instruction"]), False
 
@@ -324,6 +347,8 @@ class Arena:
                 tps_b=res_b.tps,
                 latency_a=res_a.latency_s,
                 latency_b=res_b.latency_s,
+                tool_call_a=_agent_trace_json(res_a),
+                tool_call_b=_agent_trace_json(res_b),
             )
 
             task_results.append({
@@ -411,18 +436,34 @@ class Arena:
             "difficulty":       last.get("difficulty", "unknown"),
             "language":         "natural",
         }
+        known = get_task(task_id)
+        if known:
+            for key, val in known.items():
+                if key not in task or task.get(key) in ("", None, "natural"):
+                    task[key] = val
         client_a = spec_backend_for_model(model_a) or self.client
         client_b = spec_backend_for_model(model_b) or self.client
-        res_a = client_a.generate(model_a, instruction)
-        res_b = client_b.generate(model_b, instruction)
+
+        def _retry_gen(client: Backend, model: str) -> GenResult:
+            if category == "tool_use":
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    return pool.submit(
+                        run_agent_sync, client, model, instruction, self.mcp
+                    ).result(timeout=480)
+            return client.generate(model, instruction)
+
+        res_a = _retry_gen(client_a, model_a)
+        res_b = _retry_gen(client_b, model_b)
 
         if self.judge and task.get("use_judge"):
             jr = self.judge.grade_pair(instruction, res_a.text, res_b.text,
                                        reference=expected)
             score_a, score_b = jr.score_a, jr.score_b
         else:
-            score_a = evaluate(task, res_a.text) if res_a.ok else 0.0
-            score_b = evaluate(task, res_b.text) if res_b.ok else 0.0
+            trace_a = getattr(res_a, "agent_trace", None) if res_a.ok else None
+            trace_b = getattr(res_b, "agent_trace", None) if res_b.ok else None
+            score_a = evaluate(task, res_a.text, trace=trace_a) if res_a.ok else 0.0
+            score_b = evaluate(task, res_b.text, trace=trace_b) if res_b.ok else 0.0
         if score_a > score_b: outcome = "a_wins"
         elif score_b > score_a: outcome = "b_wins"
         else: outcome = "draw"
@@ -441,6 +482,8 @@ class Arena:
             outcome=outcome,
             tps_a=res_a.tps, tps_b=res_b.tps,
             latency_a=res_a.latency_s, latency_b=res_b.latency_s,
+            tool_call_a=_agent_trace_json(res_a),
+            tool_call_b=_agent_trace_json(res_b),
         )
         self._log_perf(model_a, res_a)
         self._log_perf(model_b, res_b)

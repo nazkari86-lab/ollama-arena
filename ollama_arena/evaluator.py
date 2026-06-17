@@ -129,15 +129,64 @@ def eval_planning(task: dict, response: str) -> float:
     return round(component_score * 0.7 + length_score * 0.3, 3)
 
 
-def eval_tool_use(task: dict, response: str) -> float:
-    """Evaluates if the model correctly invoked the expected MCP tools."""
+def _tools_from_trace(trace: list | None) -> list[str]:
+    """Ordered tool names from agent_trace steps."""
+    if not trace:
+        return []
+    names: list[str] = []
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        for call in step.get("tool_calls") or []:
+            if not isinstance(call, dict):
+                continue
+            fn = call.get("function") or {}
+            name = fn.get("name") if isinstance(fn, dict) else None
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
+def _subsequence_score(actual: list[str], expected: list[str]) -> float:
+    """1.0 if expected tool names appear in order within actual."""
+    if not expected:
+        return 0.5
+    if not actual:
+        return 0.0
+    ei = 0
+    for name in actual:
+        if ei < len(expected) and name == expected[ei]:
+            ei += 1
+    return round(ei / len(expected), 3)
+
+
+def eval_agent_trajectory(task: dict, trace: list | None) -> float:
+    """Score multi-step MCP trajectories via expected_tools or expected_tool."""
+    expected_tools = task.get("expected_tools")
+    if expected_tools:
+        return _subsequence_score(_tools_from_trace(trace), list(expected_tools))
+    expected_tool = task.get("expected_tool")
+    if expected_tool:
+        return _subsequence_score(_tools_from_trace(trace), [expected_tool])
+    return 0.5
+
+
+def eval_tool_use(task: dict, response: str, trace: list | None = None) -> float:
+    """Evaluates MCP tool invocation from agent trace and/or response JSON."""
     import json
+
+    traj = eval_agent_trajectory(task, trace)
+    if task.get("expected_tools") or task.get("expected_tool"):
+        if traj >= 1.0:
+            return 1.0
+        if trace and traj > 0:
+            return traj
+
     expected_tool = task.get("expected_tool")
     if not expected_tool:
-        return 0.5
-        
+        return traj if trace else 0.5
+
     try:
-        # The backend serializes tool calls into JSON if they exist.
         data = json.loads(response)
         if isinstance(data, list):
             for call in data:
@@ -147,7 +196,6 @@ def eval_tool_use(task: dict, response: str) -> float:
     except (json.JSONDecodeError, TypeError):
         pass
 
-    # Fallback: simple text search if model didn't use formal tool calling
     if expected_tool.lower() in response.lower():
         return 0.7
 
@@ -205,7 +253,7 @@ def eval_json(task: dict, response: str) -> float:
 
 
 # Router
-def evaluate(task: dict, response: str) -> float:
+def evaluate(task: dict, response: str, trace: list | None = None) -> float:
     tid = task.get("id", "")
     cat = task.get("category", "")
 
@@ -224,7 +272,7 @@ def evaluate(task: dict, response: str) -> float:
     if cat == "planning" or tid.startswith("plan_"):
         return eval_planning(task, response)
     if cat == "tool_use" or tid.startswith("tool_"):
-        return eval_tool_use(task, response)
+        return eval_tool_use(task, response, trace=trace)
 
     if cat == "creative" or tid.startswith("crea_"):
         # Judge-scored tasks fall back to 0.5 when no judge is available.

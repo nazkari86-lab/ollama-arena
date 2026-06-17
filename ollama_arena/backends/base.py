@@ -1,7 +1,20 @@
 """Backend protocol."""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Protocol, Optional
+from typing import Any, Protocol, Optional
+
+
+@dataclass
+class ChatTurnResult:
+    """Single chat completion turn (content and/or tool_calls)."""
+    text:          str = ""
+    tool_calls:    list = field(default_factory=list)
+    tokens_in:     int = 0
+    tokens_out:    int = 0
+    latency_s:     float = 0.0
+    time_to_first: float = 0.0
+    finish_reason: str = "stop"
+    error:         str = ""
 
 
 @dataclass
@@ -17,10 +30,14 @@ class GenResult:
     error:            str   = ""
     spec_accept_rate: float = 0.0   # draft token acceptance rate (0–1)
     backend_type:     str   = ""    # "speculative", "ollama", "openai-compat", …
+    tool_calls:       list  = field(default_factory=list)
+    agent_trace:      list  = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        return not self.error and bool(self.text)
+        return not self.error and bool(
+            self.text or self.tool_calls or self.agent_trace
+        )
 
 
 class Backend(Protocol):

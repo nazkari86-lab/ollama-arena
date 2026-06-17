@@ -64,3 +64,12 @@ def list_languages() -> list[str]:
 
 def task_stats() -> dict[str, int]:
     return {cat: len(tasks) for cat, tasks in ALL_TASKS.items()}
+
+
+def get_task(task_id: str) -> dict | None:
+    """Return a copy of the built-in task with ``task_id``, or None."""
+    for tasks in ALL_TASKS.values():
+        for t in tasks:
+            if t.get("id") == task_id:
+                return dict(t)
+    return None

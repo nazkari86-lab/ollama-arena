@@ -604,6 +604,144 @@
     }
   }
 
+  /* ═══════════════════════════════════════════════════════════
+     AGENT TRACE TIMELINE
+     ═══════════════════════════════════════════════════════════ */
+  .agent-trace {
+    margin-top: 16px;
+    border: 1px solid rgba(88, 166, 255, 0.15);
+    border-radius: var(--radius-inner);
+    background: rgba(1, 4, 9, 0.6);
+    overflow: hidden;
+  }
+  .agent-trace-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px;
+    background: rgba(88, 166, 255, 0.06);
+    border-bottom: 1px solid rgba(88, 166, 255, 0.1);
+    cursor: pointer;
+    transition: background 150ms ease;
+  }
+  .agent-trace-header:hover { background: rgba(88, 166, 255, 0.1); }
+  .agent-trace-header .trace-title {
+    font-size: 12px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--accent-blue);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .agent-trace-header .trace-meta {
+    display: flex; gap: 8px; align-items: center;
+  }
+  .agent-trace-body {
+    max-height: 0; overflow: hidden;
+    transition: max-height 350ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .agent-trace.expanded .agent-trace-body {
+    max-height: 2000px;
+  }
+  .agent-trace-body-inner {
+    padding: 16px;
+  }
+  .trace-step {
+    position: relative;
+    padding-left: 32px;
+    padding-bottom: 20px;
+  }
+  .trace-step:last-child { padding-bottom: 0; }
+  .trace-step::before {
+    content: '';
+    position: absolute; left: 11px; top: 24px; bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, rgba(88,166,255,0.3), rgba(88,166,255,0.05));
+  }
+  .trace-step:last-child::before { display: none; }
+  .trace-step-num {
+    position: absolute; left: 0; top: 0;
+    width: 24px; height: 24px;
+    background: rgba(88, 166, 255, 0.15);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 800; color: var(--accent-blue);
+    z-index: 1;
+  }
+  .trace-step.has-error .trace-step-num {
+    background: rgba(248, 81, 73, 0.15);
+    border-color: rgba(248, 81, 73, 0.3);
+    color: var(--accent-red);
+  }
+  .trace-content {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    margin-bottom: 8px;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .trace-tool-call {
+    background: rgba(63, 185, 80, 0.06);
+    border: 1px solid rgba(63, 185, 80, 0.15);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+  }
+  .trace-tool-call .tool-name {
+    font-size: 12px; font-weight: 800; color: var(--accent-green);
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 6px;
+  }
+  .trace-tool-call .tool-args {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px; padding: 8px;
+    max-height: 120px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .trace-tool-result {
+    background: rgba(245, 158, 11, 0.06);
+    border: 1px solid rgba(245, 158, 11, 0.15);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+  }
+  .trace-tool-result .result-label {
+    font-size: 11px; font-weight: 800; color: #f59e0b;
+    margin-bottom: 6px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .trace-tool-result .result-data {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px; padding: 8px;
+    max-height: 120px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .trace-error {
+    background: rgba(248, 81, 73, 0.08);
+    border: 1px solid rgba(248, 81, 73, 0.2);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--accent-red);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .trace-step-label {
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+    margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .trace-expand-btn {
+    background: transparent; border: none; color: var(--accent-blue);
+    font-size: 14px; cursor: pointer; padding: 0;
+    transition: transform 200ms ease;
+  }
+  .agent-trace.expanded .trace-expand-btn { transform: rotate(180deg); }
+
 </style>
 </head>
 <body>
@@ -798,6 +936,7 @@
                   <span id="play-model-x-reveal" style="color:var(--accent-blue)"></span>
                 </div>
                 <div id="play-resp-x" style="padding:24px; font-size:14px; white-space:pre-wrap; min-height:240px; max-height:600px; overflow-y:auto; line-height:1.6; font-family: 'JetBrains Mono', monospace;"></div>
+                <div id="play-trace-x"></div>
               </div>
               <div style="border:1px solid var(--border-color); border-radius:var(--radius-inner); overflow:hidden; background:rgba(1,4,9,0.8);">
                 <div style="background:rgba(255,255,255,0.03); padding:14px 20px; font-weight:600; font-size:12px; display:flex; justify-content:space-between; border-bottom: 1px solid var(--border-color);">
@@ -805,6 +944,7 @@
                   <span id="play-model-y-reveal" style="color:var(--accent-blue)"></span>
                 </div>
                 <div id="play-resp-y" style="padding:24px; font-size:14px; white-space:pre-wrap; min-height:240px; max-height:600px; overflow-y:auto; line-height:1.6; font-family: 'JetBrains Mono', monospace;"></div>
+                <div id="play-trace-y"></div>
               </div>
             </div>
             <div style="display:flex; justify-content:center; gap:16px" id="play-vote-controls">
@@ -822,10 +962,17 @@
           <div class="form-group" style="flex:1"><label for="play-model-a">Model A</label><select id="play-model-a"></select></div>
           <div class="form-group" style="flex:1"><label for="play-model-b">Model B</label><select id="play-model-b"></select></div>
         </div>
-        <div class="form-group">
-          <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:400;">
-            <input type="checkbox" id="play-blind-test" checked style="width:18px; height:18px; accent-color: var(--accent-blue);"> Cognitive Blind Test
-          </label>
+        <div style="display:flex; gap: 24px;">
+          <div class="form-group" style="flex:1">
+            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:400;">
+              <input type="checkbox" id="play-blind-test" checked style="width:18px; height:18px; accent-color: var(--accent-blue);"> Cognitive Blind Test
+            </label>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:400;">
+              <input type="checkbox" id="play-enable-tools" style="width:18px; height:18px; accent-color: var(--accent-green);"> Enable Agent Tools (MCP)
+            </label>
+          </div>
         </div>
       </div>
     </div>
@@ -1603,6 +1750,84 @@ async function runTournament() {
   } catch(e) { alert(e.message); btn.disabled = false; btn.textContent = 'Commence Tournament'; }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// AGENT TRACE RENDERER — reusable for Playground + Inspect
+// ═══════════════════════════════════════════════════════════════
+function renderAgentTrace(trace, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!trace || !Array.isArray(trace) || trace.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+
+  const toolCount = trace.reduce((n, s) => n + (s.tool_calls ? s.tool_calls.length : 0), 0);
+  const hasErrors = trace.some(s => s.error);
+
+  let h = `<div class="agent-trace" id="${containerId}-trace">
+    <div class="agent-trace-header" onclick="this.parentElement.classList.toggle('expanded')">
+      <div class="trace-title">
+        🔗 Agent Trace
+        <span class="badge badge-blue" style="font-size:10px; padding:2px 8px;">${trace.length} step${trace.length > 1 ? 's' : ''}</span>
+        ${toolCount > 0 ? `<span class="badge badge-green" style="font-size:10px; padding:2px 8px;">${toolCount} tool call${toolCount > 1 ? 's' : ''}</span>` : ''}
+        ${hasErrors ? `<span class="badge" style="font-size:10px; padding:2px 8px; background:rgba(248,81,73,0.15); color:var(--accent-red); border:1px solid rgba(248,81,73,0.3);">ERROR</span>` : ''}
+      </div>
+      <div class="trace-meta">
+        <button class="trace-expand-btn" aria-label="Toggle trace">▼</button>
+      </div>
+    </div>
+    <div class="agent-trace-body">
+      <div class="agent-trace-body-inner">`;
+
+  trace.forEach((step, idx) => {
+    const hasError = !!step.error;
+    h += `<div class="trace-step ${hasError ? 'has-error' : ''}">
+      <div class="trace-step-num">${step.step || idx + 1}</div>`;
+
+    if (step.content) {
+      h += `<div class="trace-step-label">🧠 Model Reasoning</div>
+        <div class="trace-content">${escText(step.content)}</div>`;
+    }
+
+    if (step.tool_calls && step.tool_calls.length > 0) {
+      step.tool_calls.forEach((tc, tcIdx) => {
+        const fn = tc.function || tc;
+        const name = fn.name || 'unknown';
+        const args = fn.arguments || '';
+        let argsDisplay = args;
+        if (typeof args === 'string') {
+          try { argsDisplay = JSON.stringify(JSON.parse(args), null, 2); } catch(_) { argsDisplay = args; }
+        } else if (typeof args === 'object') {
+          argsDisplay = JSON.stringify(args, null, 2);
+        }
+        h += `<div class="trace-tool-call">
+          <div class="tool-name">⚡ ${escText(name)}</div>
+          <div class="tool-args">${escText(argsDisplay)}</div>
+        </div>`;
+
+        if (step.tool_results && step.tool_results[tcIdx]) {
+          const tr = step.tool_results[tcIdx];
+          let resultStr = tr.result;
+          if (typeof resultStr === 'object') resultStr = JSON.stringify(resultStr, null, 2);
+          h += `<div class="trace-tool-result">
+            <div class="result-label">📋 Result from ${escText(tr.name || name)}</div>
+            <div class="result-data">${escText(String(resultStr || ''))}</div>
+          </div>`;
+        }
+      });
+    }
+
+    if (step.error) {
+      h += `<div class="trace-error">❌ ${escText(step.error)}</div>`;
+    }
+
+    h += `</div>`;
+  });
+
+  h += `</div></div></div>`;
+  el.innerHTML = h;
+}
+
 // Convert ```fenced``` blocks to <pre><code> but escape every other character.
 // The result is then sanitized by safeHTML() before reaching the DOM.
 function formatCodeBlocks(text) {
@@ -1648,8 +1873,13 @@ async function generatePlayground() {
     model_y: swap ? 'model_a' : 'model_b',
     response_x: '', response_y: '',
     tps_x: 0, tps_y: 0,
-    latency_x: 0, latency_y: 0
+    latency_x: 0, latency_y: 0,
+    agent_trace_x: null, agent_trace_y: null
   };
+
+  const enableTools = document.getElementById('play-enable-tools').checked;
+  document.getElementById('play-trace-x').innerHTML = '';
+  document.getElementById('play-trace-y').innerHTML = '';
 
   let completedCount = 0;
   const checkCompletion = () => {
@@ -1663,22 +1893,27 @@ async function generatePlayground() {
   };
 
   // Fire Request X
+  const payloadX = {model: modelX, prompt};
+  if (enableTools) payloadX.enable_tools = true;
   api('/api/playground/generate_single', {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({model: modelX, prompt})
+    body: JSON.stringify(payloadX)
   }).then(data => {
     currentPlayData.response_x = data.response;
     currentPlayData.tps_x = data.tps;
     currentPlayData.latency_x = data.latency_s;
+    if (data.agent_trace) currentPlayData.agent_trace_x = data.agent_trace;
     
     document.getElementById('play-resp-x').innerHTML = `
       <div style="margin-bottom:15px; display:flex; gap:10px;">
         <span class="badge badge-blue">⏱ ${data.latency_s.toFixed(2)}s</span>
         <span class="badge badge-green">⚡ ${data.tps.toFixed(1)} t/s</span>
+        ${data.finish_reason && data.finish_reason !== 'stop' ? `<span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);">${escText(data.finish_reason)}</span>` : ''}
       </div>
       <div>${formatCodeBlocks(data.response)}</div>
     `;
     document.getElementById('play-resp-x').querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+    if (data.agent_trace) renderAgentTrace(data.agent_trace, 'play-trace-x');
     checkCompletion();
   }).catch(e => {
     document.getElementById('play-resp-x').innerHTML = `<div style="color:var(--accent-red)">Error: ${e.message}</div>`;
@@ -1686,22 +1921,27 @@ async function generatePlayground() {
   });
 
   // Fire Request Y
+  const payloadY = {model: modelY, prompt};
+  if (enableTools) payloadY.enable_tools = true;
   api('/api/playground/generate_single', {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({model: modelY, prompt})
+    body: JSON.stringify(payloadY)
   }).then(data => {
     currentPlayData.response_y = data.response;
     currentPlayData.tps_y = data.tps;
     currentPlayData.latency_y = data.latency_s;
+    if (data.agent_trace) currentPlayData.agent_trace_y = data.agent_trace;
     
     document.getElementById('play-resp-y').innerHTML = `
       <div style="margin-bottom:15px; display:flex; gap:10px;">
         <span class="badge badge-blue">⏱ ${data.latency_s.toFixed(2)}s</span>
         <span class="badge badge-green">⚡ ${data.tps.toFixed(1)} t/s</span>
+        ${data.finish_reason && data.finish_reason !== 'stop' ? `<span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);">${escText(data.finish_reason)}</span>` : ''}
       </div>
       <div>${formatCodeBlocks(data.response)}</div>
     `;
     document.getElementById('play-resp-y').querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+    if (data.agent_trace) renderAgentTrace(data.agent_trace, 'play-trace-y');
     checkCompletion();
   }).catch(e => {
     document.getElementById('play-resp-y').innerHTML = `<div style="color:var(--accent-red)">Error: ${e.message}</div>`;
@@ -1881,6 +2121,9 @@ async function loadInspect() {
         return safeHTML(withCode);
       };
 
+      const traceIdA = `inspect-trace-a-${i}`;
+      const traceIdB = `inspect-trace-b-${i}`;
+
       h += `<div class="card" style="margin-bottom: 32px;" data-task-id="${escText(info.task_id)}">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom: 1px solid var(--border-color); padding-bottom: 16px; gap:12px; flex-wrap:wrap;">
           <h3 style="font-weight:800; color:var(--text-main); font-size:15px; text-transform:uppercase; letter-spacing:1px;">Simulation Run #${i+1}</h3>
@@ -1900,6 +2143,7 @@ async function loadInspect() {
             <div class="resp-a" data-raw="${escText(r.response_a)}" style="padding: 20px; font-size:13px; line-height:1.7; max-height: 500px; overflow-y: auto;">
               ${formatCode(r.response_a)}
             </div>
+            <div id="${traceIdA}"></div>
           </div>
 
           <div style="border: 1px solid ${isBWinner ? 'var(--accent-green)' : 'rgba(255,255,255,0.08)'}; border-radius: var(--radius-inner); overflow: hidden; background: rgba(1,4,9,0.6); box-shadow: ${isBWinner ? '0 0 20px rgba(63, 185, 80, 0.15)' : 'none'}; transition: transform 0.2s;">
@@ -1910,6 +2154,7 @@ async function loadInspect() {
             <div class="resp-b" data-raw="${escText(r.response_b)}" style="padding: 20px; font-size:13px; line-height:1.7; max-height: 500px; overflow-y: auto;">
               ${formatCode(r.response_b)}
             </div>
+            <div id="${traceIdB}"></div>
           </div>
 
         </div>
@@ -1920,6 +2165,11 @@ async function loadInspect() {
     
     res.querySelectorAll('pre code').forEach((block) => {
       hljs.highlightElement(block);
+    });
+
+    data.runs.forEach((r, i) => {
+      if (r.tool_call_a) renderAgentTrace(r.tool_call_a, `inspect-trace-a-${i}`);
+      if (r.tool_call_b) renderAgentTrace(r.tool_call_b, `inspect-trace-b-${i}`);
     });
 
   } catch(e){ 

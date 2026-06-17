@@ -133,19 +133,32 @@ class EloStore:
         score_a: float, score_b: float, outcome: str,
         tps_a: float = 0.0, tps_b: float = 0.0,
         latency_a: float = 0.0, latency_b: float = 0.0,
+        tool_call_a: str | None = None,
+        tool_call_b: str | None = None,
     ):
         try:
             with self._conn() as cx:
-                cx.execute("""
-                    INSERT INTO task_detail
-                    (match_id, task_id, category, difficulty, language,
-                     instruction, response_a, response_b, expected,
-                     score_a, score_b, outcome, tps_a, tps_b, latency_a, latency_b, ts)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, (match_id, task_id, category, difficulty, language,
-                      instruction, response_a, response_b, expected,
-                      score_a, score_b, outcome, tps_a, tps_b, latency_a, latency_b,
-                      time.time()))
+                cols = {r[1] for r in cx.execute("PRAGMA table_info(task_detail)")}
+                base = [
+                    "match_id", "task_id", "category", "difficulty", "language",
+                    "instruction", "response_a", "response_b", "expected",
+                    "score_a", "score_b", "outcome",
+                    "tps_a", "tps_b", "latency_a", "latency_b", "ts",
+                ]
+                vals = [
+                    match_id, task_id, category, difficulty, language,
+                    instruction, response_a, response_b, expected,
+                    score_a, score_b, outcome,
+                    tps_a, tps_b, latency_a, latency_b, time.time(),
+                ]
+                if "tool_call_a" in cols:
+                    base.extend(["tool_call_a", "tool_call_b"])
+                    vals.extend([tool_call_a, tool_call_b])
+                placeholders = ",".join("?" * len(base))
+                cx.execute(
+                    f"INSERT INTO task_detail ({','.join(base)}) VALUES ({placeholders})",
+                    vals,
+                )
         except sqlite3.Error as e:
             log.error(f"Error saving task detail for {task_id}: {e}")
 
@@ -196,17 +209,21 @@ class EloStore:
     def tasks_for_match(self, match_id: int) -> list[dict]:
         try:
             with sqlite3.connect(self.db, timeout=30.0) as cx:
-                rows = cx.execute("""
-                    SELECT task_id, category, difficulty, language, instruction,
-                           response_a, response_b, expected,
-                           score_a, score_b, outcome, tps_a, tps_b, latency_a, latency_b, ts
-                    FROM task_detail WHERE match_id=? ORDER BY ts
-                """, (match_id,)).fetchall()
-            keys = ["task_id", "category", "difficulty", "language", "instruction",
+                cols = {r[1] for r in cx.execute("PRAGMA table_info(task_detail)")}
+                select = [
+                    "task_id", "category", "difficulty", "language", "instruction",
                     "response_a", "response_b", "expected",
-                    "score_a", "score_b", "outcome", "tps_a", "tps_b",
-                    "latency_a", "latency_b", "ts"]
-            return [dict(zip(keys, r)) for r in rows]
+                    "score_a", "score_b", "outcome",
+                    "tps_a", "tps_b", "latency_a", "latency_b", "ts",
+                ]
+                if "tool_call_a" in cols:
+                    select.extend(["tool_call_a", "tool_call_b"])
+                rows = cx.execute(
+                    f"SELECT {','.join(select)} FROM task_detail "
+                    "WHERE match_id=? ORDER BY ts",
+                    (match_id,),
+                ).fetchall()
+            return [dict(zip(select, r)) for r in rows]
         except sqlite3.Error as e:
             log.error(f"Error fetching tasks for match {match_id}: {e}")
             return []
@@ -214,18 +231,24 @@ class EloStore:
     def task_history(self, task_id: str) -> list[dict]:
         try:
             with sqlite3.connect(self.db, timeout=30.0) as cx:
-                rows = cx.execute("""
+                cols = {r[1] for r in cx.execute("PRAGMA table_info(task_detail)")}
+                extra_select = ""
+                extra_keys: list[str] = []
+                if "tool_call_a" in cols:
+                    extra_select = ", d.tool_call_a, d.tool_call_b"
+                    extra_keys = ["tool_call_a", "tool_call_b"]
+                rows = cx.execute(f"""
                     SELECT d.task_id, d.category, d.difficulty,
                            m.model_a, m.model_b,
                            d.instruction, d.response_a, d.response_b, d.expected,
-                           d.score_a, d.score_b, d.outcome, d.ts
+                           d.score_a, d.score_b, d.outcome, d.ts{extra_select}
                     FROM task_detail d
                     JOIN match_log m ON m.id = d.match_id
                     WHERE d.task_id=? ORDER BY d.ts DESC
                 """, (task_id,)).fetchall()
             keys = ["task_id", "category", "difficulty", "model_a", "model_b",
                     "instruction", "response_a", "response_b", "expected",
-                    "score_a", "score_b", "outcome", "ts"]
+                    "score_a", "score_b", "outcome", "ts"] + extra_keys
             return [dict(zip(keys, r)) for r in rows]
         except sqlite3.Error as e:
             log.error(f"Error fetching task history for {task_id}: {e}")
