@@ -71,17 +71,24 @@ class SpeculativeBackend:
         return self.cfg["main"]
 
     def generate(self, model: str, prompt: str, **opts) -> GenResult:
+        messages = [{"role": "user", "content": prompt}]
+        return self.generate_with_tools(model, messages, tools=[], **opts)
+
+    def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
         server_model = self._get_model_id()
         # Use a generous default — thinking models need tokens for CoT before output
         max_tokens = opts.get("num_predict", opts.get("max_tokens", 2048))
         body = {
             "model":          server_model,
-            "messages":       [{"role": "user", "content": prompt}],
+            "messages":       messages,
             "temperature":    opts.get("temperature", 0.0),
             "max_tokens":     max_tokens,
             "stream":         True,
             "stream_options": {"include_usage": True},
         }
+        if tools:
+            body["tools"] = tools
+
         t0 = time.time()
         ttft = 0.0
         text = ""
@@ -93,6 +100,9 @@ class SpeculativeBackend:
                 f"{self.base}/chat/completions",
                 json=body, headers=self._headers, stream=True, timeout=self.timeout,
             )
+            
+            tool_calls = []
+
             for line in r.iter_lines(decode_unicode=True):
                 if not line or not line.startswith("data:"):
                     continue
@@ -103,22 +113,42 @@ class SpeculativeBackend:
                     chunk = json.loads(data)
                 except json.JSONDecodeError:
                     continue
+                
                 if (usage := chunk.get("usage")):
                     tokens_in  = usage.get("prompt_tokens", tokens_in)
                     tokens_out = usage.get("completion_tokens", tokens_out)
                 if (t := chunk.get("timings")):
                     timings = t
+                
                 choices = chunk.get("choices") or []
                 if not choices:
                     continue
                 delta = choices[0].get("delta", {})
+                
+                # Check for tool_calls delta
+                if "tool_calls" in delta:
+                    for tc in delta["tool_calls"]:
+                        idx = tc.get("index", 0)
+                        while len(tool_calls) <= idx:
+                            tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                        if tc.get("id"):
+                            tool_calls[idx]["id"] = tc["id"]
+                        if tc.get("function", {}).get("name"):
+                            tool_calls[idx]["function"]["name"] += tc["function"]["name"]
+                        if tc.get("function", {}).get("arguments"):
+                            tool_calls[idx]["function"]["arguments"] += tc["function"]["arguments"]
+
                 piece = delta.get("content", "") or ""
-                if first and piece:
+                if first and (piece or tool_calls):
                     ttft = time.time() - t0
                     first = False
                 text += piece
 
             latency = time.time() - t0
+            
+            if tool_calls:
+                text = json.dumps(tool_calls)
+
             text = _THINK.sub("", text).strip()
 
             # TPS from timings (llama-server provides predicted_ms)

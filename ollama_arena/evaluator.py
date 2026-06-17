@@ -129,6 +129,31 @@ def eval_planning(task: dict, response: str) -> float:
     return round(component_score * 0.7 + length_score * 0.3, 3)
 
 
+def eval_tool_use(task: dict, response: str) -> float:
+    """Evaluates if the model correctly invoked the expected MCP tools."""
+    import json
+    expected_tool = task.get("expected_tool")
+    if not expected_tool:
+        return 0.5
+        
+    try:
+        # The backend serializes tool calls into JSON if they exist.
+        data = json.loads(response)
+        if isinstance(data, list):
+            for call in data:
+                func = call.get("function", {})
+                if func.get("name") == expected_tool:
+                    return 1.0
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Fallback: simple text search if model didn't use formal tool calling
+    if expected_tool.lower() in response.lower():
+        return 0.7
+
+    return 0.0
+
+
 # JSON Evaluation
 def eval_json(task: dict, response: str) -> float:
     """Evaluate JSON format conformance against expected_schema."""
@@ -198,6 +223,8 @@ def evaluate(task: dict, response: str) -> float:
         return eval_inspection(task, response)
     if cat == "planning" or tid.startswith("plan_"):
         return eval_planning(task, response)
+    if cat == "tool_use" or tid.startswith("tool_"):
+        return eval_tool_use(task, response)
 
     if cat == "creative" or tid.startswith("crea_"):
         # Judge-scored tasks fall back to 0.5 when no judge is available.

@@ -87,13 +87,21 @@ class OpenAICompatBackend:
         }
 
     def generate(self, model: str, prompt: str, **opts) -> GenResult:
+        messages = [{"role": "user", "content": prompt}]
+        return self.generate_with_tools(model, messages, tools=[], **opts)
+
+    def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
+        """Multi-turn tool execution loop."""
         body = {
             "model":       model,
-            "messages":    [{"role": "user", "content": prompt}],
+            "messages":    messages,
             "temperature": opts.get("temperature", 0.0),
             "max_tokens":  opts.get("num_predict", opts.get("max_tokens", 1024)),
             "stream":      True,
         }
+        if tools:
+            body["tools"] = tools
+
         t0 = time.time()
         ttft = 0.0
         text = ""
@@ -104,6 +112,12 @@ class OpenAICompatBackend:
                 f"{self.base}/chat/completions",
                 json=body, headers=self._headers, stream=True, timeout=self.timeout,
             )
+            if r.status_code != 200:
+                return GenResult(text="", model=model, error=r.text, latency_s=round(time.time() - t0, 3))
+
+            # Temporary capture of tool calls
+            tool_calls = []
+
             for line in r.iter_lines(decode_unicode=True):
                 if not line or not line.startswith("data:"):
                     continue
@@ -114,21 +128,42 @@ class OpenAICompatBackend:
                     chunk = json.loads(data)
                 except json.JSONDecodeError:
                     continue
-                # Usage info (some providers emit on the last chunk)
+                
                 if (usage := chunk.get("usage")):
                     tokens_in  = usage.get("prompt_tokens", tokens_in)
                     tokens_out = usage.get("completion_tokens", tokens_out)
-                # Delta content
+                
                 choices = chunk.get("choices") or []
                 if not choices:
                     continue
                 delta = choices[0].get("delta", {})
+                
+                # Check for tool_calls delta
+                if "tool_calls" in delta:
+                    for tc in delta["tool_calls"]:
+                        idx = tc.get("index", 0)
+                        while len(tool_calls) <= idx:
+                            tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                        if tc.get("id"):
+                            tool_calls[idx]["id"] = tc["id"]
+                        if tc.get("function", {}).get("name"):
+                            tool_calls[idx]["function"]["name"] += tc["function"]["name"]
+                        if tc.get("function", {}).get("arguments"):
+                            tool_calls[idx]["function"]["arguments"] += tc["function"]["arguments"]
+
                 piece = delta.get("content", "") or ""
-                if first and piece:
+                if first and (piece or tool_calls):
                     ttft = time.time() - t0
                     first = False
                 text += piece
+
             latency = time.time() - t0
+            
+            # If the model called tools, return the tool call list as the text result (serialized)
+            # for the evaluator to process.
+            if tool_calls:
+                text = json.dumps(tool_calls)
+
             text = _THINK.sub("", text).strip()
             tps = tokens_out / latency if latency > 0 and tokens_out > 0 else (
                 len(text.split()) * 1.3 / latency if latency > 0 else 0.0

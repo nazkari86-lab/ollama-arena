@@ -56,6 +56,7 @@ all = [
 ]
 dev = [
     "pytest>=7",
+    "pytest-asyncio",
     "pytest-cov",
     "ruff",
     "mypy",

@@ -17,6 +17,13 @@ class OllamaBackend:
         self.timeout = timeout
 
     def generate(self, model: str, prompt: str, **opts) -> GenResult:
+        return self.generate_with_tools(model, [{"role": "user", "content": prompt}], tools=[], **opts)
+
+    def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
+        # For now, Ollama native /api/generate doesn't handle OpenAI-style tools.
+        # We just join messages into a single prompt for backward compatibility.
+        prompt = "\n".join([m["content"] for m in messages if m.get("content")])
+        
         opts.setdefault("num_ctx", 4096)
         opts.setdefault("temperature", 0.0)
         opts.setdefault("num_predict", 1024)
