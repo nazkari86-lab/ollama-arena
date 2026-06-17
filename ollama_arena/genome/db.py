@@ -41,10 +41,16 @@ CREATE INDEX IF NOT EXISTS idx_lin_parent ON genome_lineage(parent_id);
 class GenomeStore:
     def __init__(self, db_path: str = "genome.db"):
         self.db = db_path
+        # :memory: creates a new DB per connect() — keep a single shared connection
+        self._shared: sqlite3.Connection | None = None
+        if db_path == ":memory:":
+            self._shared = sqlite3.connect(":memory:", check_same_thread=False)
         with self._conn() as cx:
             cx.executescript(_SCHEMA)
 
     def _conn(self):
+        if self._shared is not None:
+            return self._shared
         return sqlite3.connect(self.db, timeout=10.0)
 
     def upsert_canonical(self, data: dict) -> None:
