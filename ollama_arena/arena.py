@@ -108,16 +108,15 @@ class Arena:
         from .webui_bridge import WebUIBridge
         self.webui = WebUIBridge()
         
-        # v4.0: MCP Orchestration
-        from .mcp_client import MCPOrchestrator
-        # Default config: SQLite + Playwright + Google Search
-        mcp_config = {
+        # MCP Orchestration — lazy: initialized only on first use to avoid
+        # requiring Node.js / npx for every Arena() instantiation.
+        self._mcp_config = {
             "sqlite": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-sqlite"]},
             "playwright": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-playwright"]},
             "google": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-google-search"]},
             "searxng": {"url": "http://localhost:8080"}
         }
-        self.mcp = MCPOrchestrator(mcp_config)
+        self._mcp: object | None = None
 
         self.judge = None
         if judge_model:
@@ -127,6 +126,13 @@ class Arena:
         if from_datasets:
             for name in from_datasets:
                 self.load_hf_dataset(name)
+
+    @property
+    def mcp(self) -> object:
+        if self._mcp is None:
+            from .mcp_client import MCPOrchestrator
+            self._mcp = MCPOrchestrator(self._mcp_config)
+        return self._mcp
 
     def load_hf_dataset(self, name: str, limit: int | None = None) -> int:
         from .datasets import load_dataset

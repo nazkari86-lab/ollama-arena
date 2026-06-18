@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +27,9 @@ jobs:
           pip install -e ".[dev,viz]"
       - name: Lint
         run: ruff check ollama_arena
+      - name: Type check
+        run: mypy ollama_arena --ignore-missing-imports --no-error-summary
+        continue-on-error: true
       - name: Smoke test imports
         run: |
           python -c "from ollama_arena import Arena, get_tasks, task_stats; print(task_stats())"
@@ -35,7 +38,6 @@ jobs:
           python -c "from ollama_arena.evaluator import evaluate"
           python -c "from ollama_arena.elo import EloStore, update_elo"
           python -c "from ollama_arena.performance import PerfTracker"
-      - name: Run pytest (if any)
-        run: |
-          if [ -d tests ]; then pytest -q; fi
+      - name: Run pytest with coverage
+        run: pytest -q --cov=ollama_arena --cov-report=term-missing --cov-fail-under=40
         shell: bash

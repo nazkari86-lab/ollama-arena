@@ -24,3 +24,4 @@ htmlcov/
 *.log
 dist/
 __pycache__/
+.playwright-mcp/

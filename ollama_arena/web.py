@@ -167,16 +167,15 @@ def run_web(
     # ── Security headers middleware ──────────────────────────────────────────
     class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
+            nonce = uuid.uuid4().hex
+            request.state.csp_nonce = nonce
             response = await call_next(request)
-            # Strict-ish CSP. Allows the CDN scripts we ship (plotly, three,
-            # highlight, DOMPurify), Google Fonts, and self. No inline event
-            # handlers, no eval (DOMPurify doesn't need it).
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' "
+                f"script-src 'self' 'nonce-{nonce}' "
                 "  https://cdn.plot.ly https://cdnjs.cloudflare.com "
                 "  https://cdn.jsdelivr.net; "
-                "style-src 'self' 'unsafe-inline' "
+                f"style-src 'self' 'nonce-{nonce}' "
                 "  https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
                 "font-src 'self' https://fonts.gstatic.com data:; "
                 "img-src 'self' data: blob: https:; "
@@ -193,7 +192,7 @@ def run_web(
                 "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
                 "microphone=(), payment=(), usb=()"
             )
-            response.headers["X-XSS-Protection"]       = "0"   # CSP is the right tool
+            response.headers["X-XSS-Protection"]       = "0"
             return response
     app.add_middleware(SecurityHeadersMiddleware)
 

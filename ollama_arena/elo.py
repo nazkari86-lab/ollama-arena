@@ -19,18 +19,33 @@ from .storage.sqlite import (
 log = logging.getLogger("arena.elo")
 
 _DEFAULT_ELO = 1200
-_K = 32
+_K_MAX = 32
+_K_MIN = 12
 
 
 def _expected(ra: float, rb: float) -> float:
     return 1.0 / (1.0 + 10 ** ((rb - ra) / 400))
 
 
-def update_elo(ra: float, rb: float, result: float) -> tuple[float, float]:
-    """`result` is 1.0=A win, 0.5=draw, 0.0=B win. Standard chess formula."""
+def _k_factor(n_games: int) -> float:
+    """Dynamic K: high for newcomers, stabilises after ~100 games."""
+    return max(_K_MIN, _K_MAX / (1 + n_games / 30))
+
+
+def update_elo(
+    ra: float, rb: float, result: float,
+    na: int = 0, nb: int = 0,
+) -> tuple[float, float]:
+    """`result` is 1.0=A win, 0.5=draw, 0.0=B win. Standard chess formula.
+
+    `na`/`nb` are the number of games each model has already played;
+    K decreases as experience accumulates so the rating stabilises.
+    """
     ea = _expected(ra, rb)
-    new_ra = ra + _K * (result - ea)
-    new_rb = rb + _K * ((1 - result) - (1 - ea))
+    ka = _k_factor(na)
+    kb = _k_factor(nb)
+    new_ra = ra + ka * (result - ea)
+    new_rb = rb + kb * ((1 - result) - (1 - ea))
     return round(new_ra, 2), round(new_rb, 2)
 
 
@@ -50,6 +65,13 @@ class EloStore:
     def get_cached_response(self, model: str, task_id: str, instruction: str) -> str | None:
         return self._tasks.get_cached_response(model, task_id, instruction)
 
+    def _n_games(self, model: str) -> int:
+        lb = self._ratings.leaderboard()
+        for row in lb:
+            if row["model"] == model:
+                return row.get("matches", 0)
+        return 0
+
     def record_match(self, model_a: str, model_b: str, category: str,
                      score_a: float, score_b: float) -> tuple[float, float]:
         ra = self.get(model_a)
@@ -61,7 +83,9 @@ class EloStore:
         else:
             result = score_a / total
 
-        new_ra, new_rb = update_elo(ra, rb, result)
+        na = self._n_games(model_a)
+        nb = self._n_games(model_b)
+        new_ra, new_rb = update_elo(ra, rb, result, na=na, nb=nb)
         now = time.time()
 
         try:

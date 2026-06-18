@@ -37,6 +37,7 @@ web = [
     "fastapi>=0.100",
     "uvicorn[standard]>=0.22",
     "jinja2>=3.1",
+    "slowapi>=0.1.9",
 ]
 viz = [
     "plotly>=5.18",
@@ -66,10 +67,8 @@ config = [
 ]
 agentic = [
     "kubernetes>=28.0",
-    "kubevirt>=1.0",
 ]
 p2p = [
-    "libp2p>=0.2.0",
     "web3>=6.0",
     "py-evm>=0.7",
     "cryptography>=41.0",
@@ -80,9 +79,7 @@ telemetry = [
     "psutil>=5.9",
 ]
 zkproof = [
-    "circom>=2.0",
-    "snarkjs>=0.7",
-    "py-sr25519>=0.1.0",
+    "cryptography>=41.0",
 ]
 all = [
     "fastapi>=0.100", "uvicorn[standard]>=0.22",
@@ -92,8 +89,6 @@ all = [
     "pyyaml>=6.0",
     "tomli>=2.0; python_version < '3.11'",
     "kubernetes>=28.0",
-    "kubevirt>=1.0",
-    "libp2p>=0.2.0",
     "web3>=6.0",
     "py-evm>=0.7",
     "cryptography>=41.0",

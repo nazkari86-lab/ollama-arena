@@ -4,19 +4,16 @@ import tempfile
 import pytest
 from pathlib import Path
 
+chromadb = pytest.importorskip("chromadb", reason="chromadb not installed")
 from ollama_arena.rag import CodebaseIndexer, CodeSearcher
 
 
 @pytest.fixture
 def temp_workspace():
     """Create a temporary workspace with code files."""
-    fd, workspace = tempfile.mkstemp(suffix="_workspace")
-    os.close(fd)
-    workspace = Path(workspace)
-    workspace.mkdir()
-
-    # Create some test code files
-    (workspace / "auth.py").write_text("""
+    with tempfile.TemporaryDirectory(suffix="_workspace") as tmp:
+        workspace = Path(tmp)
+        (workspace / "auth.py").write_text("""
 def authenticate(username, password):
     if check_credentials(username, password):
         return generate_token(username)
@@ -28,8 +25,7 @@ def check_credentials(username, password):
 def generate_token(username):
     return f"token_{username}"
 """)
-
-    (workspace / "utils.py").write_text("""
+        (workspace / "utils.py").write_text("""
 def format_date(date):
     return date.strftime("%Y-%m-%d")
 
@@ -37,39 +33,19 @@ def parse_date(date_str):
     from datetime import datetime
     return datetime.strptime(date_str, "%Y-%m-%d")
 """)
-
-    (workspace / "config.py").write_text("""
+        (workspace / "config.py").write_text("""
 DATABASE_URL = "sqlite:///app.db"
 API_KEY = "secret-key-123"
 DEBUG = True
 """)
-
-    yield workspace
-
-    # Cleanup
-    import shutil
-    try:
-        shutil.rmtree(workspace)
-    except:
-        pass
+        yield workspace
 
 
 @pytest.fixture
 def temp_index_path():
     """Create a temporary index path."""
-    fd, index = tempfile.mkstemp(suffix="_index")
-    os.close(fd)
-    index = Path(index)
-    index.mkdir()
-
-    yield index
-
-    # Cleanup
-    import shutil
-    try:
-        shutil.rmtree(index)
-    except:
-        pass
+    with tempfile.TemporaryDirectory(suffix="_index") as tmp:
+        yield Path(tmp)
 
 
 class TestCodebaseIndexer:
