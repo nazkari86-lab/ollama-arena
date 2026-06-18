@@ -268,26 +268,40 @@ def run_web(
         ]
         return results[:limit]
 
-    @app.get("/api/stats")
+    @app.get("/api/stats", summary="Arena global statistics",
+             description="Aggregate stats: total matches, total tasks, active models, "
+                         "avg ELO, avg TPS, and recency metrics.")
     def api_arena_stats():
         return arena.elo.arena_stats()
 
-    @app.get("/api/compare/{model_a:path}")
+    @app.get("/api/compare/{model_a:path}", summary="Head-to-head model comparison",
+             description="Win/draw/loss breakdown and category-level ELO comparison "
+                         "between two models. Use ?b= to specify the second model. "
+                         "Example: /api/compare/llama3?b=phi3")
     def api_compare(model_a: str, b: str = ""):
-        """Head-to-head statistics: /api/compare/llama3?b=phi3"""
         if not b:
             raise HTTPException(status_code=400, detail="Missing ?b= parameter")
         return arena.elo.head_to_head(model_a, b)
 
-    @app.get("/api/leaderboard/{category}")
+    @app.get("/api/leaderboard/{category}", summary="Category-specific ELO leaderboard",
+             description="Returns the ELO leaderboard filtered to one category "
+                         "(e.g. 'code', 'math', 'reasoning'). Models with no matches "
+                         "in that category are excluded.")
     def api_category_leaderboard(category: str):
         return arena.elo.category_leaderboard(category)
 
-    @app.get("/api/models/{model:path}/elo-by-category")
+    @app.get("/api/models/{model:path}/elo-by-category",
+             summary="Per-category ELO breakdown for a model",
+             description="Returns all category sub-ratings for the given model, "
+                         "sorted by number of matches descending.")
     def api_model_category_elos(model: str):
         return arena.elo.model_category_elos(model)
 
-    @app.get("/api/export")
+    @app.get("/api/export", summary="Export full arena data",
+             description="Download a full arena snapshot. "
+                         "Use ?fmt=json (default) for a structured JSON bundle "
+                         "(stats + leaderboard + full match history + benchmarks) "
+                         "or ?fmt=csv for a flat CSV of every match.")
     def api_export(fmt: str = "json"):
         """Export full arena data. fmt=json (default) or fmt=csv."""
         import csv
@@ -333,7 +347,10 @@ def run_web(
             headers={"Content-Disposition": "attachment; filename=arena_export.json"},
         )
 
-    @app.get("/api/models")
+    @app.get("/api/models", summary="List available models",
+             description="Returns all models reported by the active backend, "
+                         "enriched with auto-detected capability flags "
+                         "(vision, tools, ctx_length) where available.")
     def api_models():
         models = arena.client.list_models()
         # Enrich with capabilities (non-blocking — returns cached data if available)
@@ -349,26 +366,37 @@ def run_web(
             pass
         return models
 
-    @app.get("/api/models/{model:path}/caps")
+    @app.get("/api/models/{model:path}/caps",
+             summary="Model capability detection",
+             description="Auto-detects model capabilities via Ollama /api/show. "
+                         "Results are cached per process. Fields: vision (bool), "
+                         "tools (bool), ctx_length (int), families (list), param_size (str).")
     def api_model_caps(model: str):
         from .model_caps import get as get_caps
         return get_caps(model, ollama_url)
 
-    @app.get("/api/categories")
+    @app.get("/api/categories", summary="Available task categories and languages",
+             description="Returns the list of supported task categories, "
+                         "programming languages, and aggregate task statistics.")
     def api_categories():
         return {"categories": list_categories(),
                 "languages": list_languages(),
                 "stats": task_stats()}
 
-    @app.get("/api/perf")
+    @app.get("/api/perf", summary="Model performance statistics",
+             description="Latency, TPS, and throughput percentiles aggregated "
+                         "from all completed matches in the current session.")
     def api_perf():
         return arena.performance_stats()
 
-    @app.get("/api/datasets")
+    @app.get("/api/datasets", summary="Available benchmark datasets",
+             description="Returns metadata for all built-in benchmark datasets "
+                         "including HuggingFace sources and custom task sets.")
     def api_datasets():
         return available_datasets()
 
-    @app.get("/api/version")
+    @app.get("/api/version", summary="Arena version",
+             description="Returns the installed ollama-arena package version.")
     def api_version():
         from . import __version__
         return {"version": __version__}

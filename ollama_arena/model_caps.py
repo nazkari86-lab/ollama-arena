@@ -17,10 +17,16 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
 
 log = logging.getLogger("arena.model_caps")
 
-_cache: dict[str, dict] = {}
+# Cache entries expire after this many seconds so re-pulled/updated models
+# are re-probed automatically rather than serving stale capability flags.
+_CACHE_TTL = 3600  # 1 hour
+
+_cache: dict[str, dict] = {}   # model → caps dict
+_cache_ts: dict[str, float] = {}  # model → insertion time
 _lock = threading.Lock()
 
 _PARAM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[Bb]")
@@ -84,13 +90,15 @@ def _detect_one(model: str, ollama_url: str) -> dict:
 
 
 def get(model: str, ollama_url: str = "http://localhost:11434") -> dict:
-    """Return cached capability dict, detecting on first access."""
+    """Return cached capability dict, re-detecting when the TTL has expired."""
+    now = time.time()
     with _lock:
-        if model in _cache:
+        if model in _cache and now - _cache_ts.get(model, 0) < _CACHE_TTL:
             return _cache[model]
     caps = _detect_one(model, ollama_url)
     with _lock:
         _cache[model] = caps
+        _cache_ts[model] = now
     return caps
 
 
@@ -115,5 +123,7 @@ def invalidate(model: str | None = None) -> None:
     with _lock:
         if model is None:
             _cache.clear()
+            _cache_ts.clear()
         else:
             _cache.pop(model, None)
+            _cache_ts.pop(model, None)
