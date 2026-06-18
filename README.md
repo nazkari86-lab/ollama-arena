@@ -1,36 +1,108 @@
 # ollama-arena
 
-**"Which of my local models is actually better at coding?"** — ollama-arena answers
-that in 60 seconds. It runs pair-wise battles between local LLMs, scores each response
-automatically, and keeps an ELO leaderboard across sessions.
+**"Which of my local models is actually better?"** — ollama-arena v3.0.0 now answers that through **agentic evaluation**, **continuous self-improvement**, and **global P2P testing**. 
+
+The arena has evolved from simple model comparison to a continuous AI evolution factory where models compete, learn from their defeats, automatically fine-tune, and optimize their resource consumption.
 
 ```
-pip install ollama-arena
+pip install ollama-arena==3.0.0
 ollama-arena benchmark llama3.2:3b,qwen2.5-coder:7b --compare
 ```
 
 ```
-  llama3.2:3b         Score: 61.3 / 100   (coding:58  reasoning:65  security:70 ...)
-  qwen2.5-coder:7b    Score: 74.8 / 100   (coding:82  reasoning:71  security:68 ...)
-  Winner: qwen2.5-coder:7b  (margin: 13.5 pts)
+  llama3.2:3b         Score: 61.3 / 100   (agentic:45  coding:58  reasoning:65 ...)
+  qwen2.5-coder:7b    Score: 78.2 / 100   (agentic:72  coding:82  reasoning:71 ...)
+  Winner: qwen2.5-coder:7b  (margin: 16.9 pts)
 ```
 
-Or run a detailed head-to-head with shareable output:
+**NEW in v3.0.0**: Long-horizon agentic tasks, auto-finetuning, P2P global grid, hardware telemetry, and 3D visualization.
 
-```
-ollama-arena match --models llama3.2:3b,qwen2.5-coder:7b --category coding -n 10 --share
+```bash
+# Long-horizon agentic evaluation
+ollama-arena battle --task long-horizon --duration 4h
+
+# Auto-finetune from arena defeats
+ollama-arena finetune enable --threshold 1000
+
+# Join global P2P network
+ollama-arena node --join-global
+
+# Hardware telemetry
+ollama-arena telemetry energy --model llama3.3:70b
 ```
 
-```
-  ✓ A  code_001  1.00 vs 0.00  [easy][python]  Write a sieve of Eratosthenes…
-  ✓ B  code_002  0.00 vs 1.00  [medium][python] Implement an LRU cache…
-  = =  code_003  1.00 vs 1.00  [hard][python]   Write a consistent hash ring…
-  ...
+## Demo
 
-  rank  model                elo    W   L   D   win%
-  1     qwen2.5-coder:7b    1271    7   1   2   70%
-  2     llama3.2:3b         1129    1   7   2   10%
+![ollama-arena demo](demo.gif)
+
+*Quick demo showing model comparison, genome lineage exploration, and ELO leaderboard*
+
+## What's New in v3.0.0 "Apex Evolution"
+
+🚀 **Transformative Release: From Evaluation Tool to AI Evolution Factory**
+
+### Deep Agentic Evaluation
+- **Stateful VM Sandboxes**: KubeVirt/Firecracker for isolated, persistent workspaces
+- **Swarm Battles (2v2/3v3)**: Multi-agent team collaboration evaluation  
+- **Chaos Engineering Arena**: Adversarial red-teaming scenarios
+- **Long-Horizon Tasks**: 1-8 hour complex tasks with checkpoint/resume
+
+### Continuous Auto-Finetuning
+- **Loss-Driven RLHF/DPO**: Automatic preference pair collection from matches
+- **Auto-Unsloth Integration**: Self-improvement after configurable loss thresholds
+- **Adversarial Dataset Generation**: AI-generated harder tasks based on weaknesses
+- **Finetuning Orchestration**: GPU resource queuing and job management
+
+### Global P2P Grid
+- **Arena@Home**: P2P network for global GPU contribution (Folding@Home style)
+- **Cryptographic Proof of Eval**: Zero-Knowledge Proofs for result verification
+- **Blockchain Leaderboard**: Immutable, fraud-proof global rankings
+- **Byzantine Consensus**: Trustless result aggregation with reputation scoring
+
+### Deep Hardware Telemetry
+- **Energy Metrics**: Tokens-per-Watt via NVML/ROCm/MPS integration
+- **Quantization Discovery**: Automatic optimal format recommendation for your hardware
+- **Memory Bandwidth Profiling**: eBPF-based TTFT impact analysis
+- **Hardware Dashboard**: Real-time cost and efficiency monitoring
+
+### "God-Mode" Ecosystem
+- **3D WebGL Neural Map**: Real-time token probability visualization
+- **IDE Extensions**: VS Code and Cursor integration with "Send to Arena"
+- **CI/CD Quality Gates**: GitHub Actions integration for PR evaluation
+- **Enhanced Dashboard**: Multi-agent collaboration visualization
+
+### v2.5.0 Features (Still Available)
+- **React Frontend**: Modern React + Vite + TypeScript frontend
+- **Distributed Architecture**: Multi-node execution with load balancing
+- **Enterprise SSO**: OAuth2, SAML, OIDC, LDAP integration
+- **CSP Security**: Nonce-based Content Security Policy
+- **Community Features**: Leaderboards, tournaments, social sharing
+
+### Community Features
+- **Public Leaderboard**: Deployable to GitHub Pages for community visibility
+- **Responsive Design**: Works seamlessly on desktop, tablet, and mobile
+- **Real-time Updates**: WebSocket support for live match updates
+
+### Enterprise Features
+- **SSO Integration**: OAuth2/OIDC support (Google, GitHub, custom providers)
+- **Advanced Security**: Configurable CSP, rate limiting, and authentication
+- **Security UI**: Easy-to-use settings page for security configuration
+- **CORS Management**: Simple CORS configuration interface
+
+### Quick Start with React Frontend
+
+```bash
+# Build the React frontend
+cd frontend
+npm install
+npm run build
+
+# Run with React frontend
+cd ..
+ollama-arena web --react
 ```
+
+For detailed migration instructions, see [FRONTEND_MIGRATION_GUIDE.md](FRONTEND_MIGRATION_GUIDE.md)
 
 ## Why
 
@@ -56,11 +128,40 @@ Optional extras:
 | Extra | Adds |
 |---|---|
 | `pip install 'ollama-arena[wasm]'` | WASM sandbox fallback when Docker is unavailable |
+| `pip install 'ollama-arena[mcp-browser]'` | Playwright browser automation for MCP tools |
 | `pip install 'ollama-arena[all]'` | web dashboard, Plotly charts, HuggingFace datasets |
 | `pip install 'ollama-arena[hf]'` | in-process TransformersBackend (torch, transformers) |
 | `pip install 'ollama-arena[finetune]'` | Unsloth fine-tune pipeline — CUDA recommended |
 
-The HuggingFace and fine-tune extras pull large dependencies and are off by default.
+The HuggingFace, fine-tune, and mcp-browser extras pull large dependencies and are off by default.
+
+## What's New in v2.5.0
+
+### 🧬 Automatic Lineage Inference
+Automatically detect model evolution relationships (fine-tuning, distillation, merging) using heuristic algorithms:
+
+```bash
+ollama-arena genome auto-seed --min-confidence 0.5
+```
+
+The inference engine analyzes:
+- Naming patterns (`-instruct`, `-distill`, `-coder`)
+- Architecture similarities (layers, hidden size, context length)
+- Parameter size relationships (distillation detection)
+- Family and organization clustering
+
+### 📊 Enhanced Genome Explorer
+- **Expanded model registry**: 40+ canonical models with complete lineage data
+- **Better visualization**: Improved tree structure for model evolution
+- **Smart matching**: Automatic local model identification
+- **Confidence scoring**: Quantified confidence for each relationship
+
+### 🌳 Lineage Tree Visualization
+```bash
+ollama-arena genome tree --model llama3.1
+```
+
+View the complete evolution tree for any model family.
 
 ## Quick Start Guide
 
@@ -217,6 +318,38 @@ runtime from `$PATH`:
 
 `ollama-arena tasks` shows which languages are currently runnable.
 
+## Genome
+
+The Genome Explorer helps you understand model identity and lineage:
+
+**Scan local models:**
+```bash
+ollama-arena genome scan
+```
+
+**Show model card:**
+```bash
+ollama-arena genome show llama3.2:3b
+```
+
+**View lineage tree:**
+```bash
+ollama-arena genome tree
+ollama-arena genome tree --model llama3.1  # subtree
+```
+
+**Automatic lineage inference:**
+```bash
+ollama-arena genome auto-seed --min-confidence 0.5
+ollama-arena genome auto-seed --dry-run  # preview only
+```
+
+The genome system tracks:
+- Canonical model registry (40+ models with metadata)
+- Local model identification and matching
+- Lineage relationships (fine-tuned_from, distilled_from, merged_from, etc.)
+- Confidence scoring for inferred relationships
+
 ## CI / GitHub Actions
 
 Use ollama-arena as a quality gate in CI. Add to `.github/workflows/`:
@@ -349,6 +482,24 @@ CUDA is required for the Unsloth step.
   sources to the host sandbox.
 - HuggingFace dataset normalization is per-loader; some upstream schema
   changes will require updates to `loader.py`.
+
+## Community
+
+- **GitHub**: https://github.com/your-org/ollama-arena
+- **Discussions**: Use GitHub Discussions for questions and ideas
+- **Issues**: Bug reports and feature requests via GitHub Issues
+- **Show HN**: Share your benchmarks and model comparisons on Hacker News
+- **r/LocalLLaMA**: Join the local LLM community on Reddit
+
+### Contributing
+
+See `CONTRIBUTING.md`. The most useful contributions are new dataset
+loaders, new language sandboxes, and new backends; each takes only a few
+dozen lines.
+
+### Star History
+
+If you find ollama-arena useful, please consider giving it a star on GitHub!
 
 ## Contributing
 

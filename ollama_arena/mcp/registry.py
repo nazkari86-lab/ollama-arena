@@ -7,6 +7,14 @@ from typing import Callable, Literal
 
 from .tools import browser, code, computer, data, dev, git, network, web, workspace
 
+# RAG tools (optional dependency)
+try:
+    from ..rag.tools import tool_defs as rag_tool_defs
+    _rag_available = True
+except ImportError:
+    _rag_available = False
+    rag_tool_defs = lambda: []
+
 DangerTier = Literal["safe", "confirm", "deny"]
 
 
@@ -48,6 +56,10 @@ def _collect_builtin_defs(include_mock: bool, server_configs: dict | None) -> li
     raw.extend(network.tool_defs())
     raw.extend(data.tool_defs())
     raw.extend(computer.tool_defs())
+
+    # Add RAG tools if available
+    if _rag_available:
+        raw.extend(rag_tool_defs())
 
     include_browser_mock = include_mock or bool(server_configs and "playwright" in server_configs)
     raw.extend(browser.tool_defs(include_mock=include_browser_mock))

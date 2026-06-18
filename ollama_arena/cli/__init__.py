@@ -6,6 +6,7 @@ import sys
 
 from .agents import cmd_council, cmd_optimize_prompt, cmd_resolve_issue, cmd_review_pr
 from .common import add_common
+from .mcp_cmd import cmd_mcp_diagnose, cmd_mcp_enable, cmd_mcp_disable, cmd_mcp_install, cmd_mcp_list
 from .data import (
     cmd_anti_leaderboard,
     cmd_datasets,
@@ -217,6 +218,32 @@ def main():
     pg_show.add_argument("model", help="Local model name (e.g. llama3.1:8b)")
     pg_show.add_argument("--genome-db", default="genome.db", metavar="PATH")
     pg.set_defaults(func=cmd_genome)
+
+    # MCP commands
+    pmcp = sub.add_parser("mcp", help="MCP server management and diagnostics")
+    pmcp_sub = pmcp.add_subparsers(dest="mcp_cmd", metavar="MCP_CMD")
+
+    pmcp_diag = pmcp_sub.add_parser("diagnose", help="Diagnose MCP server availability")
+    pmcp_diag.add_argument("--config", default=None, help="Path to MCP config file")
+    pmcp_diag.set_defaults(func=cmd_mcp_diagnose)
+
+    pmcp_list = pmcp_sub.add_parser("list", help="List all configured MCP servers")
+    pmcp_list.add_argument("--config", default=None, help="Path to MCP config file")
+    pmcp_list.set_defaults(func=cmd_mcp_list)
+
+    pmcp_enable = pmcp_sub.add_parser("enable", help="Enable a specific MCP server")
+    pmcp_enable.add_argument("server", help="Server name to enable")
+    pmcp_enable.add_argument("--config", default=None, help="Path to MCP config file")
+    pmcp_enable.set_defaults(func=cmd_mcp_enable)
+
+    pmcp_disable = pmcp_sub.add_parser("disable", help="Disable a specific MCP server")
+    pmcp_disable.add_argument("server", help="Server name to disable")
+    pmcp_disable.add_argument("--config", default=None, help="Path to MCP config file")
+    pmcp_disable.set_defaults(func=cmd_mcp_disable)
+
+    pmcp_install = pmcp_sub.add_parser("install", help="Install a popular MCP server")
+    pmcp_install.add_argument("server", help="Server template to install (sqlite, filesystem, memory, git, time)")
+    pmcp_install.set_defaults(func=cmd_mcp_install)
 
     pw = sub.add_parser("web", help="Launch web dashboard")
     pw.add_argument("--host", default="0.0.0.0")

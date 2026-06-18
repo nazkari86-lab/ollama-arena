@@ -1,0 +1,150 @@
+{
+  "name": "ollama-arena",
+  "displayName": "Ollama Arena - LLM Battle Arena",
+  "description": "Send code to Ollama Arena for model evaluation and competition. Test your code against multiple LLMs in real-time battles.",
+  "version": "3.0.0",
+  "publisher": "nazkari86-lab",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Testing",
+    "Snippets"
+  ],
+  "keywords": [
+    "llm",
+    "ollama",
+    "arena",
+    "battle",
+    "evaluation",
+    "ai",
+    "machine learning"
+  ],
+  "activationEvents": [
+    "onCommand:ollama-arena.sendToArena",
+    "onCommand:ollama-arena.startBattle",
+    "onCommand:ollama-arena.showLeaderboard",
+    "onCommand:ollama-arena.configureArena"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ollama-arena.sendToArena",
+        "title": "Send to Arena",
+        "category": "Ollama Arena"
+      },
+      {
+        "command": "ollama-arena.startBattle",
+        "title": "Start Model Battle",
+        "category": "Ollama Arena"
+      },
+      {
+        "command": "ollama-arena.showLeaderboard",
+        "title": "Show Leaderboard",
+        "category": "Ollama Arena"
+      },
+      {
+        "command": "ollama-arena.configureArena",
+        "title": "Configure Arena",
+        "category": "Ollama Arena"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "ollama-arena.sendToArena",
+          "when": "editorHasSelection",
+          "group": "ollama-arena@1"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "ollama-arena.sendToArena",
+          "when": "editorHasSelection",
+          "group": "ollama-arena@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Ollama Arena",
+      "properties": {
+        "ollamaArena.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:7860/api",
+          "description": "API URL for your Ollama Arena instance"
+        },
+        "ollamaArena.defaultModels": {
+          "type": "array",
+          "default": ["llama3.2:3b", "qwen2.5:7b"],
+          "description": "Default models to use for arena battles",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ollamaArena.defaultCategory": {
+          "type": "string",
+          "default": "coding",
+          "description": "Default task category for evaluation",
+          "enum": ["coding", "reasoning", "security", "planning", "inspection", "math", "knowledge", "creative", "json_format", "tool_use", "vision", "all"]
+        },
+        "ollamaArena.autoOpenResults": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically open battle results when complete"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ollama-arena",
+          "title": "Ollama Arena",
+          "icon": "icons/arena.svg"
+        }
+      ]
+    },
+    "views": {
+      "ollama-arena": [
+        {
+          "type": "webview",
+          "id": "ollama-arena.leaderboard",
+          "name": "Leaderboard"
+        },
+        {
+          "type": "webview",
+          "id": "ollama-arena.battles",
+          "name": "Active Battles"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nazkari86-lab/ollama-arena.git"
+  },
+  "license": "MIT",
+  "icon": "icons/icon.png",
+  "bugs": {
+    "url": "https://github.com/nazkari86-lab/ollama-arena/issues"
+  }
+}

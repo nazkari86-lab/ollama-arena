@@ -4,19 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ollama-arena"
-version = "1.1.0"
-description = "Pair-wise ELO evaluation arena for local LLMs."
+version = "3.0.0"
+description = "Continuous AI evolution factory with agentic evaluation, auto-finetuning, and global P2P grid."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "nazkari86-lab" }]
-keywords = ["llm", "ollama", "benchmark", "elo", "evaluation"]
+keywords = ["llm", "ollama", "benchmark", "elo", "evaluation", "finetuning", "p2p", "agentic"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
     "requests>=2.28",
     "rich>=13.0",
@@ -25,6 +25,10 @@ dependencies = [
 [project.optional-dependencies]
 mcp = [
     "mcp>=0.1.0",
+]
+mcp-browser = [
+    "mcp>=0.1.0",
+    "playwright>=1.40",
 ]
 wasm = [
     "wasmtime>=24.0",
@@ -56,11 +60,46 @@ finetune = [
     "torch>=2.2",
     "bitsandbytes>=0.43; sys_platform != 'darwin'",
 ]
+config = [
+    "pyyaml>=6.0",
+    "tomli>=2.0; python_version < '3.11'",
+]
+agentic = [
+    "kubernetes>=28.0",
+    "kubevirt>=1.0",
+]
+p2p = [
+    "libp2p>=0.2.0",
+    "web3>=6.0",
+    "py-evm>=0.7",
+    "cryptography>=41.0",
+]
+telemetry = [
+    "pynvml>=11.0",  # NVIDIA NVML
+    "py3nvml>=0.2.0",  # Alternative NVML binding
+    "psutil>=5.9",
+]
+zkproof = [
+    "circom>=2.0",
+    "snarkjs>=0.7",
+    "py-sr25519>=0.1.0",
+]
 all = [
     "fastapi>=0.100", "uvicorn[standard]>=0.22",
     "plotly>=5.18",
     "datasets>=2.14", "huggingface_hub>=0.20",
     "mcp>=0.1.0",
+    "pyyaml>=6.0",
+    "tomli>=2.0; python_version < '3.11'",
+    "kubernetes>=28.0",
+    "kubevirt>=1.0",
+    "libp2p>=0.2.0",
+    "web3>=6.0",
+    "py-evm>=0.7",
+    "cryptography>=41.0",
+    "pynvml>=11.0",
+    "py3nvml>=0.2.0",
+    "psutil>=5.9",
 ]
 dev = [
     "pytest>=7",
@@ -68,6 +107,8 @@ dev = [
     "pytest-cov",
     "ruff",
     "mypy",
+    "pyyaml>=6.0",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.scripts]
@@ -90,7 +131,7 @@ include = ["ollama_arena*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

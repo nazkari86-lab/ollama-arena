@@ -1,0 +1,41 @@
+# ollama-arena configuration file
+# Place this file as:
+#   - ./ollama-arena.yaml (in your project directory)
+#   - ~/.ollama-arena/config.yaml (user-wide config)
+#   - ~/.config/ollama-arena/config.yaml (XDG standard location)
+#
+# See https://github.com/nazkari86-lab/ollama-arena for documentation
+
+# Backend configuration
+ollama: "http://localhost:11434"  # Ollama server URL
+backend: null  # Alternative backend (vllm, lmstudio, llamacpp, openai, groq, together, openrouter, or custom URL)
+api_key: null  # API key for custom backends
+timeout: 120  # Request timeout in seconds
+
+# Database
+db: "arena.db"  # SQLite database path
+
+# Default match/tournament settings
+default_category: "coding"  # Default task category (coding, reasoning, security, planning, inspection, math, knowledge, creative, json_format, tool_use, vision, all)
+default_difficulty: null  # Default difficulty (easy, medium, hard, or null for any)
+default_tasks: 10  # Default number of tasks per match
+
+# Dataset settings
+dataset: null  # Default HF datasets to load (comma-separated, e.g., "humaneval,mbpp,gsm8k")
+dataset_limit: null  # Default dataset size limit (number of examples)
+
+# Genome database
+genome_db: "genome.db"  # Genome database path for LLM lineage tracking
+
+# MCP configuration
+mcp_config: null  # Path to MCP config file for Model Context Protocol servers
+
+# Web dashboard
+web_host: "0.0.0.0"  # Web dashboard host
+web_port: 7860  # Web dashboard port
+
+# Output settings
+verbose: false  # Enable verbose output by default
+
+# Note: You can also use TOML format by naming the file .toml
+# Command-line arguments always override configuration file values
