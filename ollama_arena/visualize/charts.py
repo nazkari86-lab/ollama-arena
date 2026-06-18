@@ -118,6 +118,93 @@ def radar_html(matches: list[dict], categories: list[str], top_n: int = 5) -> st
     return fig.to_html(include_plotlyjs=False, full_html=False, div_id="radar-chart")
 
 
+def category_elo_radar_html(
+    profiles: dict[str, list[dict]],
+    baseline: float = 1200.0,
+) -> str:
+    """ELO-based capability radar from per-category ratings.
+
+    Parameters
+    ----------
+    profiles : {model: [{category, elo, matches, ...}, ...]}
+        From EloStore.model_category_elos(model) keyed by model name.
+    baseline : float
+        ELO value mapped to the centre of the radar (default 1200).
+    """
+    try:
+        go = _require_plotly()
+    except RuntimeError:
+        return _category_elo_radar_fallback(profiles, baseline)
+
+    # Collect all categories across all models
+    all_cats = sorted({
+        e["category"] for entries in profiles.values() for e in entries
+    })
+    if not all_cats:
+        return "<div style='color:#8b949e;padding:20px'>No category data yet.</div>"
+
+    fig = go.Figure()
+    for model, entries in profiles.items():
+        elo_by_cat = {e["category"]: e["elo"] for e in entries}
+        # Normalise: 0.0 = baseline, range ±400 maps to 0–1
+        values = [
+            max(0.0, min(1.0, (elo_by_cat.get(cat, baseline) - baseline + 400) / 800))
+            for cat in all_cats
+        ]
+        values.append(values[0])  # close the polygon
+        labels = all_cats + [all_cats[0]]
+        fig.add_trace(go.Scatterpolar(
+            r=values, theta=labels, fill="toself", name=model, opacity=0.6,
+        ))
+
+    fig.update_layout(
+        title=dict(text="Category ELO Profile",
+                   font=dict(size=18, color="#e6edf3")),
+        plot_bgcolor="#0d1117", paper_bgcolor="#0d1117",
+        font=dict(color="#e6edf3"),
+        polar=dict(
+            bgcolor="#161b22",
+            radialaxis=dict(
+                visible=True, range=[0, 1], gridcolor="#30363d",
+                tickvals=[0, 0.25, 0.5, 0.75, 1.0],
+                ticktext=["800", "1000", "1200", "1400", "1600"],
+                tickfont=dict(color="#8b949e"),
+            ),
+            angularaxis=dict(gridcolor="#30363d", tickfont=dict(color="#e6edf3")),
+        ),
+        showlegend=True, height=450,
+        legend=dict(bgcolor="#161b22", bordercolor="#30363d", borderwidth=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig.to_html(include_plotlyjs=False, full_html=False, div_id="cat-elo-radar")
+
+
+def _category_elo_radar_fallback(
+    profiles: dict[str, list[dict]], baseline: float,
+) -> str:
+    """Plain HTML table fallback when Plotly is not installed."""
+    all_cats = sorted({
+        e["category"] for entries in profiles.values() for e in entries
+    })
+    if not all_cats:
+        return "<div style='color:#8b949e;padding:20px'>No category data yet.</div>"
+    header = "".join(f"<th style='padding:8px'>{c}</th>" for c in all_cats)
+    rows = []
+    for model, entries in profiles.items():
+        elo_by_cat = {e["category"]: round(e["elo"], 0) for e in entries}
+        cells = "".join(
+            f"<td style='padding:8px;color:#58a6ff'>{elo_by_cat.get(c, '—')}</td>"
+            for c in all_cats
+        )
+        rows.append(f"<tr><td style='padding:8px;font-weight:700'>{model}</td>{cells}</tr>")
+    return (
+        "<table style='width:100%;border-collapse:collapse'>"
+        f"<thead><tr style='border-bottom:1px solid #30363d'>"
+        f"<th style='text-align:left;padding:8px'>Model</th>{header}</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table>"
+    )
+
+
 # Head-to-head heatmap
 def heatmap_html(matches: list[dict]) -> str:
     """Heatmap of pairwise win-rates between models."""

@@ -29,11 +29,14 @@ from .bandwidth import (
     BandwidthMetrics,
     get_bandwidth_profiler,
 )
-from .dashboard import (
-    TelemetryDashboard,
-    DashboardMetrics,
-    get_telemetry_dashboard,
-)
+try:
+    from .dashboard import (
+        TelemetryDashboard,
+        DashboardMetrics,
+        get_telemetry_dashboard,
+    )
+except ModuleNotFoundError:
+    TelemetryDashboard = DashboardMetrics = get_telemetry_dashboard = None  # type: ignore
 
 __all__ = [
     # Base telemetry

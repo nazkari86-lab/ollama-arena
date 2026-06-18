@@ -287,6 +287,52 @@ def run_web(
     def api_model_category_elos(model: str):
         return arena.elo.model_category_elos(model)
 
+    @app.get("/api/export")
+    def api_export(fmt: str = "json"):
+        """Export full arena data. fmt=json (default) or fmt=csv."""
+        import csv
+        import io
+        import time as _time
+
+        if fmt == "csv":
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            writer.writerow([
+                "id", "model_a", "model_b", "category",
+                "score_a", "score_b", "elo_a_before", "elo_b_before",
+                "elo_a_after", "elo_b_after", "ts",
+            ])
+            for m in arena.match_history(limit=10000):
+                writer.writerow([
+                    m.get("id"), m.get("model_a"), m.get("model_b"),
+                    m.get("category"), m.get("score_a"), m.get("score_b"),
+                    m.get("elo_a_before"), m.get("elo_b_before"),
+                    m.get("elo_a_after"), m.get("elo_b_after"), m.get("ts"),
+                ])
+            buf.seek(0)
+            from fastapi.responses import Response
+            return Response(
+                content=buf.getvalue(),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=arena_matches.csv"},
+            )
+
+        # JSON export — include everything useful
+        payload = {
+            "exported_at": _time.time(),
+            "stats": arena.elo.arena_stats(),
+            "leaderboard": arena.leaderboard(),
+            "match_history": arena.match_history(limit=10000),
+            "benchmark_history": arena.elo.benchmark_history(limit=200),
+        }
+        import json as _json
+        from fastapi.responses import Response
+        return Response(
+            content=_json.dumps(payload, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=arena_export.json"},
+        )
+
     @app.get("/api/models")
     def api_models():
         models = arena.client.list_models()
