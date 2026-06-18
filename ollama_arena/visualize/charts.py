@@ -206,19 +206,30 @@ def performance_chart_html(perf: list[dict] | dict) -> str:
 def leaderboard_table_html(board: list[dict]) -> str:
     if not board:
         return "<div style='color:#8b949e;padding:20px;text-align:center'>No matches yet.</div>"
+    _trend_icon = {"up": "▲", "down": "▼", "stable": "—"}
+    _trend_color = {"up": "#3fb950", "down": "#f85149", "stable": "#8b949e"}
     rows = []
     for e in board:
         wr = f"{e['win_rate']:.0%}"
+        trend = e.get("trend", "stable")
+        delta = e.get("trend_delta", 0.0)
+        icon = _trend_icon.get(trend, "—")
+        tcolor = _trend_color.get(trend, "#8b949e")
+        trend_cell = (
+            f"<span style='color:{tcolor};font-weight:700' title='Last-5 ELO Δ: {delta:+.1f}'>"
+            f"{icon} {abs(delta):.0f}</span>"
+        )
         rows.append(
             f"<tr>"
-            f"<td style='font-weight:700'>{e['rank']}</td>"
-            f"<td><strong>{e['model']}</strong></td>"
-            f"<td style='color:#58a6ff;font-weight:700'>{e['elo']:.0f}</td>"
-            f"<td style='color:#3fb950'>{e['wins']}</td>"
-            f"<td style='color:#f85149'>{e['losses']}</td>"
-            f"<td style='color:#8b949e'>{e['draws']}</td>"
-            f"<td>{e['matches']}</td>"
-            f"<td>{wr}</td>"
+            f"<td style='font-weight:700;padding:8px 10px'>{e['rank']}</td>"
+            f"<td style='padding:8px 10px'><strong>{e['model']}</strong></td>"
+            f"<td style='color:#58a6ff;font-weight:700;padding:8px 10px'>{e['elo']:.0f}</td>"
+            f"<td style='padding:8px 10px'>{trend_cell}</td>"
+            f"<td style='color:#3fb950;padding:8px 10px'>{e['wins']}</td>"
+            f"<td style='color:#f85149;padding:8px 10px'>{e['losses']}</td>"
+            f"<td style='color:#8b949e;padding:8px 10px'>{e['draws']}</td>"
+            f"<td style='padding:8px 10px'>{e['matches']}</td>"
+            f"<td style='padding:8px 10px'>{wr}</td>"
             f"</tr>"
         )
     table = (
@@ -227,6 +238,7 @@ def leaderboard_table_html(board: list[dict]) -> str:
         "<th style='text-align:left;padding:10px'>Rank</th>"
         "<th style='text-align:left;padding:10px'>Model</th>"
         "<th style='padding:10px'>ELO</th>"
+        "<th style='padding:10px'>Trend</th>"
         "<th style='padding:10px'>W</th>"
         "<th style='padding:10px'>L</th>"
         "<th style='padding:10px'>D</th>"

@@ -1,7 +1,10 @@
 """Genome knowledge base backed by SQLite (separate from arena.db)."""
 from __future__ import annotations
-import json, sqlite3, time
-from typing import Any
+import json
+import sqlite3
+import time
+
+from ..storage.sqlite._conn import write_conn
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS canonical_models (
@@ -51,7 +54,7 @@ class GenomeStore:
     def _conn(self):
         if self._shared is not None:
             return self._shared
-        return sqlite3.connect(self.db, timeout=10.0)
+        return write_conn(self.db)
 
     def upsert_canonical(self, data: dict) -> None:
         with self._conn() as cx:

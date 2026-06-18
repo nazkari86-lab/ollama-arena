@@ -113,12 +113,6 @@ def run_web(
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
                 log.info(f"WebSocket disconnected. Total active: {len(self.active_connections)}")
-            try:
-                # Need an event loop to close gracefully, but disconnect is often sync
-                # We'll just suppress errors if the socket is already dead
-                pass 
-            except Exception:
-                pass
 
         async def broadcast(self, message: dict) -> None:
             import asyncio
@@ -261,7 +255,24 @@ def run_web(
 
     @app.get("/api/models")
     def api_models():
-        return arena.client.list_models()
+        models = arena.client.list_models()
+        # Enrich with capabilities (non-blocking — returns cached data if available)
+        try:
+            from .model_caps import get as get_caps
+            for m in models:
+                name = m if isinstance(m, str) else m.get("name", "")
+                if name:
+                    caps = get_caps(name, ollama_url)
+                    if isinstance(m, dict):
+                        m["caps"] = caps
+        except Exception:
+            pass
+        return models
+
+    @app.get("/api/models/{model:path}/caps")
+    def api_model_caps(model: str):
+        from .model_caps import get as get_caps
+        return get_caps(model, ollama_url)
 
     @app.get("/api/categories")
     def api_categories():

@@ -104,9 +104,8 @@ class Arena:
         # Caller hook for "we're about to enter pipeline phase X" events.
         self._on_phase: Optional[Callable] = None
 
-        # Experimental Open WebUI sync (opt-in via WEBUI_API_KEY)
-        from .webui_bridge import WebUIBridge
-        self.webui = WebUIBridge()
+        # Experimental Open WebUI sync (opt-in via WEBUI_API_KEY) — lazy
+        self._webui: object | None = None
         
         # MCP Orchestration — lazy: initialized only on first use to avoid
         # requiring Node.js / npx for every Arena() instantiation.
@@ -133,6 +132,13 @@ class Arena:
             from .mcp_client import MCPOrchestrator
             self._mcp = MCPOrchestrator(self._mcp_config)
         return self._mcp
+
+    @property
+    def webui(self):
+        if self._webui is None:
+            from .webui_bridge import WebUIBridge
+            self._webui = WebUIBridge()
+        return self._webui
 
     def load_hf_dataset(self, name: str, limit: int | None = None) -> int:
         from .datasets import load_dataset

@@ -99,6 +99,16 @@ class EloStore:
         except Exception as e:
             log.error(f"Error recording match between {model_a} and {model_b}: {e}")
 
+        # Non-blocking webhook notification (Discord / Slack / custom)
+        try:
+            from .webhooks import notify_match
+            notify_match(
+                model_a, model_b, category, score_a, score_b,
+                ra, new_ra, rb, new_rb, duration_s=0.0,
+            )
+        except Exception:
+            pass
+
         return new_ra, new_rb
 
     def save_task_detail(self, *args, **kwargs):

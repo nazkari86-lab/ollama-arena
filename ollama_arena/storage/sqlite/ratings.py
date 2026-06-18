@@ -5,7 +5,6 @@ import logging
 import time
 from itertools import combinations
 
-from ..base import RatingsRepository
 from ._conn import read_conn, write_conn
 from .migrations import apply_migrations
 
@@ -73,6 +72,32 @@ class SqliteRatingsRepository:
                     (model_b,),
                 )
 
+    def _elo_trends(self, cx, n: int = 5) -> dict[str, float]:
+        """Return net ELO delta over the last `n` matches per model."""
+        try:
+            rows = cx.execute("""
+                SELECT model, delta FROM (
+                    SELECT model_a AS model,
+                           (elo_a_after - elo_a_before) AS delta,
+                           ts
+                    FROM match_log
+                    UNION ALL
+                    SELECT model_b AS model,
+                           (elo_b_after - elo_b_before) AS delta,
+                           ts
+                    FROM match_log
+                ) ORDER BY ts DESC
+            """).fetchall()
+            # bucket into per-model last-N lists
+            from collections import defaultdict
+            buckets: dict[str, list[float]] = defaultdict(list)
+            for model, delta in rows:
+                if len(buckets[model]) < n:
+                    buckets[model].append(delta)
+            return {m: sum(deltas) for m, deltas in buckets.items()}
+        except Exception:
+            return {}
+
     def leaderboard(self) -> list[dict]:
         try:
             with read_conn(self.db) as cx:
@@ -80,13 +105,17 @@ class SqliteRatingsRepository:
                     SELECT model, elo, wins, losses, draws, matches
                     FROM ratings ORDER BY elo DESC
                 """).fetchall()
+                trends = self._elo_trends(cx)
             result = []
             for i, (model, elo, wins, losses, draws, matches) in enumerate(rows):
                 wr = wins / max(matches, 1)
+                delta = trends.get(model, 0.0)
+                trend = "up" if delta > 1.0 else ("down" if delta < -1.0 else "stable")
                 result.append({
                     "rank": i + 1, "model": model, "elo": round(elo, 1),
                     "wins": wins, "losses": losses, "draws": draws,
                     "matches": matches, "win_rate": round(wr, 3),
+                    "trend": trend, "trend_delta": round(delta, 1),
                 })
             return result
         except Exception as e:
