@@ -12,13 +12,15 @@ from .backends.base import Backend, GenResult
 log = logging.getLogger("arena.agent_loop")
 
 
-def _parse_tool_arguments(raw: str) -> dict:
+def _parse_tool_arguments(raw) -> dict:
     if not raw:
         return {}
+    if isinstance(raw, dict):
+        return raw
     try:
         parsed = json.loads(raw)
         return parsed if isinstance(parsed, dict) else {}
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         return {}
 
 
