@@ -8,7 +8,7 @@ import json, logging, os, re, subprocess, time
 from pathlib import Path
 import requests
 
-from .base import GenResult, strip_thinking, inject_system
+from .base import GenResult, ChatTurnResult, strip_thinking, inject_system
 
 log = logging.getLogger("arena.backend.spec")
 
@@ -70,19 +70,25 @@ class SpeculativeBackend:
         return self.cfg["main"]
 
     def generate(self, model: str, prompt: str, **opts) -> GenResult:
-        messages = inject_system([{"role": "user", "content": prompt}])
+        images = opts.pop("images", None)
+        msg: dict = {"role": "user", "content": prompt}
+        if images:
+            msg["images"] = images
+        messages = inject_system([msg])
         return self.generate_with_tools(model, messages, tools=[], **opts)
 
-    def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
+    def chat_turn(
+        self, model: str, messages: list[dict], tools: list[dict], **opts,
+    ) -> ChatTurnResult:
+        """One speculative-decoding chat turn for agent loops."""
         server_model = self._get_model_id()
-        # Use a generous default — thinking models need tokens for CoT before output
         max_tokens = opts.get("num_predict", opts.get("max_tokens", 2048))
         body = {
-            "model":          server_model,
-            "messages":       inject_system(messages),
-            "temperature":    opts.get("temperature", 0.0),
-            "max_tokens":     max_tokens,
-            "stream":         True,
+            "model": server_model,
+            "messages": inject_system(messages),
+            "temperature": opts.get("temperature", 0.0),
+            "max_tokens": max_tokens,
+            "stream": True,
             "stream_options": {"include_usage": True},
         }
         if tools:
@@ -93,14 +99,17 @@ class SpeculativeBackend:
         text = ""
         first = True
         tokens_in = tokens_out = 0
-        timings: dict = {}
+        tool_calls: list[dict] = []
+        finish_reason = "stop"
         try:
             r = requests.post(
                 f"{self.base}/chat/completions",
                 json=body, headers=self._headers, stream=True, timeout=self.timeout,
             )
-            
-            tool_calls = []
+            if r.status_code != 200:
+                return ChatTurnResult(
+                    error=r.text, latency_s=round(time.time() - t0, 3),
+                )
 
             for line in r.iter_lines(decode_unicode=True):
                 if not line or not line.startswith("data:"):
@@ -112,24 +121,28 @@ class SpeculativeBackend:
                     chunk = json.loads(data)
                 except json.JSONDecodeError:
                     continue
-                
+
                 if (usage := chunk.get("usage")):
-                    tokens_in  = usage.get("prompt_tokens", tokens_in)
+                    tokens_in = usage.get("prompt_tokens", tokens_in)
                     tokens_out = usage.get("completion_tokens", tokens_out)
-                if (t := chunk.get("timings")):
-                    timings = t
-                
+
                 choices = chunk.get("choices") or []
                 if not choices:
                     continue
-                delta = choices[0].get("delta", {})
-                
-                # Check for tool_calls delta
+                choice = choices[0]
+                if fr := choice.get("finish_reason"):
+                    finish_reason = fr
+                delta = choice.get("delta", {})
+
                 if "tool_calls" in delta:
                     for tc in delta["tool_calls"]:
                         idx = tc.get("index", 0)
                         while len(tool_calls) <= idx:
-                            tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                            tool_calls.append({
+                                "id": "",
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""},
+                            })
                         if tc.get("id"):
                             tool_calls[idx]["id"] = tc["id"]
                         if tc.get("function", {}).get("name"):
@@ -143,40 +156,47 @@ class SpeculativeBackend:
                     first = False
                 text += piece
 
-            latency = time.time() - t0
-            
-            if tool_calls:
-                text = json.dumps(tool_calls)
-
             text = strip_thinking(text)
-
-            # TPS from timings (llama-server provides predicted_ms)
-            if timings.get("predicted_ms") and tokens_out:
-                tps = round(tokens_out / (timings["predicted_ms"] / 1000), 1)
-            elif latency > 0 and tokens_out:
-                tps = round(tokens_out / latency, 1)
-            else:
-                tps = round(len(text.split()) * 1.3 / latency, 1) if latency > 0 else 0.0
-
-            # Speculative decoding acceptance rate (if available)
-            accept_rate = 0.0
-            if timings.get("predicted_n") and timings.get("predicted_n_spec"):
-                accept_rate = round(timings["predicted_n_spec"] / timings["predicted_n"], 3)
-
-            return GenResult(
+            return ChatTurnResult(
                 text=text,
-                model=f"{self.spec_name}",
+                tool_calls=tool_calls,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
-                latency_s=round(latency, 3),
-                tps=tps,
+                latency_s=round(time.time() - t0, 3),
                 time_to_first=round(ttft, 3),
-                spec_accept_rate=accept_rate,
-                backend_type="speculative",
+                finish_reason=finish_reason,
             )
         except Exception as e:
-            return GenResult(text="", model=self.spec_name, error=str(e),
-                             latency_s=round(time.time() - t0, 3))
+            return ChatTurnResult(
+                error=str(e), latency_s=round(time.time() - t0, 3),
+            )
+
+    def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
+        turn = self.chat_turn(model, messages, tools, **opts)
+        if turn.error:
+            return GenResult(
+                text="", model=self.spec_name, error=turn.error, latency_s=turn.latency_s,
+            )
+        text = turn.text
+        if turn.tool_calls and not text:
+            text = json.dumps(turn.tool_calls)
+        tps = (
+            turn.tokens_out / turn.latency_s
+            if turn.latency_s > 0 and turn.tokens_out > 0
+            else (len(text.split()) * 1.3 / turn.latency_s if turn.latency_s > 0 else 0.0)
+        )
+        return GenResult(
+            text=text,
+            model=self.spec_name,
+            tokens_in=turn.tokens_in,
+            tokens_out=turn.tokens_out,
+            latency_s=turn.latency_s,
+            tps=round(tps, 1),
+            time_to_first=turn.time_to_first,
+            finish_reason=turn.finish_reason,
+            tool_calls=turn.tool_calls,
+            backend_type="speculative",
+        )
 
     def list_models(self) -> list[str]:
         if self.is_alive():

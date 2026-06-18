@@ -133,6 +133,21 @@ class GenomeStore:
                 VALUES (?,?,?,?,?,?)
             """, (child_id, parent_id, relation, confidence, evidence_source, time.time()))
 
+    def add_lineage_if_absent(self, child_id: str, parent_id: str, relation: str,
+                              confidence: float, evidence_source: str) -> None:
+        with self._conn() as cx:
+            existing = cx.execute(
+                "SELECT 1 FROM genome_lineage WHERE child_id=? AND parent_id=? AND relation=?",
+                (child_id, parent_id, relation),
+            ).fetchone()
+            if existing:
+                return
+            cx.execute("""
+                INSERT INTO genome_lineage
+                    (child_id,parent_id,relation,confidence,evidence_source,ts)
+                VALUES (?,?,?,?,?,?)
+            """, (child_id, parent_id, relation, confidence, evidence_source, time.time()))
+
     def get_lineage(self, model_id: str) -> list[dict]:
         with self._conn() as cx:
             rows = cx.execute(

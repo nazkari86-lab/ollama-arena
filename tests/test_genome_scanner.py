@@ -27,6 +27,11 @@ def test_scanner_parse_list_output():
     assert "qwen2.5:7b-instruct" in names
 
 
+def test_extract_quant_from_name():
+    from ollama_arena.genome.scanner import extract_quant
+    assert extract_quant("llama3.1:8b-instruct-q4_K_M") == "q4_K_M"
+
+
 def test_scanner_offline_fallback():
     """When ollama CLI unavailable, scan_local returns empty list."""
     scanner = OllamaScanner(ollama_url="http://localhost:99999")

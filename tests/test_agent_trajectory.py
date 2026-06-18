@@ -41,17 +41,17 @@ def test_evaluate_tool_use_with_trace():
     task = {
         "id": "tool_005",
         "category": "tool_use",
-        "expected_tools": ["sqlite_query", "browser_navigate"],
+        "expected_tools": ["ddg_search", "web_fetch"],
     }
     trace = [
         {
             "step": 1,
-            "tool_calls": [{"function": {"name": "sqlite_query"}}],
+            "tool_calls": [{"function": {"name": "ddg_search"}}],
             "tool_results": [],
         },
         {
             "step": 2,
-            "tool_calls": [{"function": {"name": "browser_navigate"}}],
+            "tool_calls": [{"function": {"name": "web_fetch"}}],
             "tool_results": [],
         },
     ]

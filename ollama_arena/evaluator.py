@@ -36,23 +36,51 @@ def eval_coding(task: dict, response: str) -> float:
 
 
 # Reasoning / math / knowledge (string match)
-def eval_text_answer(task: dict, response: str) -> float:
+def eval_text_answer(task: dict, response: str, judge: Any | None = None) -> float:
+    """Evaluates knowledge and reasoning tasks.
+    Supports 'exact', 'contains', 'contains_all', and 'semantic' (via judge).
+    """
     resp = response.strip().lower()
     expected = str(task.get("expected_answer", "")).strip().lower()
     check = task.get("check", "contains")
+    tid = task.get("id", "unknown")
 
     if not expected:
         return 0.5
 
+    # 1. Semantic Check (Fallback if judge available)
+    if (check == "semantic" or task.get("use_judge")) and judge:
+        try:
+            return judge.evaluate_single(task["instruction"], response, reference=expected)
+        except Exception as e:
+            log.warning(f"[eval] semantic check failed for {tid}: {e}")
+
+    # 2. String Matching Logic
     if check == "exact":
-        return 1.0 if expected in resp[:120] else 0.0
+        return 1.0 if expected == resp else 0.0
 
     if check == "exact_prefix":
         cleaned = re.sub(r"^[^a-zA-Z0-9]+", "", resp)
         return 1.0 if cleaned.startswith(expected) else 0.0
 
     if check == "contains":
-        return 1.0 if expected in resp else 0.0
+        # Reliability fix: avoid false positives like "not paris" or "paris or lyon"
+        # Use word boundaries to avoid partial matches
+        pattern = rf"\b{re.escape(expected)}\b"
+        matches = list(re.finditer(pattern, resp))
+        
+        if not matches:
+            return 0.0
+            
+        # Check for simple negative context: "not [expected]", "instead of [expected]"
+        negatives = ["not ", "instead of ", "rather than ", "never ", "doesn't ", "don't "]
+        for match in matches:
+            start = max(0, match.start() - 20)
+            context = resp[start:match.start()]
+            if not any(neg in context for neg in negatives):
+                return 1.0 # Found at least one positive mention
+        
+        return 0.0
 
     if check == "numeric_approx":
         tolerance = task.get("tolerance", 2)
@@ -129,46 +157,109 @@ def eval_planning(task: dict, response: str) -> float:
     return round(component_score * 0.7 + length_score * 0.3, 3)
 
 
-def _tools_from_trace(trace: list | None) -> list[str]:
-    """Ordered tool names from agent_trace steps."""
+def _tools_from_trace(trace: list | None) -> list[dict]:
+    """Extracted tool info (name, arguments) from agent_trace steps."""
     if not trace:
         return []
-    names: list[str] = []
+    tools: list[dict] = []
     for step in trace:
         if not isinstance(step, dict):
             continue
-        for call in step.get("tool_calls") or []:
-            if not isinstance(call, dict):
-                continue
-            fn = call.get("function") or {}
-            name = fn.get("name") if isinstance(fn, dict) else None
-            if name and name not in names:
-                names.append(name)
-    return names
+        # We prefer tool_results if available because it has parsed arguments
+        results = step.get("tool_results")
+        if results:
+            for r in results:
+                tools.append({"name": r.get("name"), "arguments": r.get("arguments")})
+        else:
+            # Fallback to tool_calls from assistant message
+            for call in step.get("tool_calls") or []:
+                if not isinstance(call, dict):
+                    continue
+                fn = call.get("function") or {}
+                name = fn.get("name") if isinstance(fn, dict) else None
+                import json
+                try:
+                    args = json.loads(fn.get("arguments", "{}"))
+                except:
+                    args = {}
+                if name:
+                    tools.append({"name": name, "arguments": args})
+    return tools
 
 
-def _subsequence_score(actual: list[str], expected: list[str]) -> float:
-    """1.0 if expected tool names appear in order within actual."""
+def _validate_args(actual: dict, expected: dict) -> bool:
+    """Check if actual arguments match expected patterns (regex)."""
+    if not expected:
+        return True
+    if not actual:
+        return False
+    for key, pattern in expected.items():
+        val = str(actual.get(key, ""))
+        if not re.search(str(pattern), val, re.IGNORECASE):
+            return False
+    return True
+
+
+def _subsequence_score(actual_tools: list[dict], expected: list[str], expected_args: dict | None = None) -> float:
+    """1.0 if expected tool names appear in order within actual. Partial if args match."""
     if not expected:
         return 0.5
-    if not actual:
+    if not actual_tools:
         return 0.0
+    
     ei = 0
-    for name in actual:
+    correct_with_args = 0
+    
+    for tool in actual_tools:
+        name = tool.get("name")
+        args = tool.get("arguments") or {}
+        
         if ei < len(expected) and name == expected[ei]:
+            # Found the expected tool in order
+            arg_match = True
+            if expected_args and expected[ei] in expected_args:
+                arg_match = _validate_args(args, expected_args[expected[ei]])
+            
+            if arg_match:
+                correct_with_args += 1
             ei += 1
-    return round(ei / len(expected), 3)
+            
+    # Base score for sequence + bonus for correct args
+    seq_score = ei / len(expected)
+    arg_bonus = correct_with_args / len(expected)
+    
+    # We want 1.0 only if both sequence and args are perfect
+    return round(seq_score * 0.5 + arg_bonus * 0.5, 3)
 
 
 def eval_agent_trajectory(task: dict, trace: list | None) -> float:
     """Score multi-step MCP trajectories via expected_tools or expected_tool."""
     expected_tools = task.get("expected_tools")
+    expected_args = task.get("expected_args")  # Can be dict: {tool_name: {arg: pattern}}
+    
+    actual_tools = _tools_from_trace(trace)
+    
     if expected_tools:
-        return _subsequence_score(_tools_from_trace(trace), list(expected_tools))
+        return _subsequence_score(actual_tools, list(expected_tools), expected_args)
+    
     expected_tool = task.get("expected_tool")
     if expected_tool:
-        return _subsequence_score(_tools_from_trace(trace), [expected_tool])
+        # Wrap single tool as a list for _subsequence_score
+        # expected_args might be just {arg: pattern} if single tool
+        e_args = {expected_tool: expected_args} if expected_args and expected_tool not in expected_args else expected_args
+        return _subsequence_score(actual_tools, [expected_tool], e_args)
+    
     return 0.5
+
+
+def eval_vision(task: dict, response: str) -> float:
+    """Score vision tasks by keyword overlap in the model response."""
+    keywords = task.get("expected_keywords") or []
+    if not keywords:
+        return 0.5 if response.strip() else 0.0
+    text = response.lower()
+    hits = sum(1 for kw in keywords if kw.lower() in text)
+    return round(hits / len(keywords), 3)
 
 
 def eval_tool_use(task: dict, response: str, trace: list | None = None) -> float:
@@ -183,6 +274,7 @@ def eval_tool_use(task: dict, response: str, trace: list | None = None) -> float
             return traj
 
     expected_tool = task.get("expected_tool")
+    expected_args = task.get("expected_args")
     if not expected_tool:
         return traj if trace else 0.5
 
@@ -191,13 +283,20 @@ def eval_tool_use(task: dict, response: str, trace: list | None = None) -> float
         if isinstance(data, list):
             for call in data:
                 func = call.get("function", {})
-                if func.get("name") == expected_tool:
-                    return 1.0
+                name = func.get("name")
+                if name == expected_tool:
+                    args = func.get("arguments")
+                    if isinstance(args, str):
+                        try: args = json.loads(args)
+                        except: args = {}
+                    if _validate_args(args, expected_args or {}):
+                        return 1.0
+                    return 0.8 # Correct tool, wrong args
     except (json.JSONDecodeError, TypeError):
         pass
 
     if expected_tool.lower() in response.lower():
-        return 0.7
+        return 0.4 # Just mentioned it
 
     return 0.0
 
@@ -253,7 +352,7 @@ def eval_json(task: dict, response: str) -> float:
 
 
 # Router
-def evaluate(task: dict, response: str, trace: list | None = None) -> float:
+def evaluate(task: dict, response: str, trace: list | None = None, judge: Any | None = None) -> float | None:
     tid = task.get("id", "")
     cat = task.get("category", "")
 
@@ -264,7 +363,7 @@ def evaluate(task: dict, response: str, trace: list | None = None) -> float:
     if cat in ("math", "reasoning", "knowledge") or tid.startswith(
         ("reas_", "gsm8k_", "mmlu_", "bbh_", "hellaswag_", "truthful_", "arc_")
     ):
-        return eval_text_answer(task, response)
+        return eval_text_answer(task, response, judge=judge)
     if cat == "security" or tid.startswith("sec_"):
         return eval_security(task, response)
     if cat == "inspection" or tid.startswith("insp_"):
@@ -273,10 +372,17 @@ def evaluate(task: dict, response: str, trace: list | None = None) -> float:
         return eval_planning(task, response)
     if cat == "tool_use" or tid.startswith("tool_"):
         return eval_tool_use(task, response, trace=trace)
+    if cat == "vision" or tid.startswith("vis_"):
+        return eval_vision(task, response)
 
     if cat == "creative" or tid.startswith("crea_"):
-        # Judge-scored tasks fall back to 0.5 when no judge is available.
-        return 0.5
+        # Returns None to indicate that a judge is required but not provided.
+        if judge:
+            try:
+                return judge.evaluate_single(task["instruction"], response)
+            except Exception as e:
+                log.warning(f"[eval] creative judge eval failed: {e}")
+        return None
 
     log.warning(f"[eval] unknown task type: {tid} / cat={cat}")
     return 0.0

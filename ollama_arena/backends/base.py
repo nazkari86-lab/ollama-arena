@@ -40,8 +40,13 @@ _DATE_SYSTEM = (
     "You are a helpful, accurate assistant.\n"
     "IMPORTANT: Today's date is {date}.\n"
     "When asked about the current date, time, or recent events, use {date} as the reference.\n"
-    "Your training data has a knowledge cutoff in the past — clearly state this when relevant, "
-    "but never substitute your cutoff date for today's actual date."
+    "Your training data has a knowledge cutoff in the past.\n"
+    "CRITICAL MANDATE: If you are asked about events, facts, or data that occurred after your "
+    "knowledge cutoff or that you are not 100% sure about, you MUST USE THE AVAILABLE TOOLS "
+    "to find the information. Do NOT say you don't have access to real-time information; "
+    "instead, USE 'ddg_search' or 'google_web_search' to search the web, 'web_fetch' to read "
+    "pages, 'wikipedia_search' for encyclopedic facts, and 'get_datetime' for the current time.\n"
+    "Never substitute your cutoff date for today's actual date."
 )
 
 
@@ -100,3 +105,11 @@ class Backend(Protocol):
     def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult: ...
     def list_models(self) -> list[str]: ...
     def is_alive(self) -> bool: ...
+
+
+class AgentCapableBackend(Backend, Protocol):
+    """Backend supporting multi-turn agent loops with tool calls."""
+
+    def chat_turn(
+        self, model: str, messages: list[dict], tools: list[dict], **opts,
+    ) -> ChatTurnResult: ...

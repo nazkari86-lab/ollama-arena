@@ -38,5 +38,8 @@ nav:
   - Home: index.md
   - CLI Reference: cli.md
   - Web Dashboard: web.md
+  - MCP Tools: mcp.md
+  - Agent Commands: agents.md
+  - Security: security.md
   - Backends Guide: backends.md
   - Benchmarks & ELO: benchmarks.md

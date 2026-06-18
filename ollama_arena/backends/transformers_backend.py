@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging, time
 from typing import Optional
 
-from .base import GenResult
+from .base import GenResult, ChatTurnResult, inject_system
 
 log = logging.getLogger("arena.backend.hf")
 
@@ -53,28 +53,39 @@ class TransformersBackend:
         return model, tok
 
     def generate(self, model: str, prompt: str, **opts) -> GenResult:
+        images = opts.pop("images", None)
+        msg: dict = {"role": "user", "content": prompt}
+        if images:
+            msg["images"] = images
+        return self.generate_with_tools(model, [msg], tools=[], **opts)
+
+    def chat_turn(
+        self, model: str, messages: list[dict], tools: list[dict], **opts,
+    ) -> ChatTurnResult:
+        """Single-turn chat completion (no native tool calling in HF path)."""
         try:
             import torch
             model_obj, tok = self._load(model)
         except Exception as e:
-            return GenResult(text="", model=model, error=str(e))
+            return ChatTurnResult(error=str(e))
 
         max_new = opts.get("num_predict", opts.get("max_tokens", 1024))
         temperature = opts.get("temperature", 0.0)
         do_sample = temperature > 0.0
+        normalized = inject_system(messages)
 
-        # Try chat template first; fall back to raw prompt
         try:
-            messages = [{"role": "user", "content": prompt}]
             inputs_text = tok.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True,
+                normalized, tokenize=False, add_generation_prompt=True,
             )
         except Exception:
-            inputs_text = prompt
+            inputs_text = "\n\n".join(
+                f"{m.get('role', 'user').upper()}: {m.get('content', '')}"
+                for m in normalized
+            )
 
         inputs = tok(inputs_text, return_tensors="pt").to(model_obj.device)
         tokens_in = inputs["input_ids"].shape[1]
-
         t0 = time.time()
         with torch.inference_mode():
             out = model_obj.generate(
@@ -87,12 +98,33 @@ class TransformersBackend:
         latency = time.time() - t0
         tokens_out = out.shape[1] - tokens_in
         text = tok.decode(out[0, tokens_in:], skip_special_tokens=True).strip()
-        tps = tokens_out / latency if latency > 0 else 0.0
+        return ChatTurnResult(
+            text=text,
+            tool_calls=[],
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            latency_s=round(latency, 3),
+            time_to_first=round(latency, 3),
+            finish_reason="stop",
+        )
 
+    def generate_with_tools(
+        self, model: str, messages: list[dict], tools: list[dict], **opts,
+    ) -> GenResult:
+        turn = self.chat_turn(model, messages, tools, **opts)
+        if turn.error:
+            return GenResult(text="", model=model, error=turn.error, latency_s=turn.latency_s)
+        tps = turn.tokens_out / turn.latency_s if turn.latency_s > 0 else 0.0
         return GenResult(
-            text=text, model=model,
-            tokens_in=tokens_in, tokens_out=tokens_out,
-            latency_s=round(latency, 3), tps=round(tps, 1),
+            text=turn.text,
+            model=model,
+            tokens_in=turn.tokens_in,
+            tokens_out=turn.tokens_out,
+            latency_s=turn.latency_s,
+            tps=round(tps, 1),
+            time_to_first=turn.time_to_first,
+            finish_reason=turn.finish_reason,
+            backend_type=self.name,
         )
 
     def list_models(self) -> list[str]:

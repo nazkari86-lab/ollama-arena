@@ -1,112 +1,12 @@
 # Changelog
 
-## [5.0.0] - 2026-06-17
+## [1.0.0-rc1] - 2026-06-17
 ### Added
-- **Stateful Agentic Evaluation (Phase 1):** The Arena now tests models as autonomous agents rather than static text generators.
-- **Agent Loop (`agent_loop.py`):** Added a multi-step execution loop that handles the conversation between the model, tool calls, and tool execution results.
-- **MCP Orchestrator (`mcp_client.py`):** Rebuilt the client to act as a full Model Context Protocol (MCP) orchestrator.
-- **Trajectory Evaluation:** The evaluator now supports `subsequence` checking against `expected_tools`, awarding partial scores based on the correct sequence of tools called.
-- **Database Migration 5:** Expanded `task_detail` schema to include `tool_call_a` and `tool_call_b` to persistently log the agent trace.
-
-## [4.0.0] - 2026-06-17
-### Added
-- **Zero Trust Execution Sandbox:** Integrated AST-based static analysis to block introspection and obfuscated Python sandbox escapes.
-- **Mandatory Docker Enforcement:** Removed the local-execution fallback. All coding tasks run in containers with Seccomp syscall filtering.
-- **Web UI Hardening:** Implemented DOMPurify for XSS protection and SlowAPI for rate limiting on all endpoints.
-- **Open WebUI Bridge:** Added `webui_bridge.py` to synchronize Arena ELO rankings with Open WebUI.
-
-## [3.0.0] - 2026-06-17
-### Added
-- **Memory-Adaptive Pipeline Tournament:** Added `MemoryScheduler` with CONCURRENT, HOT_SWAP, and PIPELINE strategies to run 14GB+ models on 16GB RAM devices.
-- **Database Migrations:** Implemented a lightweight, forward-only SQLite migration runner (`migrations.py`).
-- **Cloud Provider Presets:** Added extensive support for cloud models (DeepSeek, Grok, Anthropic, etc.) in `OpenAICompatBackend`.
-- **Visual Diffing:** Added line-level visual diffing to the Inspect view using `jsdiff`.
-
-## 2.4.0
-
-- 229 built-in tasks — up from 114 — across 8 categories (coding, reasoning, math, knowledge, security, planning, inspection, creative).
-- New: `math` category — 50 offline tasks: arithmetic, algebra, geometry, combinatorics, number theory, statistics, finance, logic.
-- New: `knowledge` category — 50 offline tasks: physics, chemistry, biology, history, geography, CS, general.
-- New: `creative` category — 15 tasks judged by LLM (`use_judge=True`): haiku, dialogue, story, ad copy, cover letters.
-- Evaluator: added `contains_all` and `contains_any` check types for multi-answer tasks.
-- Evaluator: `eval_inspection` clean-code detection expanded from 6 phrases to 24 synonyms.
-- Benchmark command: now covers 7 categories (added math + knowledge) × 6 tasks each.
-- Web UI: **Inspect** tab — enter any task ID to see all model responses side-by-side.
-- Web UI: **Report** tab — select a model to see per-category win rates and strength/weakness verdict.
-- Web UI: category dropdown in Match tab now populated dynamically from `/api/categories`.
-- Web UI: version badge now reads from `/api/version` instead of hardcoded "v2.0.0".
-- `match --category` now accepts `creative` in addition to existing choices.
-
-## 2.3.0
-
-- `benchmark MODEL[,MODEL2]` — standardized 30-task Score (0–100) across 5 categories.
-  `--compare` shows side-by-side; `--fail-below SCORE` exits 1 for CI quality gates.
-- `match --share` — prints a copyable markdown results table at the end of a match.
-- GitHub Actions template in `examples/github_actions/llm-benchmark.yml`.
-- Web API: `/api/version`, `/api/task/{id}`, `/api/report/{model}` endpoints.
-- Web: job log now includes truncated prompt and responses for live match view.
-- Fix: `code_013` no longer hits `httpbin.org` — replaced with unittest.mock patch.
-- Fix: web job_id collision resolved by appending timestamp.
-- Fix: dead code `evaluate_answer()` removed from `reasoning.py`.
-- README rewritten with `benchmark` as the headline command.
-
-## 2.2.0
-
-- Full response storage: every task now saves the prompt, both model
-  responses, the expected answer, score, TPS, and latency to `arena.db`.
-- `results` command — list recent matches; drill into any match with
-  `--match <ID>` to see every prompt and response; `--full` for untruncated.
-- `inspect <TASK_ID>` — see every time a specific task was run, across all
-  models, with full A/B responses.
-- `report` — per-model breakdown by category showing win rate, task count,
-  and a strength/weakness verdict for each category.
-- `match --verbose` (`-v`) — print prompt and both responses live during a run.
-- Live match output now shows task instruction snippet alongside the score.
-
-## 2.1.2
-
-- Trim `pyproject.toml` keywords; mark as Beta.
-- Drop the deprecated `OllamaClient` alias (use `OllamaBackend` or
-  `Arena(backend=...)` directly).
-- Rewrite examples in a terser style.
-- Add `Makefile` and `.editorconfig`.
-
-## 2.1.1
-
-Docs and style pass. Behaviour unchanged.
-
-- README rewritten to match the format conventional in this space
-  (inspect_ai, simple-evals, lm-evaluation-harness): one-paragraph
-  intro, install, quick start, scoring, limitations.
-- Citations added for the built-in dataset loaders.
-- Module docstrings shortened; decorative emoji and ASCII box dividers
-  removed from source.
-- Logo moved into a `<details>` block at the end of the README.
-
-## 2.1.0
-
-- `TransformersBackend` — in-process generation via PyTorch (lazy import,
-  needs the `[hf]` extra).
-- `LLMJudge` for open-ended responses. Pairs are graded in both
-  orderings to suppress position bias.
-- `Arena(judge_model=...)` switches tasks tagged `use_judge=True` to the
-  judge path.
-- CLI banner on bare invocation.
-
-## 2.0.0
-
-- Multi-backend support: Ollama plus OpenAI-compatible (vLLM,
-  LM Studio, llama.cpp, OpenAI, Groq, Together, OpenRouter, ...).
-- HuggingFace dataset loaders: HumanEval, MBPP, MBPP+, GSM8K, MMLU, BBH,
-  MultiPL-E, HellaSwag, TruthfulQA, ARC.
-- Sandboxed code execution for Python, JS, TS, Rust, Go, C++, Bash;
-  optional Docker isolation.
-- Plotly chart generators and a self-contained dashboard export.
-- Per-generation performance log (tps, latency, ttft).
-- Unsloth-based fine-tuning pipeline ending in an Ollama Modelfile.
-- CI on Ubuntu and macOS, Python 3.10–3.12.
-
-## 1.0.0
-
-Initial release. Ollama-only ELO arena with hand-written tasks and a
-basic Rich CLI.
+- **Initial Public Release:** A comprehensive Stateful Agentic Evaluation platform.
+- **Battle Royale Mode:** N-way simultaneous matches (3-8 models) with pairwise ELO updates.
+- **MAPT Scheduler:** Memory-Adaptive Pipeline Tournament for running large models on small RAM.
+- **Zero-Trust Sandbox:** AST-validated code execution in Seccomp-hardened Docker.
+- **MCP Orchestration:** Multi-step agent loops with real-world tool injection.
+- **Hallucination Detection:** Integrated logic auditing and Anti-Leaderboard.
+- **Interactive Dashboard:** GSAP/Three.js-powered web UI with Deep Packet Inspection.
+- **Match Export:** Detailed HTML/JSON reporting for all matches.

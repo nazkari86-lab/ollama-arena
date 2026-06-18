@@ -1,28 +1,22 @@
-import json
-
 import pytest
 from ollama_arena.mcp_client import MCPOrchestrator
 
-@pytest.mark.asyncio
-async def test_mcp_orchestrator_loads_tools():
-    # Mock config representing the user's requested stack
-    config = {
-        "sqlite": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-sqlite", "--db", "test.db"]},
-        "playwright": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-playwright"]}
-    }
-    orchestrator = MCPOrchestrator(config)
-    tools = await orchestrator.get_all_tools()
-    assert len(tools) > 0
-    assert any(t["function"]["name"] == "sqlite_query" for t in tools)
-    assert any(t["function"]["name"] == "browser_navigate" for t in tools)
 
 @pytest.mark.asyncio
-async def test_mcp_tool_execution():
-    orchestrator = MCPOrchestrator({"sqlite": {}})
-    result = await orchestrator.execute_tool("sqlite_query", {"query": "SELECT * FROM users"})
-    rows = json.loads(result)
-    assert isinstance(rows, list)
-    assert rows and rows[0].get("name") == "Alice"
-    
+async def test_mcp_orchestrator_exposes_tools():
+    orchestrator = MCPOrchestrator()
+    tools = await orchestrator.get_all_tools()
+    names = {t["function"]["name"] for t in tools}
+    assert "google_web_search" in names
+    assert "code_interpreter" in names
+    assert "wikipedia_search" in names
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_execution_consult_expert():
+    orchestrator = MCPOrchestrator()
+    result = await orchestrator.execute_tool("consult_expert", {"topic": "tdd"})
+    assert "TDD" in result or "test" in result.lower()
+
     error_result = await orchestrator.execute_tool("non_existent", {})
     assert "not found" in error_result

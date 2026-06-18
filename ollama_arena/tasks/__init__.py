@@ -9,6 +9,7 @@ from .knowledge           import KNOWLEDGE_TASKS
 from .creative            import CREATIVE_TASKS
 from .structured_json    import JSON_TASKS
 from .tool_use           import TASKS as TOOL_TASKS
+from .vision             import TASKS as VISION_TASKS
 from .coding_multilang    import (
     CODING_JS_TASKS, CODING_TS_TASKS, CODING_RUST_TASKS,
     CODING_GO_TASKS, CODING_CPP_TASKS, ALL_MULTILANG_TASKS,
@@ -21,6 +22,7 @@ ALL_TASKS: dict[str, list] = {
     "coding":      _ALL_CODING,
     "json_format": JSON_TASKS,
     "tool_use":    TOOL_TASKS,
+    "vision":      VISION_TASKS,
     "reasoning":   REASONING_TASKS,
     "math":        MATH_TASKS,
     "knowledge":   KNOWLEDGE_TASKS,

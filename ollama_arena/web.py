@@ -4,7 +4,7 @@
 # MODULE globals and fail to see `Request` / `BackgroundTasks` (they're
 # imported inside `run_web`'s try/except). The visible effect was every
 # route's `request: Request` being misclassified as a query parameter.
-import json, logging, os, time
+import json, logging, os, sqlite3, time, uuid
 from pathlib import Path
 
 # Imported at module scope so annotation resolution in run_web() succeeds.
@@ -15,6 +15,7 @@ try:
         WebSocket, WebSocketDisconnect,
     )
     from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+    from fastapi.staticfiles import StaticFiles
     from fastapi.middleware.cors import CORSMiddleware
     from starlette.middleware.base import BaseHTTPMiddleware
 except ImportError:
@@ -45,6 +46,7 @@ _RL_TOURNAMENT  = os.getenv("ARENA_RL_TOURNAMENT",  "1/minute")
 _RL_PLAYGROUND  = os.getenv("ARENA_RL_PLAYGROUND",  "10/minute")
 _RL_SPEC_STREAM = os.getenv("ARENA_RL_SPEC_STREAM", "20/minute")
 _RL_DEFAULT     = os.getenv("ARENA_RL_DEFAULT",     "120/minute")
+# Ephemeral in-memory job TTL (seconds). Read at cleanup time via ARENA_JOB_TTL env.
 
 
 def run_web(
@@ -80,7 +82,23 @@ def run_web(
 
     arena = Arena(ollama_url=ollama_url, db_path=db_path,
                   backend=backend, api_key=api_key)
+    # Ephemeral in-memory job store: survives only for this process lifetime.
+    # Entries are pruned after ARENA_JOB_TTL seconds (default 1h). Server restarts
+    # wipe all jobs — clients must poll /api/job/{id} promptly and must not treat
+    # job_id as durable storage. Optional SQLite persistence is a future improvement.
     jobs: dict[str, dict] = {}
+
+    def _cleanup_jobs() -> None:
+        ttl = float(os.getenv("ARENA_JOB_TTL", "3600"))
+        if ttl <= 0:
+            return
+        cutoff = time.time() - ttl
+        for jid in [k for k, v in jobs.items() if v.get("created_at", 0) < cutoff]:
+            del jobs[jid]
+
+    def _new_job_id() -> str:
+        _cleanup_jobs()
+        return str(uuid.uuid4())
 
     class ConnectionManager:
         def __init__(self) -> None:
@@ -179,9 +197,21 @@ def run_web(
             return response
     app.add_middleware(SecurityHeadersMiddleware)
 
+    STATIC_ROOT = Path(__file__).parent.parent / "static"
+    if STATIC_ROOT.is_dir():
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/static", StaticFiles(directory=str(STATIC_ROOT)), name="static")
+
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+    jinja = Environment(
+        loader=FileSystemLoader(str(HERE)),
+        autoescape=select_autoescape(["html"]),
+    )
+
     @app.get("/", response_class=HTMLResponse)
     def index():
-        return HTMLResponse((HERE / "index.html").read_text())
+        tmpl = jinja.get_template("index.html")
+        return HTMLResponse(tmpl.render())
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
@@ -439,8 +469,9 @@ def run_web(
         concurrency = int(body.get("concurrency", 1))
         if not ma or not mb:
             raise HTTPException(400, "model_a and model_b required")
-        jid = f"{ma}_vs_{mb}_{cat}_{n}_{int(time.time())}"
-        jobs[jid] = {"status": "running", "log": [], "model_a": ma, "model_b": mb}
+        jid = _new_job_id()
+        jobs[jid] = {"status": "running", "log": [], "model_a": ma, "model_b": mb,
+                     "created_at": time.time()}
 
         import asyncio
 
@@ -497,6 +528,7 @@ def run_web(
 
     @app.get("/api/job/{job_id}")
     def api_job(job_id: str):
+        _cleanup_jobs()
         return jobs.get(job_id, {"status": "not_found"})
 
     @app.post("/api/tournament")
@@ -510,8 +542,9 @@ def run_web(
         if len(models) < 2:
             raise HTTPException(400, "At least 2 models required for a tournament")
 
-        jid = f"tourney_{cat}_{n}_{int(time.time())}"
-        jobs[jid] = {"status": "running", "log": [], "type": "tournament", "models": models}
+        jid = _new_job_id()
+        jobs[jid] = {"status": "running", "log": [], "type": "tournament",
+                     "models": models, "created_at": time.time()}
 
         import asyncio
         from itertools import combinations
@@ -589,8 +622,9 @@ def run_web(
         if len(models) < 3:
             raise HTTPException(400, "Battle Royale requires at least 3 models")
 
-        jid = f"royale_{cat}_{n}_{int(time.time())}"
-        jobs[jid] = {"status": "running", "log": [], "type": "royale", "models": models}
+        jid = _new_job_id()
+        jobs[jid] = {"status": "running", "log": [], "type": "royale",
+                     "models": models, "created_at": time.time()}
 
         import asyncio
 
@@ -703,7 +737,8 @@ def run_web(
         }
 
     @app.post("/api/playground/vote")
-    def api_playground_vote(body: dict):
+    @limiter.limit(_RL_PLAYGROUND)
+    def api_playground_vote(request: Request, body: dict):
         model_a_name = body.get("model_a_name", "")
         model_b_name = body.get("model_b_name", "")
         voted_for = body.get("voted_for", "")  # "x", "y", "draw"
@@ -1020,6 +1055,9 @@ def run_web(
         _genome_registry = _CanonicalRegistry()
         _genome_resolver = _GenomeResolver(store=_genome_store, registry=_genome_registry)
         _genome_graph = _GraphEngine(_genome_store)
+        _genome_scan_state: dict = {
+            "running": False, "current": 0, "total": 0, "model": "", "done": False,
+        }
 
         @app.get("/genome", response_class=HTMLResponse)
         async def genome_page():
@@ -1043,12 +1081,54 @@ def run_web(
 
         @app.post("/api/genome/scan")
         async def genome_scan(background_tasks: BackgroundTasks):
+            _genome_scan_state.update({
+                "running": True, "current": 0, "total": 0, "model": "", "done": False,
+            })
+
+            def _emit(event: dict):
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.ensure_future(manager.broadcast(event))
+                except Exception:
+                    pass
+
             def _do_scan():
+                def on_scan(i, total, name):
+                    _genome_scan_state.update({
+                        "running": True, "current": i, "total": total, "model": name,
+                    })
+                    _emit({
+                        "type": "genome_scan_progress",
+                        "current": i, "total": total, "model": name,
+                    })
+
+                def on_resolve(i, total, name):
+                    _genome_scan_state.update({
+                        "running": True, "current": i, "total": total, "model": name,
+                        "phase": "resolve",
+                    })
+                    _emit({
+                        "type": "genome_scan_progress",
+                        "phase": "resolve", "current": i, "total": total, "model": name,
+                    })
+
                 scanner = _OllamaScanner(ollama_url=ollama_url)
-                local = scanner.scan_local()
-                _genome_resolver.scan_and_resolve_all(local)
+                local = scanner.scan_local(on_progress=on_scan)
+                _genome_resolver.scan_and_resolve_all(local, on_progress=on_resolve)
+                _genome_scan_state.update({
+                    "running": False, "done": True,
+                    "current": len(local), "total": len(local),
+                })
+                _emit({"type": "genome_scan_complete", "count": len(local)})
+
             background_tasks.add_task(_do_scan)
             return JSONResponse({"started": True})
+
+        @app.get("/api/genome/scan/progress")
+        async def genome_scan_progress():
+            return JSONResponse(dict(_genome_scan_state))
 
         @app.get("/api/genome/model/{model_name:path}")
         async def genome_model(model_name: str):

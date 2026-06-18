@@ -1,6 +1,6 @@
 """Unsloth LoRA training, GGUF export. Requires the [finetune] extra and CUDA."""
 from __future__ import annotations
-import json, logging
+import json, logging, sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -33,6 +33,81 @@ _ALPACA_TEMPLATE = (
 )
 
 
+def macos_fallback_train(jsonl_path: str, config: UnslothConfig | None = None) -> dict:
+    """CPU/MPS-friendly training path when Unsloth/bitsandbytes is unavailable (macOS)."""
+    try:
+        from datasets import load_dataset as hf_load
+        from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer
+        from peft import LoraConfig, get_peft_model, TaskType
+    except ImportError as e:
+        raise RuntimeError(
+            "macOS fallback requires: pip install transformers peft datasets\n"
+            f"({e})"
+        )
+
+    cfg = config or UnslothConfig()
+    out = Path(cfg.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    adapter_dir = out / "adapter"
+    adapter_dir.mkdir(parents=True, exist_ok=True)
+
+    log.warning("[unsloth] macOS/CPU fallback — training without bitsandbytes")
+    tokenizer = AutoTokenizer.from_pretrained(cfg.base_model, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model = AutoModelForCausalLM.from_pretrained(
+        cfg.base_model,
+        trust_remote_code=True,
+        torch_dtype="auto",
+    )
+    lora = LoraConfig(
+        r=cfg.lora_r,
+        lora_alpha=cfg.lora_alpha,
+        lora_dropout=cfg.lora_dropout,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+        task_type=TaskType.CAUSAL_LM,
+    )
+    model = get_peft_model(model, lora)
+
+    ds = hf_load("json", data_files=jsonl_path, split="train")
+
+    def fmt(rec):
+        text = _ALPACA_TEMPLATE.format(
+            instruction=rec.get("instruction") or rec.get("prompt", ""),
+            output=rec.get("output") or rec.get("chosen", ""),
+        )
+        return tokenizer(text, truncation=True, max_length=cfg.max_seq_length)
+
+    ds = ds.map(fmt, remove_columns=ds.column_names)
+
+    args = TrainingArguments(
+        output_dir=str(out),
+        per_device_train_batch_size=max(1, cfg.batch_size),
+        gradient_accumulation_steps=cfg.grad_accumulation,
+        num_train_epochs=cfg.epochs,
+        learning_rate=cfg.learning_rate,
+        logging_steps=10,
+        save_strategy="epoch",
+        report_to="none",
+        use_mps_device=True,
+    )
+    trainer = Trainer(model=model, args=args, train_dataset=ds)
+    trainer.train()
+    model.save_pretrained(str(adapter_dir))
+    tokenizer.save_pretrained(str(adapter_dir))
+
+    meta = out / "config.json"
+    meta.write_text(json.dumps({**asdict(cfg), "fallback": "macos_cpu"}, indent=2))
+    artifacts = {
+        "adapter_dir": str(adapter_dir),
+        "config": str(meta),
+        "fallback": "macos_cpu",
+    }
+    log.info(f"[unsloth] macOS fallback done → {artifacts}")
+    return artifacts
+
+
 def unsloth_train(jsonl_path: str, config: UnslothConfig | None = None) -> dict:
     """
     Fine-tune `config.base_model` on the dataset at `jsonl_path` using Unsloth.
@@ -45,6 +120,9 @@ def unsloth_train(jsonl_path: str, config: UnslothConfig | None = None) -> dict:
         from datasets import load_dataset as hf_load
         from trl import SFTTrainer, SFTConfig
     except ImportError as e:
+        if sys.platform == "darwin":
+            log.warning("[unsloth] Unsloth unavailable on macOS — using CPU/MPS fallback")
+            return macos_fallback_train(jsonl_path, config)
         raise RuntimeError(
             "Install fine-tune dependencies first:\n"
             "    pip install 'ollama-arena[finetune]'\n"

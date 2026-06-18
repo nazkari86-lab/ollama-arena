@@ -3,7 +3,7 @@
 **To the AI (Claude Opus 4.6 / Antigravity CLI):** Read this document carefully. It contains the entire architectural context, current state, and future roadmap for the `ollama-arena` project.
 
 ## 1. Project Overview
-**Name:** Ollama Arena (v5.0.0)
+**Name:** Ollama Arena (v1.0.0-rc1)
 **Purpose:** A highly advanced, local-first pair-wise ELO evaluation arena for LLMs. It has evolved from a static prompt-response benchmark into a **Stateful Agentic Evaluation Platform**.
 **Tech Stack:** Python 3.10+, FastAPI (Web Dashboard), SQLite (WAL mode, migrations), Docker (Sandboxing), MCP (Model Context Protocol).
 
@@ -24,12 +24,12 @@ The project is built around a "Zero Trust" execution model and advanced memory m
 *   **Evaluator (`evaluator.py`):** Scores models across 9 categories. The crown jewel is `eval_tool_use`, which performs trajectory evaluation (scoring based on the subsequence of expected tools called).
 *   **LLM Judge (`judge.py`):** Uses a strong model to grade creative tasks. Hardened against Prompt Injections (e.g., ignoring instructions within the generated text).
 
-## 4. Current State (v5.0.0 - Phase 1 Complete)
-We have just completed Phase 1 of the Stateful Agentic Evaluation upgrade:
+## 4. Current State (v1.0.0-rc1)
+The project is released as a cohesive stateful agentic evaluation system:
 *   The Agent Loop is functional.
 *   MCP mock tools (like `sqlite_query`) return JSON arrays.
 *   Trajectory testing awards partial scores for tool usage.
-*   138/138 tests are passing.
+*   138 validation cases are passing (71 test functions).
 
 ## 5. What Needs to be Done (The Roadmap)
 Your goal is to assist in developing Phase 2 and transitioning towards v6.0.

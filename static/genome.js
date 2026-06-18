@@ -1,4 +1,5 @@
 let simulation, svg, g;
+let selectedNodeId = null;
 
 async function loadTree(filter) {
   const url = filter
@@ -6,6 +7,28 @@ async function loadTree(filter) {
     : '/api/genome/tree';
   const data = await fetch(url).then(r => r.json());
   renderGraph(data);
+}
+
+async function showModelDetail(node) {
+  const name = node.id || node.name;
+  const el = document.getElementById('model-detail');
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML = '<em>Loading…</em>';
+  try {
+    const data = await fetch(`/api/genome/model/${encodeURIComponent(name)}`).then(r => r.json());
+    const c = data.canonical;
+    const local = data.local;
+    el.innerHTML = `
+      <h3>${c?.name || node.name || name}</h3>
+      ${c ? `<p>Family: ${c.family || '?'} | Org: ${c.org || '?'}</p>
+             <p>Params: ${c.architecture?.params_b || '?'}B</p>` : ''}
+      ${local ? `<p>Local: ${local.confidence} | ${local.quant || '?'} | ${local.size_gb || '?'} GB</p>` : ''}
+      ${c?.source_url ? `<p><a href="${c.source_url}" target="_blank">Source</a></p>` : ''}
+    `;
+  } catch (e) {
+    el.innerHTML = `<p>Could not load model details.</p>`;
+  }
 }
 
 function renderGraph(data) {
@@ -17,7 +40,6 @@ function renderGraph(data) {
   svg = d3.select('#graph').append('svg')
     .attr('width', W).attr('height', H);
 
-  // Arrow markers
   svg.append('defs').selectAll('marker')
     .data(['fine_tuned_from', 'distilled_from', 'merged_from', 'trained_from'])
     .join('marker')
@@ -32,7 +54,6 @@ function renderGraph(data) {
 
   g = svg.append('g');
 
-  // Zoom
   svg.call(d3.zoom().scaleExtent([0.1, 4])
     .on('zoom', e => g.attr('transform', e.transform)));
 
@@ -62,7 +83,7 @@ function renderGraph(data) {
     .attr('r', d => Math.max(8, Math.min(24, ((d.params_b || 1) * 0.8))))
     .attr('fill', d => d.type === 'local' ? '#f85149' : '#21262d')
     .attr('stroke', d => familyColors[d.family] || '#888')
-    .attr('stroke-width', 2);
+    .attr('stroke-width', d => (d.id === selectedNodeId ? 4 : 2));
 
   nodeGroup.append('text')
     .attr('dy', d => -Math.max(8, Math.min(24, ((d.params_b || 1) * 0.8))) - 4)
@@ -70,7 +91,6 @@ function renderGraph(data) {
     .attr('font-size', '11px').attr('fill', '#e6edf3')
     .text(d => d.name.length > 22 ? d.name.slice(0, 20) + '…' : d.name);
 
-  // Tooltip
   const tooltip = document.getElementById('tooltip');
   nodeGroup.on('mouseover', (e, d) => {
     const pb = d.params_b || 0;
@@ -79,6 +99,7 @@ function renderGraph(data) {
       Family: ${d.family || '?'} | Org: ${d.org || '?'}<br>
       ${pb ? `Params: ${pb}B<br>` : ''}
       ${d.type === 'local' ? `<span style="color:#f85149">📦 Local | ${d.confidence || '?'}</span>` : ''}
+      <br><em>Click for details</em>
     `;
     tooltip.style.opacity = '1';
     tooltip.style.left = (e.clientX + 12) + 'px';
@@ -86,7 +107,13 @@ function renderGraph(data) {
   }).on('mousemove', e => {
     tooltip.style.left = (e.clientX + 12) + 'px';
     tooltip.style.top = (e.clientY - 10) + 'px';
-  }).on('mouseout', () => { tooltip.style.opacity = '0'; });
+  }).on('mouseout', () => { tooltip.style.opacity = '0'; })
+    .on('click', (e, d) => {
+      selectedNodeId = d.id;
+      nodeGroup.selectAll('circle')
+        .attr('stroke-width', n => (n.id === selectedNodeId ? 4 : 2));
+      showModelDetail(d);
+    });
 
   if (simulation) simulation.stop();
   simulation = d3.forceSimulation(data.nodes)
@@ -99,4 +126,20 @@ function renderGraph(data) {
           .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
       nodeGroup.attr('transform', d => `translate(${d.x},${d.y})`);
     });
+}
+
+async function pollScanProgress() {
+  const status = document.getElementById('status');
+  for (let i = 0; i < 120; i++) {
+    const p = await fetch('/api/genome/scan/progress').then(r => r.json());
+    if (p.running) {
+      status.textContent = `Scanning ${p.current}/${p.total}: ${p.model || '…'}`;
+    }
+    if (p.done) {
+      status.textContent = `Done — ${p.total} models`;
+      loadTree(null);
+      return;
+    }
+    await new Promise(r => setTimeout(r, 500));
+  }
 }

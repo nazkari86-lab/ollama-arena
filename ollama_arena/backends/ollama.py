@@ -16,7 +16,11 @@ class OllamaBackend:
         self.timeout = timeout
 
     def generate(self, model: str, prompt: str, **opts) -> GenResult:
-        messages = inject_system([{"role": "user", "content": prompt}])
+        images = opts.pop("images", None)
+        msg = {"role": "user", "content": prompt}
+        if images:
+            msg["images"] = images
+        messages = inject_system([msg])
         return self._chat(model, messages, tools=[], **opts)
 
     def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
@@ -31,8 +35,8 @@ class OllamaBackend:
             "stream": True,
             "options": {
                 "temperature": opts.get("temperature", 0.0),
-                "num_predict": opts.get("num_predict", 1024),
-                "num_ctx": opts.get("num_ctx", 4096),
+                "num_predict": opts.get("num_predict", 16384),
+                "num_ctx": opts.get("num_ctx", 65536),
             },
         }
         if tools:
@@ -81,7 +85,29 @@ class OllamaBackend:
         )
 
     def _chat(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
-        """Single-shot /api/chat (no agentic loop)."""
+        """Single-shot /api/chat with auto-repair fallback for broken templates."""
+        res = self._do_chat(model, messages, tools, **opts)
+        
+        # AUTO-REPAIR: If model returned nothing but didn't error, 
+        # it's likely a template mismatch or system prompt rejection.
+        if not res.error and res.tokens_out == 0 and not res.tool_calls:
+            log.info(f"[mcp] auto-repair: {model} returned 0 tokens. Retrying with /api/generate...")
+            # Fallback 1: Raw generation (ignore template)
+            raw_prompt = "\n\n".join([f"{m['role'].upper()}: {m['content']}" for m in messages])
+            res_raw = self._do_generate(model, raw_prompt, **opts)
+            if res_raw.tokens_out > 0:
+                return res_raw
+            
+            # Fallback 2: No system prompt (some tiny models choke on instructions)
+            if any(m["role"] == "system" for m in messages):
+                log.info(f"[mcp] auto-repair: Retrying {model} without system prompt...")
+                pure_user = [m for m in messages if m["role"] != "system"]
+                return self._do_chat(model, pure_user, tools, **opts)
+
+        return res
+
+    def _do_chat(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
+        """Internal executor for /api/chat."""
         call_timeout = opts.pop("_timeout", None) or self.timeout
         body: dict = {
             "model": model,
@@ -89,8 +115,8 @@ class OllamaBackend:
             "stream": True,
             "options": {
                 "temperature": opts.get("temperature", 0.0),
-                "num_predict": opts.get("num_predict", 1024),
-                "num_ctx": opts.get("num_ctx", 4096),
+                "num_predict": opts.get("num_predict", 16384),
+                "num_ctx": opts.get("num_ctx", 65536),
             },
         }
         if tools:
@@ -136,6 +162,53 @@ class OllamaBackend:
             latency_s=round(latency, 3), tps=round(tps, 1),
             time_to_first=round(ttft, 3),
             tool_calls=tool_calls,
+        )
+
+    def _do_generate(self, model: str, prompt: str, **opts) -> GenResult:
+        """Internal executor for /api/generate (raw mode)."""
+        call_timeout = opts.pop("_timeout", None) or self.timeout
+        body: dict = {
+            "model": model,
+            "prompt": prompt,
+            "stream": True,
+            "options": {
+                "temperature": opts.get("temperature", 0.0),
+                "num_predict": opts.get("num_predict", 16384),
+                "num_ctx": opts.get("num_ctx", 65536),
+            },
+        }
+        t0 = time.time()
+        ttft = 0.0
+        text = ""
+        tokens_in = tokens_out = 0
+        first = True
+        try:
+            r = requests.post(f"{self.base}/api/generate", json=body, stream=True, timeout=call_timeout)
+            for line in r.iter_lines():
+                if not line: continue
+                try: chunk = json.loads(line)
+                except: continue
+                
+                content = chunk.get("response", "")
+                if first and content:
+                    ttft = time.time() - t0
+                    first = False
+                text += content
+                if chunk.get("done"):
+                    tokens_in = chunk.get("prompt_eval_count", 0)
+                    tokens_out = chunk.get("eval_count", 0)
+                    break
+        except Exception as e:
+            return GenResult(text="", model=model, error=str(e), latency_s=round(time.time() - t0, 3))
+
+        latency = time.time() - t0
+        clean = strip_thinking(text)
+        tps = tokens_out / latency if latency > 0 else 0.0
+        return GenResult(
+            text=clean, model=model,
+            tokens_in=tokens_in, tokens_out=tokens_out,
+            latency_s=round(latency, 3), tps=round(tps, 1),
+            time_to_first=round(ttft, 3),
         )
 
     def list_models(self) -> list[str]:

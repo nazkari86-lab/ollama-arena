@@ -56,6 +56,55 @@ _PIPELINE_MULT   = float(os.getenv("ARENA_MEM_PIPELINE_MULT",   "0.95"))
 # 16 GB Apple Silicon, macOS itself needs ~1.5 GB at minimum to stay
 # responsive; everything else can be ours.
 _OS_RESERVE_GB   = float(os.getenv("ARENA_MEM_OS_RESERVE_GB",   "1.5"))
+# KV-cache headroom per 1k context tokens (GB) — rough VRAM estimate
+_KV_GB_PER_1K    = float(os.getenv("ARENA_MEM_KV_GB_PER_1K",    "0.08"))
+_DEFAULT_NUM_CTX = int(os.getenv("ARENA_MEM_NUM_CTX",           "4096"))
+
+# Quantization multipliers applied to on-disk blob size → effective VRAM.
+_QUANT_MULT: dict[str, float] = {
+    "q2_k": 0.55, "q3_k_s": 0.65, "q3_k_m": 0.70, "q3_k_l": 0.75,
+    "q4_0": 0.80, "q4_k_s": 0.85, "q4_k_m": 1.00, "q4_k": 1.00,
+    "q5_0": 1.05, "q5_k_s": 1.10, "q5_k_m": 1.15,
+    "q6_k": 1.25, "q8_0": 1.45, "f16": 1.90, "fp16": 1.90, "bf16": 1.90,
+}
+
+
+def parse_quantization(model: str) -> str | None:
+    """Extract a quantization tag from an Ollama model name or tag."""
+    name = model.lower()
+    if ":" in name:
+        tag = name.split(":", 1)[1]
+        for part in tag.replace("-", "_").split("_"):
+            key = part.strip()
+            if key in _QUANT_MULT:
+                return key
+            for q in _QUANT_MULT:
+                if q in tag:
+                    return q
+    for q in sorted(_QUANT_MULT, key=len, reverse=True):
+        if q in name:
+            return q
+    return None
+
+
+def quant_multiplier(model: str) -> float:
+    """Return VRAM multiplier for *model* based on its quant tag."""
+    q = parse_quantization(model)
+    return _QUANT_MULT.get(q, 1.0) if q else 1.0
+
+
+def estimate_vram_gb(
+    blob_gb: float,
+    model: str,
+    *,
+    num_ctx: int | None = None,
+    batch: int = 1,
+) -> float:
+    """Rough VRAM estimate: weights × quant + KV cache + batch headroom."""
+    ctx = _DEFAULT_NUM_CTX if num_ctx is None else num_ctx
+    weights = blob_gb * quant_multiplier(model)
+    kv = (ctx / 1024.0) * _KV_GB_PER_1K * max(1, batch)
+    return round(weights + kv, 3)
 
 
 class Strategy(str, Enum):
@@ -120,21 +169,14 @@ class MemoryScheduler:
             return 16.0                  # conservative fallback
 
     # ── per-model sizing ───────────────────────────────────────────────────
-    def model_size_gb(self, model: str) -> float:
-        """Best-effort: ask Ollama /api/show then /api/ps; fall back to 0.
-
-        For non-Ollama backends (e.g. ``spec:qwen3-14b``) we look up the
-        underlying main blob from the spec registry.
-        """
-        # Speculative-decoding pseudo-models: size = main + draft
+    def blob_size_gb(self, model: str) -> float:
+        """Raw on-disk / reported blob size from Ollama (before quant/KV)."""
         if model.startswith("spec:"):
             try:
                 from .backends.spec import SPEC_SERVERS
                 cfg = SPEC_SERVERS.get(model)
                 if cfg:
-                    main = self.model_size_gb(cfg["main"])
-                    draft = self.model_size_gb(cfg["draft"])
-                    return main + draft
+                    return self.blob_size_gb(cfg["main"]) + self.blob_size_gb(cfg["draft"])
             except Exception:
                 return 0.0
         try:
@@ -149,16 +191,35 @@ class MemoryScheduler:
                 )
                 if size > 0:
                     return size / 1024**3
-                # Some Ollama versions don't return size on /api/show, fall
-                # back to /api/tags (lists all models with sizes).
             tags = requests.get(f"{self.ollama_base}/api/tags", timeout=3)
             if tags.ok:
                 for m in tags.json().get("models", []):
                     if m.get("name") == model or m.get("model") == model:
                         return int(m.get("size", 0)) / 1024**3
         except Exception as e:
-            log.debug(f"model_size_gb({model}): {e}")
-        return 0.0                       # unknown — caller treats as "fits"
+            log.debug(f"blob_size_gb({model}): {e}")
+        return 0.0
+
+    def model_size_gb(self, model: str, num_ctx: int | None = None) -> float:
+        """Effective VRAM estimate: blob × quant multiplier + KV cache."""
+        blob = self.blob_size_gb(model)
+        if blob <= 0:
+            return 0.0
+        return estimate_vram_gb(blob, model, num_ctx=num_ctx)
+
+    def vram_estimate(self, model: str, num_ctx: int | None = None) -> dict:
+        """Structured VRAM breakdown for UI / logging."""
+        ctx = _DEFAULT_NUM_CTX if num_ctx is None else num_ctx
+        blob = self.blob_size_gb(model)
+        tag = parse_quantization(model)
+        return {
+            "model": model,
+            "blob_gb": round(blob, 2),
+            "quantization": tag,
+            "quant_mult": quant_multiplier(model),
+            "num_ctx": ctx,
+            "estimated_vram_gb": self.model_size_gb(model, num_ctx=ctx),
+        }
 
     def loaded_models_gb(self) -> float:
         """Bytes currently sitting in VRAM/Ollama runtime."""
@@ -253,6 +314,52 @@ class MemoryScheduler:
         return None
 
     # ── the strategy picker (the heart of the innovation) ──────────────────
+    def choose_royale(self, models: list[str]) -> StrategyDecision:
+        """Strategy selector for N-way matches (Battle Royale)."""
+        sizes = [self.model_size_gb(m) for m in models]
+        total = sum(sizes)
+        bigger = max(sizes) if sizes else 0
+        usable = self.usable_ram_gb()
+        avail = self.available_ram_gb()
+
+        if total == 0:
+            return StrategyDecision(
+                strategy=Strategy.CONCURRENT,
+                available_gb=round(avail, 2),
+                model_a_gb=0, model_b_gb=0,
+                reason="Model sizes unknown — defaulting to concurrent.",
+            )
+
+        # — CONCURRENT: all N models fit in RAM together
+        if usable >= total * _CONCURRENT_MULT:
+            return StrategyDecision(
+                strategy=Strategy.CONCURRENT,
+                available_gb=round(avail, 2),
+                model_a_gb=round(total, 2), model_b_gb=0,
+                reason=f"Usable {usable:.1f} GB fits all {len(models)} models ({total:.1f} GB total).",
+                speedup_lost=1.0,
+            )
+
+        # — PIPELINE: only one model fits comfortably at a time
+        if usable >= bigger * _PIPELINE_MULT:
+            return StrategyDecision(
+                strategy=Strategy.PIPELINE,
+                available_gb=round(avail, 2),
+                model_a_gb=round(bigger, 2), model_b_gb=0,
+                reason=(f"Combined {total:.1f} GB > usable {usable:.1f} GB. "
+                        f"Running sequentially (one model for all tasks, then next)."),
+                speedup_lost=float(len(models)),
+            )
+
+        return StrategyDecision(
+            strategy=Strategy.INSUFFICIENT,
+            available_gb=round(avail, 2),
+            model_a_gb=round(bigger, 2), model_b_gb=0,
+            reason=(f"Usable {usable:.1f} GB < {bigger * _PIPELINE_MULT:.1f} GB "
+                    f"required for the largest model ({bigger:.1f} GB)."),
+            speedup_lost=0.0,
+        )
+
     def choose(self, model_a: str, model_b: str) -> StrategyDecision:
         a_gb   = self.model_size_gb(model_a)
         b_gb   = self.model_size_gb(model_b)

@@ -5,6 +5,11 @@ from dataclasses import dataclass, field
 
 log = logging.getLogger("arena.genome.scanner")
 
+_QUANT_RE = re.compile(
+    r"(?:^|[-_:])(q\d[_k]*[msq]*|fp16|f16|f32|bf16|int4|int8|gguf)(?:$|[-_:])",
+    re.IGNORECASE,
+)
+
 
 @dataclass
 class LocalModelInfo:
@@ -13,6 +18,19 @@ class LocalModelInfo:
     modelfile: str = ""
     from_model: str | None = None
     parameters: dict = field(default_factory=dict)
+    quant: str = ""
+
+
+def extract_quant(name: str) -> str:
+    """Extract quantization tag from a model name (e.g. llama3.1:8b-q4_K_M → q4_K_M)."""
+    if not name:
+        return ""
+    for part in reversed(re.split(r"[:/]", name)):
+        m = _QUANT_RE.search(f"-{part}")
+        if m:
+            return m.group(1)
+    m = _QUANT_RE.search(name.replace(":", "-"))
+    return m.group(1) if m else ""
 
 
 def parse_modelfile(content: str) -> dict:
@@ -48,9 +66,15 @@ def _parse_size(s: str) -> float:
     return round(val, 2)
 
 
+def _size_bytes_to_gb(n: int) -> float:
+    if not n:
+        return 0.0
+    return round(n / (1024 ** 3), 2)
+
+
 class OllamaScanner:
     def __init__(self, ollama_url: str = "http://localhost:11434"):
-        self.ollama_url = ollama_url
+        self.ollama_url = ollama_url.rstrip("/")
 
     def _parse_list_output(self, raw: str) -> list[str]:
         names = []
@@ -60,7 +84,17 @@ class OllamaScanner:
                 names.append(parts[0])
         return names
 
-    def _get_list(self) -> list[str]:
+    def _get_list_api(self) -> list[str]:
+        try:
+            import requests
+            r = requests.get(f"{self.ollama_url}/api/tags", timeout=10)
+            r.raise_for_status()
+            return [m["name"] for m in r.json().get("models", [])]
+        except Exception as e:
+            log.warning(f"ollama /api/tags failed ({self.ollama_url}): {e}")
+            return []
+
+    def _get_list_cli(self) -> list[str]:
         try:
             r = subprocess.run(["ollama", "list"], capture_output=True, text=True,
                                timeout=10)
@@ -69,8 +103,32 @@ class OllamaScanner:
             log.warning(f"ollama list failed: {e}")
             return []
 
-    def _get_modelfile(self, name: str) -> tuple[str, float]:
-        """Returns (modelfile_content, size_gb)."""
+    def _get_list(self) -> list[str]:
+        names = self._get_list_api()
+        if names:
+            return names
+        if self.ollama_url in ("http://localhost:11434", "http://127.0.0.1:11434"):
+            return self._get_list_cli()
+        return []
+
+    def _get_modelfile_api(self, name: str) -> tuple[str, float]:
+        try:
+            import requests
+            r = requests.post(
+                f"{self.ollama_url}/api/show",
+                json={"name": name},
+                timeout=15,
+            )
+            r.raise_for_status()
+            data = r.json()
+            modelfile = data.get("modelfile") or ""
+            size_gb = _size_bytes_to_gb(int(data.get("size", 0) or 0))
+            return modelfile, size_gb
+        except Exception as e:
+            log.warning(f"ollama /api/show failed for {name}: {e}")
+            return "", 0.0
+
+    def _get_modelfile_cli(self, name: str) -> tuple[str, float]:
         try:
             r = subprocess.run(["ollama", "show", name, "--modelfile"],
                                capture_output=True, text=True, timeout=15)
@@ -91,18 +149,34 @@ class OllamaScanner:
             pass
         return content, size_gb
 
-    def scan_local(self) -> list[LocalModelInfo]:
-        """Return list of LocalModelInfo for all local Ollama models."""
+    def _get_modelfile(self, name: str) -> tuple[str, float]:
+        content, size_gb = self._get_modelfile_api(name)
+        if content or size_gb:
+            return content, size_gb
+        if self.ollama_url in ("http://localhost:11434", "http://127.0.0.1:11434"):
+            return self._get_modelfile_cli(name)
+        return "", 0.0
+
+    def scan_local(self, on_progress=None) -> list[LocalModelInfo]:
+        """Return list of LocalModelInfo for all local Ollama models.
+
+        ``on_progress(current, total, name)`` is called after each model when provided.
+        """
         names = self._get_list()
         results = []
-        for name in names:
+        total = len(names)
+        for i, name in enumerate(names, 1):
             mf_content, size_gb = self._get_modelfile(name)
             parsed = parse_modelfile(mf_content)
+            quant = extract_quant(name)
             results.append(LocalModelInfo(
                 name=name,
                 size_gb=size_gb,
                 modelfile=mf_content,
                 from_model=parsed["from"],
                 parameters=parsed["parameters"],
+                quant=quant,
             ))
+            if on_progress:
+                on_progress(i, total, name)
         return results

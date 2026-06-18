@@ -20,16 +20,45 @@ on:
         description: "Ollama model to benchmark"
         default: "llama3.2:3b"
 
+env:
+  ARENA_AUTO_APPROVE: "1"
+
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ollama-arena with dev extras
+        run: pip install -e ".[dev,web]" --quiet
+
+      - name: Lint
+        run: ruff check ollama_arena tests
+
+      - name: Unit tests
+        run: pytest -q --tb=short
+
   benchmark:
     runs-on: self-hosted
+    needs: test
     steps:
       - uses: actions/checkout@v4
 
       - name: Install ollama-arena
         run: pip install ollama-arena --quiet
 
-      - name: Run benchmark
+      - name: Run benchmark (5 tasks smoke)
+        run: |
+          ollama-arena match \
+            --models "${{ vars.LLM_MODEL || inputs.model || 'llama3.2:3b' }},${{ vars.LLM_MODEL || inputs.model || 'llama3.2:3b' }}" \
+            --category coding -n 5 --share \
+            >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail below threshold
         run: |
           ollama-arena benchmark ${{ vars.LLM_MODEL || inputs.model || 'llama3.2:3b' }} \
             --fail-below ${{ vars.SCORE_THRESHOLD || '60' }}

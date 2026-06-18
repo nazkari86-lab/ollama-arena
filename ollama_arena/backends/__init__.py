@@ -1,5 +1,5 @@
 """Adapters to model servers and runtimes."""
-from .base import Backend, GenResult
+from .base import Backend, GenResult, AgentCapableBackend, ChatTurnResult
 from .ollama import OllamaBackend
 from .openai_compat import OpenAICompatBackend
 from .auto import auto_backend, detect_backend
@@ -13,7 +13,7 @@ def _lazy_transformers():
 
 
 __all__ = [
-    "Backend", "GenResult",
+    "Backend", "GenResult", "AgentCapableBackend", "ChatTurnResult",
     "OllamaBackend", "OpenAICompatBackend",
     "auto_backend", "detect_backend",
     "SpeculativeBackend", "SpecManager", "SPEC_SERVERS", "is_spec_model",

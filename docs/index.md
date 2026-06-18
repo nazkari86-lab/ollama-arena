@@ -33,3 +33,12 @@ pip install "ollama-arena[all]"
    ```bash
    ollama-arena web
    ```
+
+## Documentation
+
+*   [**Antigravity Briefing**](antigravity_briefing.md) — Comprehensive architectural overview.
+*   [**LLM Genome Explorer**](GENOME_EXPLORER_ARCHITECTURE.md) — Vision and design for model genealogy (v6.0).
+*   [**Benchmarks**](benchmarks.md) — Task categories and evaluation logic.
+*   [**Backends**](backends.md) — Configuration for Ollama, vLLM, and Cloud providers.
+*   [**Web Dashboard**](web.md) — Interactive UI features.
+*   [**CLI Reference**](cli.md) — Full command list.

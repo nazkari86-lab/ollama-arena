@@ -6,6 +6,7 @@ import pytest
 
 from ollama_arena.memory_scheduler import (
     MemoryScheduler, Strategy, StrategyDecision,
+    parse_quantization, estimate_vram_gb,
 )
 
 
@@ -86,6 +87,21 @@ def test_pipeline_mult_env_tunable(monkeypatch):
     # 14 × 2.0 = 28 > 14.5 usable → INSUFFICIENT
     assert d.strategy is ms.Strategy.INSUFFICIENT
     monkeypatch.delenv("ARENA_MEM_PIPELINE_MULT", raising=False)
+    importlib.reload(ms)
+
+
+def test_quant_multiplier_from_tag():
+    from ollama_arena.memory_scheduler import parse_quantization, quant_multiplier, estimate_vram_gb
+    assert parse_quantization("llama3:8b-q4_K_M") == "q4_k_m"
+    assert quant_multiplier("mistral:7b-q8_0") == 1.45
+    est = estimate_vram_gb(4.0, "llama3:8b-q4_K_M", num_ctx=4096)
+    assert est > 4.0  # weights + KV cache
+
+
+def test_model_size_uses_vram_estimate(sched):
+    with __import__("unittest").mock.patch.object(sched, "blob_size_gb", return_value=8.0):
+        size = sched.model_size_gb("test:7b-q4_K_M")
+        assert size >= 8.0
 
 
 # ── unload bookkeeping ──────────────────────────────────────────────────────
@@ -104,3 +120,10 @@ def test_unload_ollama_failure_returns_false(sched):
 
 def test_prefetch_does_not_raise_on_missing_blob(sched):
     sched.prefetch("nonexistent:tag")    # should be a no-op
+
+
+def test_vram_estimate_payload(sched):
+    with mock.patch.object(sched, "blob_size_gb", return_value=8.0):
+        payload = sched.vram_estimate("llama3:8b-q4_k_m")
+    assert payload["blob_gb"] == 8.0
+    assert payload["estimated_vram_gb"] > 0

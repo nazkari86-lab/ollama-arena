@@ -55,6 +55,7 @@ Optional extras:
 
 | Extra | Adds |
 |---|---|
+| `pip install 'ollama-arena[wasm]'` | WASM sandbox fallback when Docker is unavailable |
 | `pip install 'ollama-arena[all]'` | web dashboard, Plotly charts, HuggingFace datasets |
 | `pip install 'ollama-arena[hf]'` | in-process TransformersBackend (torch, transformers) |
 | `pip install 'ollama-arena[finetune]'` | Unsloth fine-tune pipeline — CUDA recommended |
@@ -102,7 +103,7 @@ PyTorch; it is lazily imported so the dependency is optional.
 
 ## Tasks
 
-The package ships with about 100 hand-written tasks across five
+The package ships with **286 hand-written tasks** across five
 categories: coding (Python plus JS/TS/Rust/Go/C++), reasoning, security,
 inspection, and planning. They are intended as a smoke-test starter pack,
 not a definitive benchmark.
@@ -204,6 +205,11 @@ ollama-arena tasks
 ollama-arena datasets     [--pull NAMES] [--refresh NAMES]
 ollama-arena finetune     --analyze | --generate | --train PATH
 ollama-arena export       --out report.html
+ollama-arena council       --models A,B,C --topic "Architecture debate"
+ollama-arena resolve-issue --model X --issue "Fix the parser bug"
+ollama-arena optimize-prompt --model X
+ollama-arena review-pr     --models A,B
+ollama-arena import        --file data.csv
 ollama-arena web          [--port 7860]
 ```
 

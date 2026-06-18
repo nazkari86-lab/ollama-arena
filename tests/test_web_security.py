@@ -1,12 +1,5 @@
 """Web hardening — CORS, security headers, rate limits, WebSocket origin check."""
-import os
 import pytest
-
-# Tell the app: only this origin is allowed
-os.environ["ARENA_ALLOWED_ORIGINS"] = "http://localhost:7860"
-os.environ["ARENA_RL_PLAYGROUND"]   = "3/minute"
-# Tight default limit so we can verify rate limiting fires on /api/version
-os.environ["ARENA_RL_DEFAULT"]      = "5/minute"
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
@@ -99,11 +92,43 @@ def test_rate_limit_eventually_triggers(client):
     assert saw_429, f"expected a 429 within 20 calls, got: {codes}"
 
 
-def test_limiter_is_wired_up(client):
-    """Verify that the FastAPI app has slowapi installed and the state.limiter exists."""
+def test_static_arena_css(client):
+    r = client.get("/static/css/arena.css")
+    assert r.status_code == 200
+    assert "--bg-dark" in r.text
+
+
+def test_static_arena3d_js(client):
+    r = client.get("/static/arena3d.js")
+    assert r.status_code == 200
+    assert "ThreeJSArena" in r.text
+
+
+# ── static assets ────────────────────────────────────────────────────────────
+
+def test_static_arena3d_js_returns_200(client):
+    r = client.get("/static/arena3d.js")
+    assert r.status_code == 200
+    assert "ThreeJSArena" in r.text
+
+
+# ── playground vote rate limit ───────────────────────────────────────────────
+
+def test_playground_vote_rate_limit(client):
+    """POST /api/playground/vote must respect ARENA_RL_PLAYGROUND (3/minute)."""
     try:
         import slowapi  # noqa: F401
     except ImportError:
         pytest.skip("slowapi not installed")
-    app = client.app
-    assert hasattr(app.state, "limiter"), "limiter not attached to app.state"
+    body = {
+        "model_a_name": "a", "model_b_name": "b",
+        "voted_for": "x", "model_x": "model_a", "model_y": "model_b",
+        "prompt": "hi", "response_x": "x", "response_y": "y",
+    }
+    saw_429 = False
+    for _ in range(10):
+        r = client.post("/api/playground/vote", json=body)
+        if r.status_code == 429:
+            saw_429 = True
+            break
+    assert saw_429, "expected 429 on /api/playground/vote after exceeding limit"

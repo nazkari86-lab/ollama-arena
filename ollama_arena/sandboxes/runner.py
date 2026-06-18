@@ -268,6 +268,17 @@ def _run_in_docker(code: str, lang: Language, timeout: int,
 
 
 # Public API
+def _run_wasm_fallback(code: str, lang: Language, timeout: int) -> RunResult | None:
+    """Try WASM sandbox when Docker is unavailable."""
+    try:
+        from .wasm_runner import run_in_wasm, _wasmtime_available
+        if not _wasmtime_available():
+            return None
+        return run_in_wasm(code, lang.value, timeout=timeout)
+    except Exception:
+        return None
+
+
 def run_in_language(
     code: str,
     language: str | Language = "python",
@@ -277,11 +288,13 @@ def run_in_language(
     """
     Execute `code` in the given language.
 
+    Isolation hierarchy: Docker > WASM (optional) > subprocess + AST guard.
+
     Args:
         code:       Source to run.
         language:   Name or Language enum.
         timeout:    Seconds before kill.
-        use_docker: If True, run in a docker sandbox (stronger isolation).
+        use_docker: If True, prefer docker sandbox (falls back to WASM then subprocess).
 
     Returns:
         RunResult with output, error, exit_code, duration.
@@ -292,9 +305,13 @@ def run_in_language(
         return RunResult(blocked=True, error=f"BLOCKED: {pat}", language=lang.value)
 
     if use_docker:
-        if not _has("docker"):
-            return RunResult(error="Docker is required for safe execution but is not installed.", language=lang.value)
-        return _run_in_docker(code, lang, timeout)
+        if _has("docker"):
+            docker_res = _run_in_docker(code, lang, timeout)
+            if docker_res.accepted or docker_res.blocked or docker_res.timed_out:
+                return docker_res
+        wasm_res = _run_wasm_fallback(code, lang, timeout)
+        if wasm_res is not None and (wasm_res.accepted or wasm_res.blocked):
+            return wasm_res
 
     runner = _RUNNERS.get(lang)
     if not runner:

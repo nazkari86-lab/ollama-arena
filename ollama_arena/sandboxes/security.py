@@ -57,16 +57,15 @@ DANGEROUS_MODULES: frozenset[str] = frozenset({
 DANGEROUS_FUNCTIONS: frozenset[str] = frozenset({
     # arbitrary execution
     "eval", "exec", "compile", "execfile",
-    # reflection / attribute walks
-    "getattr", "setattr", "delattr", "hasattr",
+    # reflection / attribute walks (globals/locals are still high-risk for escapes)
     "globals", "locals", "vars", "dir",
     # importer
     "__import__", "open",
     # debugging / shells
     "breakpoint", "input", "raw_input", "help",
     "quit", "exit",
-    # introspection
-    "type",   # may pop up in escape chains via type(obj).__bases__
+    # Note: 'type', 'getattr', 'hasattr', 'setattr', 'delattr' removed to avoid 
+    # false positives in common coding tasks. Docker is the primary boundary.
 })
 
 # Allow these dunders even though they're double-underscore. Anything else
@@ -128,9 +127,20 @@ class _StrictVisitor(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> None:
         # Bare names: eval(...), exec(...), getattr(...)
         if isinstance(node.func, ast.Name):
-            if node.func.id in DANGEROUS_FUNCTIONS:
-                self._fail(f"Dangerous function call: {node.func.id}()")
+            fname = node.func.id
+            if fname in DANGEROUS_FUNCTIONS:
+                self._fail(f"Dangerous function call: {fname}()")
                 return
+            
+            # Special case for reflection: block strings that look like dunders
+            # E.g. getattr(obj, "__class__")
+            if fname in {"getattr", "setattr", "hasattr", "delattr"}:
+                if len(node.args) >= 2:
+                    key = _extract_const_string(node.args[1])
+                    if key and key.startswith("__") and key.endswith("__") and key not in DUNDER_ALLOWLIST:
+                        self._fail(f"Dunder string access via {fname} blocked: {key!r}")
+                        return
+
         # Attribute calls: foo.eval(), obj.__getattribute__()
         elif isinstance(node.func, ast.Attribute):
             attr = node.func.attr

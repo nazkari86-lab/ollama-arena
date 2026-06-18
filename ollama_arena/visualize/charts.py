@@ -164,13 +164,16 @@ def heatmap_html(matches: list[dict]) -> str:
 
 
 # Performance
-def performance_chart_html(perf: list[dict]) -> str:
+def performance_chart_html(perf: list[dict] | dict) -> str:
     """
     Bar chart of mean tokens/sec and latency per model.
 
     perf items: {model, tps_mean, tps_p95, latency_mean_s, latency_p95_s}
+    Accepts export_summary dict with a ``models`` key.
     """
     go = _require_plotly()
+    if isinstance(perf, dict):
+        perf = perf.get("models") or []
     if not perf:
         return "<div style='color:#8b949e;padding:20px;text-align:center'>No performance data yet.</div>"
 
@@ -235,12 +238,43 @@ def leaderboard_table_html(board: list[dict]) -> str:
     return table
 
 
+def anti_leaderboard_table_html(board: list[dict]) -> str:
+    if not board:
+        return "<div style='color:#8b949e;padding:20px;text-align:center'>No hallucination data yet.</div>"
+    rows = []
+    for e in board:
+        rate = f"{e['halluc_rate']:.1%}"
+        color = "#f85149" if e["halluc_rate"] > 0.2 else ("#e3b341" if e["halluc_rate"] > 0.05 else "#3fb950")
+        rows.append(
+            f"<tr>"
+            f"<td style='font-weight:700'>{e['rank']}</td>"
+            f"<td><strong>{e['model']}</strong></td>"
+            f"<td style='color:{color};font-weight:800'>{rate}</td>"
+            f"<td>{e['hallucinations']}</td>"
+            f"<td>{e['total_checked']}</td>"
+            f"</tr>"
+        )
+    table = (
+        "<table style='width:100%;border-collapse:collapse'>"
+        "<thead><tr style='border-bottom:1px solid #30363d'>"
+        "<th style='text-align:left;padding:10px'>Rank</th>"
+        "<th style='text-align:left;padding:10px'>Model</th>"
+        "<th style='padding:10px'>Halluc Rate</th>"
+        "<th style='padding:10px'>Count</th>"
+        "<th style='padding:10px'>Checked</th>"
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table>"
+    )
+    return table
+
+
 # Full dashboard
 def full_dashboard_html(
     leaderboard: list[dict],
     matches: list[dict],
     categories: list[str],
     performance: list[dict] | None = None,
+    anti_leaderboard: list[dict] | None = None,
     title: str = "Ollama Arena Dashboard",
 ) -> str:
     """Combine every chart into a self-contained shareable HTML page."""
@@ -249,6 +283,7 @@ def full_dashboard_html(
     radar      = radar_html(matches, categories) if matches else ""
     heatmap    = heatmap_html(matches) if matches else ""
     lb_table   = leaderboard_table_html(leaderboard)
+    alb_table  = anti_leaderboard_table_html(anti_leaderboard or [])
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
     return f"""<!DOCTYPE html>
@@ -263,7 +298,7 @@ def full_dashboard_html(
   .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }}
   .card {{ background:#161b22; border:1px solid #30363d; border-radius:12px; padding:20px; }}
   .full {{ grid-column:1/-1; }}
-  table th, table td {{ border-bottom:1px solid #21262d; }}
+  table th, table td {{ border-bottom:1px solid #21262d; padding:10px; }}
   table tr:hover td {{ background:#1f2937; }}
   footer {{ margin-top:32px; color:#8b949e; font-size:12px; text-align:center; }}
   a {{ color:#58a6ff; text-decoration:none; }}
@@ -273,10 +308,11 @@ def full_dashboard_html(
   <p class="meta">Generated {ts}</p>
   <div class="grid">
     <div class="card full"><h2>Leaderboard</h2>{lb_table}</div>
-    <div class="card full">{elo_chart}</div>
+    <div class="card"><h2>Anti-Leaderboard (Hallucinations)</h2>{alb_table}</div>
     <div class="card">{radar}</div>
+    <div class="card full">{elo_chart}</div>
     <div class="card">{heatmap}</div>
-    <div class="card full">{perf_chart}</div>
+    <div class="card">{perf_chart}</div>
   </div>
   <footer>
     <a href="https://github.com/nazkari86-lab/ollama-arena">github.com/nazkari86-lab/ollama-arena</a>
@@ -291,8 +327,9 @@ def export_dashboard(
     matches: list[dict],
     categories: list[str],
     performance: list[dict] | None = None,
+    anti_leaderboard: list[dict] | None = None,
 ):
     """Write a standalone shareable HTML dashboard to disk."""
-    html = full_dashboard_html(leaderboard, matches, categories, performance)
+    html = full_dashboard_html(leaderboard, matches, categories, performance, anti_leaderboard)
     Path(out_path).write_text(html, encoding="utf-8")
     return out_path

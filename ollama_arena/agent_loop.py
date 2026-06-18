@@ -38,11 +38,15 @@ async def run_agent_loop(
     mcp: Any,
     *,
     max_steps: int = 8,
+    images: Optional[list[str]] = None,
     **opts,
 ) -> GenResult:
     """Run an agentic tool loop against *backend* and *mcp* orchestrator."""
     tools = await mcp.get_all_tools()
-    messages: list[dict] = [{"role": "user", "content": instruction}]
+    msg = {"role": "user", "content": instruction}
+    if images:
+        msg["images"] = images
+    messages: list[dict] = [msg]
     trace: list[dict] = []
     total_latency = 0.0
     tokens_in = tokens_out = 0
@@ -99,13 +103,16 @@ async def run_agent_loop(
                 fn = tc.get("function", {})
                 name = fn.get("name", "")
                 args = _parse_tool_arguments(fn.get("arguments", ""))
+                t0 = time.time()
                 try:
                     result = await mcp.execute_tool(name, args)
                 except Exception as exc:
                     result = f"Error executing {name}: {exc}"
                     log.warning("[agent_loop] tool %s failed: %s", name, exc)
+                tool_lat = round(time.time() - t0, 3)
                 step_record["tool_results"].append(
-                    {"name": name, "arguments": args, "result": result}
+                    {"name": name, "arguments": args, "result": result,
+                     "latency_s": tool_lat}
                 )
                 messages.append(
                     {
@@ -151,6 +158,7 @@ def run_agent_sync(
     mcp: Any,
     *,
     max_steps: int = 8,
+    images: Optional[list[str]] = None,
     **opts,
 ) -> GenResult:
     """Sync wrapper for Arena.run_match (avoids nested event-loop issues)."""
@@ -159,7 +167,7 @@ def run_agent_sync(
     except RuntimeError:
         return asyncio.run(
             run_agent_loop(
-                backend, model, instruction, mcp, max_steps=max_steps, **opts
+                backend, model, instruction, mcp, max_steps=max_steps, images=images, **opts
             )
         )
     # Already inside a running loop (e.g. pytest-asyncio): use a fresh loop in a thread.
@@ -169,6 +177,6 @@ def run_agent_sync(
         return pool.submit(
             asyncio.run,
             run_agent_loop(
-                backend, model, instruction, mcp, max_steps=max_steps, **opts
+                backend, model, instruction, mcp, max_steps=max_steps, images=images, **opts
             ),
         ).result()

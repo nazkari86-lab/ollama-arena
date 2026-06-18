@@ -475,6 +475,24 @@ class ThreeJSArena {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /** Visual pulse when agent trace reports a tool call (3D chain link effect). */
+  pulseToolChain(side = 'A', toolName = 'tool') {
+    if (!this.active || !window.anime) return;
+    const model = side === 'B' ? this.modelB : this.modelA;
+    if (!model) return;
+    const core = model.userData.core;
+    if (core) {
+      anime({
+        targets: { s: 1 },
+        s: [1, 1.35, 1],
+        duration: 600,
+        easing: 'easeOutElastic(1, .6)',
+        update: (a) => { core.scale.setScalar(a.animations[0].currentValue); },
+      });
+    }
+    this.spawnFloatingText(model, `🔧 ${toolName}`, side === 'A' ? '#58a6ff' : '#3fb950');
+  }
+
   destroy() {
     this.active = false;
     window.removeEventListener('resize', this.onWindowResize);

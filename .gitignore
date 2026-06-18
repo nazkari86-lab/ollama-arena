@@ -20,3 +20,7 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+*.db
+*.log
+dist/
+__pycache__/

@@ -169,6 +169,51 @@ class LLMJudge:
         except (IndexError, ValueError):
             return 0.0
 
+    def evaluate_single(self, task: str, response: str, reference: str = "") -> float:
+        """Score a single response from 0.0 to 1.0 against a task and reference."""
+        prompt = (
+            "You are an impartial evaluator.\n"
+            f"Task: {task}\n"
+            f"Reference Answer: {reference}\n"
+            f"AI Response: {response}\n\n"
+            "Score the AI response from 0 to 10 based on accuracy and completeness.\n"
+            "0: Completely wrong or irrelevant.\n"
+            "10: Perfect, matches the reference perfectly.\n"
+            "Output ONLY the numeric score."
+        )
+        raw = self.backend.generate(self.model, prompt, temperature=0.0, max_tokens=5).text
+        try:
+            import re
+            nums = re.findall(r"\d+\.?\d*", raw)
+            if nums:
+                return min(1.0, max(0.0, float(nums[0]) / 10.0))
+        except: pass
+        return 0.0
+
+    def check_hallucination(self, task: str, response: str, reference: str = "") -> bool:
+        """Check if the response contains hallucinations, false info, or logic errors.
+        Returns True if hallucination detected.
+        """
+        rr  = _neutralize(response)
+        tk  = _neutralize(task, max_chars=4_000)
+        ref = _neutralize(reference, max_chars=4_000)
+        prompt = (
+            "You are a rigorous fact-checker and logic auditor.\n"
+            "Examine the AI response for:\n"
+            "1. Factual errors or made-up information.\n"
+            "2. Hallucinated references (titles, dates, names).\n"
+            "3. Logic that contradicts the provided task or reference.\n\n"
+            f"Task:\n{tk}\n\n"
+            f"Reference:\n{ref}\n\n"
+            f"===RESPONSE===\n{rr}\n===END RESPONSE===\n\n"
+            "Does the response contain ANY hallucinations or significant factual errors?\n"
+            "Output ONLY 'YES' if it hallucinates, or 'NO' if it is factually sound."
+        )
+        # Use a slightly longer output window for chain-of-thought if needed,
+        # but the prompt asks for YES/NO only.
+        raw = self.backend.generate(self.model, prompt, temperature=0.0, max_tokens=10).text.strip().upper()
+        return "YES" in raw
+
 
 def _parse_scores(text: str) -> tuple[float, float]:
     """Extract 'A: N' and 'B: N' from judge output. Default to 0 on parse fail."""

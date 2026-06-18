@@ -81,6 +81,12 @@ pair). It must return a `GenResult`.
 Tests are pytest functions in `tests/`; the smoke suite must pass
 without any backend running.
 
+## Architecture decisions
+
+For significant design changes (new storage backend, MCP registry refactor,
+security policy changes), add a short ADR under `docs/adr/` or note the
+decision in the PR description before merging.
+
 ## PRs
 
 For larger changes please open an issue first to discuss the design.

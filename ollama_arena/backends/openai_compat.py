@@ -13,6 +13,36 @@ from .base import GenResult, ChatTurnResult, strip_thinking, inject_system
 log = logging.getLogger("arena.backend.openai")
 
 
+def _image_url(image_data: str) -> str:
+    """Normalize base64 or data-URL image payloads for OpenAI vision APIs."""
+    if image_data.startswith("data:"):
+        return image_data
+    return f"data:image/jpeg;base64,{image_data}"
+
+
+def prepare_messages_for_api(messages: list[dict]) -> list[dict]:
+    """Convert arena message dicts (with optional images) to OpenAI content-parts."""
+    out: list[dict] = []
+    for msg in messages:
+        images = msg.get("images")
+        if images:
+            parts: list[dict] = []
+            content = msg.get("content", "")
+            if content:
+                parts.append({"type": "text", "text": content})
+            for img in images:
+                parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": _image_url(img)},
+                })
+            new_msg = {k: v for k, v in msg.items() if k != "images"}
+            new_msg["content"] = parts
+            out.append(new_msg)
+        else:
+            out.append(dict(msg))
+    return out
+
+
 class OpenAICompatBackend:
     name = "openai-compat"
 
@@ -86,7 +116,11 @@ class OpenAICompatBackend:
         }
 
     def generate(self, model: str, prompt: str, **opts) -> GenResult:
-        messages = inject_system([{"role": "user", "content": prompt}])
+        images = opts.pop("images", None)
+        msg: dict = {"role": "user", "content": prompt}
+        if images:
+            msg["images"] = images
+        messages = inject_system([msg])
         return self.generate_with_tools(model, messages, tools=[], **opts)
 
     def chat_turn(
@@ -95,9 +129,9 @@ class OpenAICompatBackend:
         """One chat completion turn; returns content and/or tool_calls separately."""
         body = {
             "model":       model,
-            "messages":    inject_system(messages),
+            "messages":    prepare_messages_for_api(inject_system(messages)),
             "temperature": opts.get("temperature", 0.0),
-            "max_tokens":  opts.get("num_predict", opts.get("max_tokens", 1024)),
+            "max_tokens":  opts.get("num_predict", opts.get("max_tokens", 16384)),
             "stream":      True,
         }
         if tools:

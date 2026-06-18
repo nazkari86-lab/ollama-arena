@@ -43,8 +43,6 @@ def test_blocks_reflection_escapes(code):
     "compile('x=1', '<s>', 'exec')",
     "open('/etc/passwd')",
     "__import__('os')",
-    "getattr(x, 'attr')",
-    "setattr(x, 'a', 1)",
     "globals()",
     "breakpoint()",
     "input()",
@@ -52,7 +50,21 @@ def test_blocks_reflection_escapes(code):
 def test_blocks_dangerous_functions(code):
     ok, reason = is_safe_python(code)
     assert not ok, f"NOT blocked: {code}"
-    assert "Dangerous" in reason or "Dunder" in reason
+
+def test_allows_safe_reflection():
+    assert is_safe_python("getattr(x, 'attr')")[0]
+    assert is_safe_python("setattr(x, 'a', 1)")[0]
+    assert is_safe_python("hasattr(x, 'b')")[0]
+    assert is_safe_python("type(x) == int")[0]
+
+def test_blocks_dunder_reflection():
+    ok, reason = is_safe_python("getattr(x, '__class__')")
+    assert not ok
+    assert "Dunder string access" in reason
+    
+    ok, reason = is_safe_python("setattr(x, '__dict__', {})")
+    assert not ok
+    assert "Dunder string access" in reason
 
 
 # ── dangerous module imports ─────────────────────────────────────────────────

@@ -1,12 +1,20 @@
-"""ELO ratings backed by SQLite.
+"""ELO ratings backed by SQLite repositories.
 
 K=32 is the Chess Federation default. We update after every task rather
 than every match, which converges faster but is noisier than the standard
 formula on short samples.
 """
 from __future__ import annotations
-import sqlite3, time
+
 import logging
+import time
+
+from .storage.sqlite import (
+    SqliteMatchRepository,
+    SqliteRatingsRepository,
+    SqliteTaskDetailRepository,
+    apply_migrations,
+)
 
 log = logging.getLogger("arena.elo")
 
@@ -27,322 +35,90 @@ def update_elo(ra: float, rb: float, result: float) -> tuple[float, float]:
 
 
 class EloStore:
-    """Persistent ELO ratings stored in SQLite."""
+    """Persistent ELO ratings — facade over storage repositories."""
 
     def __init__(self, db_path: str = "arena.db"):
         self.db = db_path
-        self._init_db()
-
-    def _conn(self):
-        # Increased timeout to 30.0s to avoid 'database is locked' errors under high concurrency.
-        # isolation_level="IMMEDIATE" ensures write locks are acquired safely, preventing deadlocks.
-        return sqlite3.connect(self.db, timeout=30.0, isolation_level="IMMEDIATE")
-
-    def _init_db(self):
-        # Schema lives in `migrations.py` — forward-only, version-tracked
-        # via `PRAGMA user_version`. Safe to call on every boot.
-        from .migrations import apply_migrations
         apply_migrations(self.db)
+        self._ratings = SqliteRatingsRepository(db_path)
+        self._matches = SqliteMatchRepository(db_path)
+        self._tasks = SqliteTaskDetailRepository(db_path)
 
     def get(self, model: str) -> float:
-        try:
-            with self._conn() as cx:
-                row = cx.execute("SELECT elo FROM ratings WHERE model=?", (model,)).fetchone()
-                return row[0] if row else _DEFAULT_ELO
-        except sqlite3.Error as e:
-            log.error(f"Error fetching elo for {model}: {e}")
-            return _DEFAULT_ELO
+        return self._ratings.get(model)
 
     def get_cached_response(self, model: str, task_id: str, instruction: str) -> str | None:
-        try:
-            with sqlite3.connect(self.db, timeout=30.0) as cx:
-                # Optimized single query using UNION ALL for better caching performance
-                row = cx.execute("""
-                    SELECT response FROM (
-                        SELECT d.response_a as response, d.ts 
-                        FROM task_detail d
-                        JOIN match_log m ON m.id = d.match_id
-                        WHERE m.model_a=? AND d.task_id=? AND d.instruction=?
-                        
-                        UNION ALL
-                        
-                        SELECT d.response_b as response, d.ts 
-                        FROM task_detail d
-                        JOIN match_log m ON m.id = d.match_id
-                        WHERE m.model_b=? AND d.task_id=? AND d.instruction=?
-                    )
-                    ORDER BY ts DESC LIMIT 1
-                """, (model, task_id, instruction, model, task_id, instruction)).fetchone()
-                if row and row[0]: 
-                    return row[0]
-        except sqlite3.Error as e:
-            log.error(f"Error fetching cached response for {model}: {e}")
-        return None
+        return self._tasks.get_cached_response(model, task_id, instruction)
 
     def record_match(self, model_a: str, model_b: str, category: str,
                      score_a: float, score_b: float) -> tuple[float, float]:
         ra = self.get(model_a)
         rb = self.get(model_b)
 
-        if score_a > score_b:
-            result = 1.0
-        elif score_b > score_a:
-            result = 0.0
-        else:
+        total = score_a + score_b
+        if total == 0:
             result = 0.5
+        else:
+            result = score_a / total
 
         new_ra, new_rb = update_elo(ra, rb, result)
         now = time.time()
 
         try:
-            with self._conn() as cx:
-                for model, elo in [(model_a, new_ra), (model_b, new_rb)]:
-                    cx.execute("""
-                        INSERT INTO ratings(model, elo, wins, losses, draws, matches, updated_at)
-                        VALUES (?, ?, 0, 0, 0, 0, ?)
-                        ON CONFLICT(model) DO UPDATE SET
-                            elo=excluded.elo, updated_at=excluded.updated_at
-                    """, (model, elo, now))
-
-                if result == 1.0:
-                    cx.execute("UPDATE ratings SET wins=wins+1, matches=matches+1 WHERE model=?", (model_a,))
-                    cx.execute("UPDATE ratings SET losses=losses+1, matches=matches+1 WHERE model=?", (model_b,))
-                elif result == 0.0:
-                    cx.execute("UPDATE ratings SET losses=losses+1, matches=matches+1 WHERE model=?", (model_a,))
-                    cx.execute("UPDATE ratings SET wins=wins+1, matches=matches+1 WHERE model=?", (model_b,))
-                else:
-                    cx.execute("UPDATE ratings SET draws=draws+1, matches=matches+1 WHERE model=?", (model_a,))
-                    cx.execute("UPDATE ratings SET draws=draws+1, matches=matches+1 WHERE model=?", (model_b,))
-
-                cx.execute("""
-                    INSERT INTO match_log
-                    (model_a,model_b,category,score_a,score_b,
-                     elo_a_before,elo_b_before,elo_a_after,elo_b_after,ts)
-                    VALUES (?,?,?,?,?,?,?,?,?,?)
-                """, (model_a, model_b, category, score_a, score_b,
-                      ra, rb, new_ra, new_rb, now))
-        except sqlite3.Error as e:
+            self._ratings.upsert_rating(model_a, new_ra, now)
+            self._ratings.upsert_rating(model_b, new_rb, now)
+            self._ratings.apply_match_stats(model_a, model_b, score_a, score_b)
+            self._matches.insert_match_log(
+                model_a, model_b, category, score_a, score_b,
+                ra, rb, new_ra, new_rb, now,
+            )
+        except Exception as e:
             log.error(f"Error recording match between {model_a} and {model_b}: {e}")
 
         return new_ra, new_rb
 
-    def save_task_detail(
-        self, match_id: int, task_id: str, category: str,
-        difficulty: str, language: str, instruction: str,
-        response_a: str, response_b: str, expected: str,
-        score_a: float, score_b: float, outcome: str,
-        tps_a: float = 0.0, tps_b: float = 0.0,
-        latency_a: float = 0.0, latency_b: float = 0.0,
-        tool_call_a: str | None = None,
-        tool_call_b: str | None = None,
-    ):
-        try:
-            with self._conn() as cx:
-                cols = {r[1] for r in cx.execute("PRAGMA table_info(task_detail)")}
-                base = [
-                    "match_id", "task_id", "category", "difficulty", "language",
-                    "instruction", "response_a", "response_b", "expected",
-                    "score_a", "score_b", "outcome",
-                    "tps_a", "tps_b", "latency_a", "latency_b", "ts",
-                ]
-                vals = [
-                    match_id, task_id, category, difficulty, language,
-                    instruction, response_a, response_b, expected,
-                    score_a, score_b, outcome,
-                    tps_a, tps_b, latency_a, latency_b, time.time(),
-                ]
-                if "tool_call_a" in cols:
-                    base.extend(["tool_call_a", "tool_call_b"])
-                    vals.extend([tool_call_a, tool_call_b])
-                placeholders = ",".join("?" * len(base))
-                cx.execute(
-                    f"INSERT INTO task_detail ({','.join(base)}) VALUES ({placeholders})",
-                    vals,
-                )
-        except sqlite3.Error as e:
-            log.error(f"Error saving task detail for {task_id}: {e}")
+    def save_task_detail(self, *args, **kwargs):
+        return self._tasks.save_task_detail(*args, **kwargs)
 
     def last_match_id(self) -> int:
-        try:
-            with sqlite3.connect(self.db, timeout=30.0) as cx:
-                row = cx.execute("SELECT MAX(id) FROM match_log").fetchone()
-                return row[0] or 0
-        except sqlite3.Error as e:
-            log.error(f"Error fetching last match id: {e}")
-            return 0
+        return self._matches.last_match_id()
 
     def leaderboard(self) -> list[dict]:
-        try:
-            with sqlite3.connect(self.db, timeout=30.0) as cx:
-                rows = cx.execute("""
-                    SELECT model, elo, wins, losses, draws, matches
-                    FROM ratings ORDER BY elo DESC
-                """).fetchall()
-            result = []
-            for i, (model, elo, wins, losses, draws, matches) in enumerate(rows):
-                wr = wins / max(matches, 1)
-                result.append({
-                    "rank": i + 1, "model": model, "elo": round(elo, 1),
-                    "wins": wins, "losses": losses, "draws": draws,
-                    "matches": matches, "win_rate": round(wr, 3),
-                })
-            return result
-        except sqlite3.Error as e:
-            log.error(f"Error fetching leaderboard: {e}")
-            return []
+        return self._ratings.leaderboard()
+
+    def anti_leaderboard(self) -> list[dict]:
+        return self._ratings.anti_leaderboard()
 
     def match_history(self, limit: int = 50) -> list[dict]:
-        try:
-            with sqlite3.connect(self.db, timeout=30.0) as cx:
-                rows = cx.execute("""
-                    SELECT id, model_a, model_b, category, score_a, score_b,
-                           elo_a_before, elo_b_before, elo_a_after, elo_b_after, ts
-                    FROM match_log ORDER BY ts DESC LIMIT ?
-                """, (limit,)).fetchall()
-            keys = ["id", "model_a", "model_b", "category", "score_a", "score_b",
-                    "elo_a_before", "elo_b_before", "elo_a_after", "elo_b_after", "ts"]
-            return [dict(zip(keys, r)) for r in rows]
-        except sqlite3.Error as e:
-            log.error(f"Error fetching match history: {e}")
-            return []
+        return self._matches.match_history(limit)
 
     def tasks_for_match(self, match_id: int) -> list[dict]:
-        try:
-            with sqlite3.connect(self.db, timeout=30.0) as cx:
-                cols = {r[1] for r in cx.execute("PRAGMA table_info(task_detail)")}
-                select = [
-                    "task_id", "category", "difficulty", "language", "instruction",
-                    "response_a", "response_b", "expected",
-                    "score_a", "score_b", "outcome",
-                    "tps_a", "tps_b", "latency_a", "latency_b", "ts",
-                ]
-                if "tool_call_a" in cols:
-                    select.extend(["tool_call_a", "tool_call_b"])
-                rows = cx.execute(
-                    f"SELECT {','.join(select)} FROM task_detail "
-                    "WHERE match_id=? ORDER BY ts",
-                    (match_id,),
-                ).fetchall()
-            return [dict(zip(select, r)) for r in rows]
-        except sqlite3.Error as e:
-            log.error(f"Error fetching tasks for match {match_id}: {e}")
-            return []
+        return self._tasks.tasks_for_match(match_id)
 
     def task_history(self, task_id: str) -> list[dict]:
-        try:
-            with sqlite3.connect(self.db, timeout=30.0) as cx:
-                cols = {r[1] for r in cx.execute("PRAGMA table_info(task_detail)")}
-                extra_select = ""
-                extra_keys: list[str] = []
-                if "tool_call_a" in cols:
-                    extra_select = ", d.tool_call_a, d.tool_call_b"
-                    extra_keys = ["tool_call_a", "tool_call_b"]
-                rows = cx.execute(f"""
-                    SELECT d.task_id, d.category, d.difficulty,
-                           m.model_a, m.model_b,
-                           d.instruction, d.response_a, d.response_b, d.expected,
-                           d.score_a, d.score_b, d.outcome, d.ts{extra_select}
-                    FROM task_detail d
-                    JOIN match_log m ON m.id = d.match_id
-                    WHERE d.task_id=? ORDER BY d.ts DESC
-                """, (task_id,)).fetchall()
-            keys = ["task_id", "category", "difficulty", "model_a", "model_b",
-                    "instruction", "response_a", "response_b", "expected",
-                    "score_a", "score_b", "outcome", "ts"] + extra_keys
-            return [dict(zip(keys, r)) for r in rows]
-        except sqlite3.Error as e:
-            log.error(f"Error fetching task history for {task_id}: {e}")
-            return []
+        return self._tasks.task_history(task_id)
 
     def category_stats(self, model: str) -> list[dict]:
-        """Per-category win/loss breakdown for a single model."""
-        try:
-            with sqlite3.connect(self.db, timeout=30.0) as cx:
-                rows = cx.execute("""
-                    SELECT d.category,
-                           SUM(CASE WHEN (m.model_a=? AND d.outcome='a_wins')
-                                      OR (m.model_b=? AND d.outcome='b_wins') THEN 1 ELSE 0 END) wins,
-                           SUM(CASE WHEN (m.model_a=? AND d.outcome='b_wins')
-                                      OR (m.model_b=? AND d.outcome='a_wins') THEN 1 ELSE 0 END) losses,
-                           SUM(CASE WHEN d.outcome='draw' THEN 1 ELSE 0 END) draws,
-                           COUNT(*) total
-                    FROM task_detail d
-                    JOIN match_log m ON m.id = d.match_id
-                    WHERE m.model_a=? OR m.model_b=?
-                    GROUP BY d.category
-                    ORDER BY total DESC
-                """, (model, model, model, model, model, model)).fetchall()
-            return [
-                {"category": r[0], "wins": r[1], "losses": r[2],
-                 "draws": r[3], "total": r[4],
-                 "win_rate": round(r[1] / max(r[4], 1), 3)}
-                for r in rows
-            ]
-        except sqlite3.Error as e:
-            log.error(f"Error fetching category stats for {model}: {e}")
-            return []
+        return self._tasks.category_stats(model)
 
     def save_benchmark(self, model: str, score: float,
                        scores_by_category: dict, n_tasks: int):
-        import json
-        try:
-            with self._conn() as cx:
-                cx.execute("""
-                    INSERT INTO benchmark_runs (model, score, scores_by_category, n_tasks, ts)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (model, score, json.dumps(scores_by_category), n_tasks, time.time()))
-        except sqlite3.Error as e:
-            log.error(f"Error saving benchmark for {model}: {e}")
+        return self._matches.save_benchmark(model, score, scores_by_category, n_tasks)
 
     def benchmark_history(self, model: str | None = None, limit: int = 20) -> list[dict]:
-        import json
-        try:
-            with sqlite3.connect(self.db, timeout=30.0) as cx:
-                if model:
-                    rows = cx.execute("""
-                        SELECT model, score, scores_by_category, n_tasks, ts
-                        FROM benchmark_runs WHERE model=? ORDER BY ts DESC LIMIT ?
-                    """, (model, limit)).fetchall()
-                else:
-                    rows = cx.execute("""
-                        SELECT model, score, scores_by_category, n_tasks, ts
-                        FROM benchmark_runs ORDER BY ts DESC LIMIT ?
-                    """, (limit,)).fetchall()
-            return [
-                {"model": r[0], "score": r[1],
-                 "scores_by_category": json.loads(r[2]),
-                 "n_tasks": r[3], "ts": r[4]}
-                for r in rows
-            ]
-        except sqlite3.Error as e:
-            log.error(f"Error fetching benchmark history: {e}")
-            return []
+        return self._matches.benchmark_history(model, limit)
 
     def recent_matches_summary(self, limit: int = 10) -> list[dict]:
-        """Match-level summary: models, category, task count, winner."""
-        try:
-            with sqlite3.connect(self.db, timeout=30.0) as cx:
-                rows = cx.execute("""
-                    SELECT m.id, m.model_a, m.model_b, m.category, m.ts,
-                           COUNT(d.id) as tasks,
-                           SUM(CASE WHEN d.outcome='a_wins' THEN 1 ELSE 0 END) a_wins,
-                           SUM(CASE WHEN d.outcome='b_wins' THEN 1 ELSE 0 END) b_wins,
-                           SUM(CASE WHEN d.outcome='draw'   THEN 1 ELSE 0 END) draws
-                    FROM match_log m
-                    LEFT JOIN task_detail d ON d.match_id = m.id
-                    GROUP BY m.id
-                    ORDER BY m.ts DESC LIMIT ?
-                """, (limit,)).fetchall()
-            result = []
-            for r in rows:
-                mid, ma, mb, cat, ts, tasks, aw, bw, dr = r
-                winner = ma if aw > bw else (mb if bw > aw else "draw")
-                result.append({
-                    "id": mid, "model_a": ma, "model_b": mb, "category": cat,
-                    "ts": ts, "tasks": tasks,
-                    "a_wins": aw, "b_wins": bw, "draws": dr, "winner": winner,
-                })
-            return result
-        except sqlite3.Error as e:
-            log.error(f"Error fetching recent matches summary: {e}")
-            return []
+        return self._matches.recent_matches_summary(limit)
+
+    def start_royale(self, category: str, n_models: int, n_tasks: int) -> int:
+        return self._matches.start_royale(category, n_models, n_tasks)
+
+    def save_royale_entry(self, *args, **kwargs):
+        return self._matches.save_royale_entry(*args, **kwargs)
+
+    def royale_entries(self, royale_id: int) -> list[dict]:
+        return self._matches.royale_entries(royale_id)
+
+    def record_royale_elo(self, model_results: list[dict]):
+        return self._ratings.record_royale_elo(model_results)

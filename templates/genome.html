@@ -44,6 +44,9 @@
   <span id="status" style="font-size:0.85rem; color:#888;"></span>
 </div>
 <div id="graph"></div>
+<div id="model-detail" style="display:none; position:fixed; top:100px; right:2rem; width:320px;
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1rem;
+  font-size:0.85rem; z-index:50;"></div>
 <div id="tooltip"></div>
 <div class="legend">
   <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.5rem;">Lineage Relations</div>
@@ -65,7 +68,7 @@
   async function scanModels() {
     document.getElementById('status').textContent = 'Scanning...';
     await fetch('/api/genome/scan', {method: 'POST'});
-    setTimeout(() => { loadTree(null); document.getElementById('status').textContent = ''; }, 2000);
+    pollScanProgress();
   }
 </script>
 </body>

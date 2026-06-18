@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
@@ -54,6 +55,18 @@ class MatchResult:
     strategy_reason: str = ""                # why the scheduler picked it
 
 
+@dataclass
+class RoyaleResult:
+    models: list[str]
+    category: str
+    tasks_run: int
+    winner: str
+    rankings: list[dict] # {model, elo_after, total_score, rank}
+    duration_s: float = 0.0
+    royale_id: int = 0
+    strategy: str = "CONCURRENT"
+
+
 class Arena:
     """Pair-wise match driver with persistent ELO ratings.
 
@@ -90,13 +103,18 @@ class Arena:
         self.scheduler = MemoryScheduler(ollama_base=ollama_url)
         # Caller hook for "we're about to enter pipeline phase X" events.
         self._on_phase: Optional[Callable] = None
+
+        # Experimental Open WebUI sync (opt-in via WEBUI_API_KEY)
+        from .webui_bridge import WebUIBridge
+        self.webui = WebUIBridge()
         
         # v4.0: MCP Orchestration
         from .mcp_client import MCPOrchestrator
-        # Default config: SQLite + Playwright + SearXNG
+        # Default config: SQLite + Playwright + Google Search
         mcp_config = {
             "sqlite": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-sqlite"]},
             "playwright": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-playwright"]},
+            "google": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-google-search"]},
             "searxng": {"url": "http://localhost:8080"}
         }
         self.mcp = MCPOrchestrator(mcp_config)
@@ -135,6 +153,7 @@ class Arena:
         n: int = 10,
         difficulty: str | None = None,
         concurrency: int = 1,
+        use_tools: bool = False,
     ) -> MatchResult:
         # Clear Ollama cache / unload loaded models before the match
         if getattr(self.client, "name", "") == "ollama" and hasattr(self.client, "base"):
@@ -183,7 +202,7 @@ class Arena:
             )
 
         def _score_and_pack(task, res_a: GenResult, res_b: GenResult,
-                            cached_a: bool, cached_b: bool) -> dict:
+                            cached_a: bool, cached_b: bool) -> dict | None:
             if self.judge and task.get("use_judge"):
                 jr = self.judge.grade_pair(
                     task["instruction"], res_a.text, res_b.text,
@@ -193,8 +212,13 @@ class Arena:
             else:
                 trace_a = getattr(res_a, "agent_trace", None) if res_a.ok else None
                 trace_b = getattr(res_b, "agent_trace", None) if res_b.ok else None
-                score_a = evaluate(task, res_a.text, trace=trace_a) if res_a.ok else 0.0
-                score_b = evaluate(task, res_b.text, trace=trace_b) if res_b.ok else 0.0
+                score_a = evaluate(task, res_a.text, trace=trace_a, judge=self.judge) if res_a.ok else 0.0
+                score_b = evaluate(task, res_b.text, trace=trace_b, judge=self.judge) if res_b.ok else 0.0
+
+            if score_a is None or score_b is None:
+                log.warning(f"[arena] skipping task {task['id']}: needs judge.")
+                return None
+
             if score_a > score_b:   outcome = "a_wins"
             elif score_b > score_a: outcome = "b_wins"
             else:                   outcome = "draw"
@@ -206,9 +230,9 @@ class Arena:
         # Dynamic timeout — large models on PIPELINE need more wall-clock
         # because they swap to SSD; HOT_SWAP needs the unload+reload time too.
         _timeout_for_strategy = {
-            Strategy.CONCURRENT: 180,
-            Strategy.HOT_SWAP:   480,
-            Strategy.PIPELINE:   900,
+            Strategy.CONCURRENT: 600,   # 10 minutes
+            Strategy.HOT_SWAP:   1200,  # 20 minutes
+            Strategy.PIPELINE:   3600,  # 60 minutes (for huge outputs)
         }
         _gen_timeout = _timeout_for_strategy.get(decision.strategy, 180)
 
@@ -223,7 +247,7 @@ class Arena:
             if unload_first:
                 self.scheduler.unload(unload_first)
 
-            if task.get("category") == "tool_use":
+            if use_tools or task.get("category") == "tool_use":
                 try:
                     with ThreadPoolExecutor(max_workers=1) as pool:
                         fut = pool.submit(
@@ -232,6 +256,7 @@ class Arena:
                             model,
                             task["instruction"],
                             self.mcp,
+                            images=task.get("images")
                         )
                         return fut.result(timeout=_gen_timeout), False
                 except FuturesTimeoutError:
@@ -244,7 +269,7 @@ class Arena:
                     log.error(f"[arena] agent loop failed: {e}")
                     return GenResult(text="", model=model, error=str(e)), False
 
-            return client.generate(model, task["instruction"]), False
+            return client.generate(model, task["instruction"], images=task.get("images")), False
 
         def _execute_concurrent(task):
             res_a, ca = _gen(model_a, client_a, task)
@@ -311,6 +336,9 @@ class Arena:
             with ThreadPoolExecutor(max_workers=concurrency) as executor:
                 results = list(executor.map(_execute_concurrent, tasks))
 
+        # Filter out skipped tasks (None)
+        results = [r for r in results if r is not None]
+
         for r in results:
             task = r["task"]
             res_a, res_b = r["res_a"], r["res_b"]
@@ -319,9 +347,9 @@ class Arena:
             outcome = r["outcome"]
 
             if not cached_a:
-                self._log_perf(model_a, res_a)
+                self._log_perf(model_a, res_a, task.get("category"))
             if not cached_b:
-                self._log_perf(model_b, res_b)
+                self._log_perf(model_b, res_b, task.get("category"))
 
             if outcome == "a_wins": a_wins += 1
             elif outcome == "b_wins": b_wins += 1
@@ -329,6 +357,17 @@ class Arena:
 
             self.elo.record_match(model_a, model_b, category, score_a, score_b)
             last_match_id = self.elo.last_match_id()
+
+            # Hallucination check (if judge enabled)
+            halluc_a = halluc_b = None
+            if self.judge:
+                try:
+                    halluc_a = self.judge.check_hallucination(task["instruction"], res_a.text, 
+                                                              reference=str(task.get("expected_answer", "")))
+                    halluc_b = self.judge.check_hallucination(task["instruction"], res_b.text,
+                                                              reference=str(task.get("expected_answer", "")))
+                except Exception as e:
+                    log.warning(f"Hallucination check failed: {e}")
 
             self.elo.save_task_detail(
                 match_id=last_match_id,
@@ -349,6 +388,8 @@ class Arena:
                 latency_b=res_b.latency_s,
                 tool_call_a=_agent_trace_json(res_a),
                 tool_call_b=_agent_trace_json(res_b),
+                hallucination_a=halluc_a,
+                hallucination_b=halluc_b,
             )
 
             task_results.append({
@@ -382,7 +423,7 @@ class Arena:
                 )
 
         total = len(tasks)
-        return MatchResult(
+        match_result = MatchResult(
             model_a=model_a, model_b=model_b, category=category,
             tasks_run=total, a_wins=a_wins, b_wins=b_wins, draws=draws,
             a_win_rate=round(a_wins / total, 3),
@@ -396,6 +437,8 @@ class Arena:
             strategy=decision.strategy.value,
             strategy_reason=decision.reason,
         )
+        self._sync_webui_bridge(match_result)
+        return match_result
 
     def run_tournament(
         self,
@@ -462,8 +505,12 @@ class Arena:
         else:
             trace_a = getattr(res_a, "agent_trace", None) if res_a.ok else None
             trace_b = getattr(res_b, "agent_trace", None) if res_b.ok else None
-            score_a = evaluate(task, res_a.text, trace=trace_a) if res_a.ok else 0.0
-            score_b = evaluate(task, res_b.text, trace=trace_b) if res_b.ok else 0.0
+            score_a = evaluate(task, res_a.text, trace=trace_a, judge=self.judge) if res_a.ok else 0.0
+            score_b = evaluate(task, res_b.text, trace=trace_b, judge=self.judge) if res_b.ok else 0.0
+
+        if score_a is None or score_b is None:
+            return {"ok": False, "error": f"Task {task_id} requires a judge model."}
+
         if score_a > score_b: outcome = "a_wins"
         elif score_b > score_a: outcome = "b_wins"
         else: outcome = "draw"
@@ -485,8 +532,8 @@ class Arena:
             tool_call_a=_agent_trace_json(res_a),
             tool_call_b=_agent_trace_json(res_b),
         )
-        self._log_perf(model_a, res_a)
-        self._log_perf(model_b, res_b)
+        self._log_perf(model_a, res_a, category)
+        self._log_perf(model_b, res_b, category)
 
         return {
             "ok": True,
@@ -507,13 +554,30 @@ class Arena:
     def leaderboard(self) -> list[dict]:
         return self.elo.leaderboard()
 
+    def _sync_webui_bridge(self, result: MatchResult) -> None:
+        """Push match summary + leaderboard to Open WebUI when configured."""
+        if not getattr(self, "webui", None):
+            return
+        if not os.environ.get("WEBUI_API_KEY"):
+            return
+        try:
+            summary = (
+                f"Match #{result.match_id}: {result.model_a} vs {result.model_b} "
+                f"({result.category}) — {result.a_wins}-{result.b_wins}-{result.draws} "
+                f"in {result.duration_s}s"
+            )
+            self.webui.broadcast_match_result(summary)
+            self.webui.sync_leaderboard(self.leaderboard())
+        except Exception as e:
+            log.warning(f"[webui] post-match sync failed: {e}")
+
     def match_history(self, limit: int = 20) -> list[dict]:
         return self.elo.match_history(limit=limit)
 
-    def performance_stats(self) -> list[dict]:
-        return self.perf.stats()
+    def performance_stats(self) -> dict:
+        return self.perf.export_summary()
 
-    def _log_perf(self, model: str, res: GenResult):
+    def _log_perf(self, model: str, res: GenResult, category: str | None = None):
         if res.ok:
             backend_name = res.backend_type or self.client.name
             self.perf.record(
@@ -521,4 +585,129 @@ class Arena:
                 tokens_in=res.tokens_in, tokens_out=res.tokens_out,
                 latency_s=res.latency_s, tps=res.tps,
                 time_to_first=res.time_to_first,
+                category=category,
             )
+            for step in getattr(res, "agent_trace", []) or []:
+                for tr in step.get("tool_results") or []:
+                    lat = tr.get("latency_s")
+                    if lat is not None and tr.get("name"):
+                        self.perf.record_tool(tr["name"], model, lat, category=category)
+
+    def run_royale(
+        self,
+        models: list[str],
+        category: str = "coding",
+        n: int = 5,
+        difficulty: str | None = None,
+        concurrency: int = 1,
+    ) -> RoyaleResult:
+        """Run an N-way Battle Royale between models on a shared set of tasks."""
+        tasks = self._gather_tasks(category, n, difficulty)
+        decision = self.scheduler.choose_royale(models)
+        log.info(f"[royale] {decision.strategy.value}: {decision.reason}")
+
+        royale_id = self.elo.start_royale(category, len(models), len(tasks))
+        t0 = time.time()
+        
+        # model -> total_score
+        total_scores = {m: 0.0 for m in models}
+        
+        # Per-model client mapping
+        clients = {m: spec_backend_for_model(m) or self.client for m in models}
+
+        def _gen(model: str, task: dict) -> GenResult:
+            if task.get("category") == "tool_use":
+                return run_agent_sync(clients[model], model, task["instruction"], self.mcp)
+            return clients[model].generate(model, task["instruction"])
+
+        # execution results: task_id -> {model: GenResult}
+        all_results: dict[str, dict[str, GenResult]] = {t["id"]: {} for t in tasks}
+
+        if decision.strategy == Strategy.PIPELINE:
+            # Phase 1: One model at a time runs all tasks
+            for model in models:
+                self.scheduler.unload_all_except([model])
+                for task in tasks:
+                    res = _gen(model, task)
+                    all_results[task["id"]][model] = res
+                    self._log_perf(model, res)
+        else:
+            # Concurrent or HOT_SWAP (we'll just use ThreadPool for royale)
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                for task in tasks:
+                    futs = {executor.submit(_gen, m, task): m for m in models}
+                    for f in futs:
+                        m = futs[f]
+                        res = f.result()
+                        all_results[task["id"]][m] = res
+                        self._log_perf(m, res)
+
+        # Scoring & ELO updates
+        for task in tasks:
+            tid = task["id"]
+            model_task_results = []
+            for model in models:
+                res = all_results[tid][model]
+                score = evaluate(task, res.text) if res.ok else 0.0
+                total_scores[model] += score
+                model_task_results.append({"model": model, "score": score, "res": res})
+            
+            # Sort by score for ranking
+            model_task_results.sort(key=lambda x: x["score"], reverse=True)
+            
+            for i, r in enumerate(model_task_results):
+                # Hallucination check (if judge enabled)
+                halluc = None
+                if self.judge:
+                    try:
+                        halluc = self.judge.check_hallucination(task["instruction"], r["res"].text, 
+                                                              reference=str(task.get("expected_answer", "")))
+                    except Exception as e:
+                        log.warning(f"Hallucination check failed: {e}")
+
+                self.elo.save_royale_entry(
+                    royale_id=royale_id,
+                    task_id=tid,
+                    model=r["model"],
+                    rank=i + 1,
+                    score=r["score"],
+                    response=r["res"].text if r["res"].ok else f"[ERROR: {r['res'].error}]",
+                    tps=r["res"].tps,
+                    latency_s=r["res"].latency_s,
+                    instruction=task["instruction"],
+                    hallucination=halluc
+                )
+            
+            # Update ELO pairwise for this task
+            self.elo.record_royale_elo([{"model": r["model"], "score": r["score"]} for r in model_task_results])
+            
+            if self._on_task_done:
+                # Callback for first two models to satisfy legacy UI
+                # In Royale, we might need a new callback type, but for now we'll just use the first two
+                if len(models) >= 2:
+                    m1, m2 = model_task_results[0], model_task_results[1]
+                    self._on_task_done(tid, m1["score"], m2["score"], 
+                                      "a_wins" if m1["score"] > m2["score"] else "b_wins" if m2["score"] > m1["score"] else "draw",
+                                      task["instruction"], m1["res"].text, m2["res"].text, "")
+
+        # Final Rankings
+        rankings = []
+        sorted_models = sorted(models, key=lambda m: total_scores[m], reverse=True)
+        for i, m in enumerate(sorted_models):
+            rankings.append({
+                "model": m,
+                "total_score": round(total_scores[m], 2),
+                "rank": i + 1,
+                "elo_after": self.elo.get(m)
+            })
+
+        return RoyaleResult(
+            models=models,
+            category=category,
+            tasks_run=len(tasks),
+            winner=sorted_models[0],
+            rankings=rankings,
+            duration_s=round(time.time() - t0, 1),
+            royale_id=royale_id,
+            strategy=decision.strategy.value
+        )
