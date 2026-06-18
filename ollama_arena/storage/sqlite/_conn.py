@@ -4,7 +4,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from threading import Lock
-from typing import Dict, Optional
+from typing import Dict
 
 
 # Simple connection pool for read operations

@@ -28,8 +28,6 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from typing import Iterable
-
 log = logging.getLogger("arena.storage.migrations")
 
 
@@ -142,6 +140,23 @@ MIGRATIONS: list[tuple[str, str]] = [
     # 6 — royale enhancements: hallucination + instruction
     ("royale_entries.hallucination + royale_entries.instruction", """
         -- Columns added via Python with PRAGMA sniff.
+    """),
+
+    # 7 — per-category ELO ratings (separate from global ratings table)
+    ("category_ratings table", """
+        CREATE TABLE IF NOT EXISTS category_ratings (
+            model      TEXT,
+            category   TEXT,
+            elo        REAL DEFAULT 1200,
+            wins       INTEGER DEFAULT 0,
+            losses     INTEGER DEFAULT 0,
+            draws      INTEGER DEFAULT 0,
+            matches    INTEGER DEFAULT 0,
+            updated_at REAL,
+            PRIMARY KEY (model, category)
+        );
+        CREATE INDEX IF NOT EXISTS idx_cat_ratings_cat ON category_ratings(category);
+        CREATE INDEX IF NOT EXISTS idx_cat_ratings_model ON category_ratings(model);
     """),
 ]
 

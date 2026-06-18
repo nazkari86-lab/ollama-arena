@@ -173,6 +173,89 @@ class SqliteRatingsRepository:
             log.error(f"Error fetching anti-leaderboard: {e}")
             return []
 
+    def get_category_elo(self, model: str, category: str) -> float:
+        try:
+            with read_conn(self.db) as cx:
+                row = cx.execute(
+                    "SELECT elo FROM category_ratings WHERE model=? AND category=?",
+                    (model, category),
+                ).fetchone()
+                return row[0] if row else _DEFAULT_ELO
+        except Exception:
+            return _DEFAULT_ELO
+
+    def upsert_category_rating(
+        self,
+        model_a: str, model_b: str, category: str,
+        new_elo_a: float, new_elo_b: float,
+        score_a: float, score_b: float,
+        now: float,
+    ) -> None:
+        with write_conn(self.db) as cx:
+            for model, elo, sa, sb in (
+                (model_a, new_elo_a, score_a, score_b),
+                (model_b, new_elo_b, score_b, score_a),
+            ):
+                if sa > sb:
+                    w, lo, d = 1, 0, 0
+                elif sb > sa:
+                    w, lo, d = 0, 1, 0
+                else:
+                    w, lo, d = 0, 0, 1
+                cx.execute("""
+                    INSERT INTO category_ratings
+                        (model, category, elo, wins, losses, draws, matches, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                    ON CONFLICT(model, category) DO UPDATE SET
+                        elo=excluded.elo,
+                        wins=wins+excluded.wins,
+                        losses=losses+excluded.losses,
+                        draws=draws+excluded.draws,
+                        matches=matches+1,
+                        updated_at=excluded.updated_at
+                """, (model, category, elo, w, lo, d, now))
+
+    def category_leaderboard(self, category: str) -> list[dict]:
+        try:
+            with read_conn(self.db) as cx:
+                rows = cx.execute("""
+                    SELECT model, elo, wins, losses, draws, matches
+                    FROM category_ratings WHERE category=?
+                    ORDER BY elo DESC
+                """, (category,)).fetchall()
+            result = []
+            for i, (model, elo, wins, losses, draws, matches) in enumerate(rows):
+                result.append({
+                    "rank": i + 1, "model": model, "elo": round(elo, 1),
+                    "wins": wins, "losses": losses, "draws": draws,
+                    "matches": matches, "win_rate": round(wins / max(matches, 1), 3),
+                })
+            return result
+        except Exception as e:
+            log.error(f"Error fetching category leaderboard for {category}: {e}")
+            return []
+
+    def all_category_elos(self, model: str) -> list[dict]:
+        """Return per-category ELO breakdown for one model."""
+        try:
+            with read_conn(self.db) as cx:
+                rows = cx.execute("""
+                    SELECT category, elo, wins, losses, draws, matches
+                    FROM category_ratings WHERE model=?
+                    ORDER BY matches DESC
+                """, (model,)).fetchall()
+            return [
+                {
+                    "category": r[0], "elo": round(r[1], 1),
+                    "wins": r[2], "losses": r[3], "draws": r[4], "matches": r[5],
+                    "win_rate": round(r[2] / max(r[5], 1), 3),
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            log.error(f"Error fetching category ELOs for {model}: {e}")
+            return []
+
     def record_royale_elo(self, model_results: list[dict]) -> None:
         """Update ELO from all pairwise combinations in a royale task."""
         from ollama_arena.elo import update_elo as update_elo_fn

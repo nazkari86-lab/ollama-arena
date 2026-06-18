@@ -268,6 +268,25 @@ def run_web(
         ]
         return results[:limit]
 
+    @app.get("/api/stats")
+    def api_arena_stats():
+        return arena.elo.arena_stats()
+
+    @app.get("/api/compare/{model_a:path}")
+    def api_compare(model_a: str, b: str = ""):
+        """Head-to-head statistics: /api/compare/llama3?b=phi3"""
+        if not b:
+            raise HTTPException(status_code=400, detail="Missing ?b= parameter")
+        return arena.elo.head_to_head(model_a, b)
+
+    @app.get("/api/leaderboard/{category}")
+    def api_category_leaderboard(category: str):
+        return arena.elo.category_leaderboard(category)
+
+    @app.get("/api/models/{model:path}/elo-by-category")
+    def api_model_category_elos(model: str):
+        return arena.elo.model_category_elos(model)
+
     @app.get("/api/models")
     def api_models():
         models = arena.client.list_models()

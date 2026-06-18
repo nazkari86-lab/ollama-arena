@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 import time
 
-from ..base import TaskDetailRepository
 from ._conn import read_conn, write_conn
 
 log = logging.getLogger("arena.storage.tasks")

@@ -96,6 +96,15 @@ class EloStore:
                 model_a, model_b, category, score_a, score_b,
                 ra, rb, new_ra, new_rb, now,
             )
+            # Per-category ELO update (uses same K-factor as global)
+            if category:
+                cat_ra = self._ratings.get_category_elo(model_a, category)
+                cat_rb = self._ratings.get_category_elo(model_b, category)
+                new_cat_ra, new_cat_rb = update_elo(cat_ra, cat_rb, result, na=na, nb=nb)
+                self._ratings.upsert_category_rating(
+                    model_a, model_b, category,
+                    new_cat_ra, new_cat_rb, score_a, score_b, now,
+                )
         except Exception as e:
             log.error(f"Error recording match between {model_a} and {model_b}: {e}")
 
@@ -141,6 +150,18 @@ class EloStore:
 
     def benchmark_history(self, model: str | None = None, limit: int = 20) -> list[dict]:
         return self._matches.benchmark_history(model, limit)
+
+    def head_to_head(self, model_a: str, model_b: str) -> dict:
+        return self._matches.head_to_head(model_a, model_b)
+
+    def arena_stats(self) -> dict:
+        return self._matches.arena_stats()
+
+    def category_leaderboard(self, category: str) -> list[dict]:
+        return self._ratings.category_leaderboard(category)
+
+    def model_category_elos(self, model: str) -> list[dict]:
+        return self._ratings.all_category_elos(model)
 
     def recent_matches_summary(self, limit: int = 10) -> list[dict]:
         return self._matches.recent_matches_summary(limit)

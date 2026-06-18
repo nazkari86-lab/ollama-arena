@@ -5,7 +5,6 @@ import json
 import logging
 import time
 
-from ..base import MatchRepository
 from ._conn import read_conn, write_conn
 
 log = logging.getLogger("arena.storage.matches")
@@ -161,6 +160,86 @@ class SqliteMatchRepository:
         except Exception as e:
             log.error(f"Error fetching royale entries: {e}")
             return []
+
+    def head_to_head(self, model_a: str, model_b: str) -> dict:
+        """Direct match statistics between two models."""
+        try:
+            with read_conn(self.db) as cx:
+                rows = cx.execute("""
+                    SELECT
+                        SUM(CASE WHEN (model_a=? AND score_a>score_b)
+                                   OR (model_b=? AND score_b>score_a) THEN 1 ELSE 0 END) a_wins,
+                        SUM(CASE WHEN (model_a=? AND score_b>score_a)
+                                   OR (model_b=? AND score_a>score_b) THEN 1 ELSE 0 END) b_wins,
+                        SUM(CASE WHEN score_a=score_b THEN 1 ELSE 0 END) draws,
+                        COUNT(*) total
+                    FROM match_log
+                    WHERE (model_a=? AND model_b=?) OR (model_a=? AND model_b=?)
+                """, (model_a, model_a, model_a, model_a,
+                      model_a, model_b, model_b, model_a)).fetchone()
+                a_wins, b_wins, draws, total = rows if rows else (0, 0, 0, 0)
+
+                # Category breakdown
+                cat_rows = cx.execute("""
+                    SELECT category,
+                        SUM(CASE WHEN (model_a=? AND score_a>score_b)
+                                   OR (model_b=? AND score_b>score_a) THEN 1 ELSE 0 END) a_wins,
+                        SUM(CASE WHEN (model_a=? AND score_b>score_a)
+                                   OR (model_b=? AND score_a>score_b) THEN 1 ELSE 0 END) b_wins,
+                        SUM(CASE WHEN score_a=score_b THEN 1 ELSE 0 END) draws,
+                        COUNT(*) total
+                    FROM match_log
+                    WHERE (model_a=? AND model_b=?) OR (model_a=? AND model_b=?)
+                    GROUP BY category ORDER BY total DESC
+                """, (model_a, model_a, model_a, model_a,
+                      model_a, model_b, model_b, model_a)).fetchall()
+
+            return {
+                "model_a": model_a, "model_b": model_b,
+                "total_matches": total or 0,
+                "a_wins": a_wins or 0, "b_wins": b_wins or 0, "draws": draws or 0,
+                "a_win_rate": round((a_wins or 0) / max(total or 1, 1), 3),
+                "by_category": [
+                    {"category": r[0], "a_wins": r[1], "b_wins": r[2],
+                     "draws": r[3], "total": r[4]}
+                    for r in cat_rows
+                ],
+            }
+        except Exception as e:
+            log.error(f"Error fetching head-to-head {model_a} vs {model_b}: {e}")
+            return {"model_a": model_a, "model_b": model_b, "total_matches": 0,
+                    "a_wins": 0, "b_wins": 0, "draws": 0, "a_win_rate": 0.5,
+                    "by_category": []}
+
+    def arena_stats(self) -> dict:
+        """Aggregate stats across the entire arena."""
+        try:
+            with read_conn(self.db) as cx:
+                total = cx.execute("SELECT COUNT(*) FROM match_log").fetchone()[0] or 0
+                total_tasks = cx.execute("SELECT COUNT(*) FROM task_detail").fetchone()[0] or 0
+                categories = cx.execute(
+                    "SELECT COUNT(DISTINCT category) FROM match_log"
+                ).fetchone()[0] or 0
+                models = cx.execute(
+                    "SELECT COUNT(DISTINCT model) FROM ratings"
+                ).fetchone()[0] or 0
+                most_active = cx.execute("""
+                    SELECT model FROM ratings ORDER BY matches DESC LIMIT 1
+                """).fetchone()
+                last_match = cx.execute(
+                    "SELECT MAX(ts) FROM match_log"
+                ).fetchone()[0]
+            return {
+                "total_matches": total,
+                "total_tasks_evaluated": total_tasks,
+                "categories_covered": categories,
+                "models_ranked": models,
+                "most_active_model": most_active[0] if most_active else None,
+                "last_match_ts": last_match,
+            }
+        except Exception as e:
+            log.error(f"Error fetching arena stats: {e}")
+            return {}
 
     def save_benchmark(
         self, model: str, score: float,
