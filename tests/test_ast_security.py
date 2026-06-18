@@ -60,11 +60,11 @@ def test_allows_safe_reflection():
 def test_blocks_dunder_reflection():
     ok, reason = is_safe_python("getattr(x, '__class__')")
     assert not ok
-    assert "Dunder string access" in reason
+    assert "Dunder getattr" in reason
     
     ok, reason = is_safe_python("setattr(x, '__dict__', {})")
     assert not ok
-    assert "Dunder string access" in reason
+    assert "Dunder setattr" in reason
 
 
 # ── dangerous module imports ─────────────────────────────────────────────────

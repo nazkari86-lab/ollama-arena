@@ -62,6 +62,50 @@ Optional extras:
 
 The HuggingFace and fine-tune extras pull large dependencies and are off by default.
 
+## Quick Start Guide
+
+### For Different Use Cases
+
+**Quick Model Comparison:**
+```bash
+ollama-arena benchmark llama3.2:3b,qwen2.5-coder:7b --compare
+```
+
+**Detailed Head-to-Head Analysis:**
+```bash
+ollama-arena match --models llama3.2:3b,qwen2.5-coder:7b --category coding -n 10 --verbose
+```
+
+**Multi-Model Tournament:**
+```bash
+ollama-arena tournament --models llama3.2:3b,qwen2.5-coder:7b,mistral:7b --category reasoning -n 5
+```
+
+**Using Custom Datasets:**
+```bash
+ollama-arena datasets --pull humaneval,gsm8k
+ollama-arena match --dataset humaneval --models A,B -n 50
+```
+
+### Troubleshooting Common Issues
+
+**Connection Issues:**
+- Ensure Ollama is running: `ollama serve`
+- Check default URL: `http://localhost:11434`
+- Use custom URL: `ollama-arena --backend http://your-server:port match ...`
+
+**Memory Issues:**
+- Use memory scheduler: `ollama-arena match --memory-mode hot_swap ...`
+- Limit concurrent models: `ollama-arena match --max-concurrent 1 ...`
+
+**Docker Sandbox Issues:**
+- Check Docker is running: `docker ps`
+- Fall back to WASM: `pip install 'ollama-arena[wasm]'`
+
+**Import Errors:**
+- Ensure Python 3.9+: `python --version`
+- Reinstall package: `pip install --force-reinstall ollama-arena`
+
 ## Quick start
 
 ```

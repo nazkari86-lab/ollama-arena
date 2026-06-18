@@ -30,6 +30,7 @@ reflection). For an evaluation arena that's an acceptable trade-off.
 """
 from __future__ import annotations
 import ast
+import re
 from dataclasses import dataclass
 
 # ── Blocklists ───────────────────────────────────────────────────────────────
@@ -52,6 +53,13 @@ DANGEROUS_MODULES: frozenset[str] = frozenset({
     "gc", "inspect", "trace", "traceback", "linecache",
     # SSH / shell
     "paramiko", "fabric", "pexpect",
+    # Additional dangerous modules
+    "platform", "uuid", "hashlib", "secrets", "tokenize",
+    "dis", "parser", "symbol", "keyword",
+    # Database / file system
+    "sqlite3", "dbm", "gdbm", "csv",
+    # Time / random (potential for timing attacks)
+    "time", "datetime", "random",
 })
 
 DANGEROUS_FUNCTIONS: frozenset[str] = frozenset({
@@ -64,7 +72,13 @@ DANGEROUS_FUNCTIONS: frozenset[str] = frozenset({
     # debugging / shells
     "breakpoint", "input", "raw_input", "help",
     "quit", "exit",
-    # Note: 'type', 'getattr', 'hasattr', 'setattr', 'delattr' removed to avoid 
+    # Memory / resource exhaustion
+    "memoryview", "bytearray", "bytes", "array",
+    # File operations that could bypass restrictions
+    "file", "Path", "pathlib",
+    # Process manipulation
+    "fork", "spawn", "kill", "send_signal",
+    # Note: 'type', 'getattr', 'hasattr', 'setattr', 'delattr' removed to avoid
     # false positives in common coding tasks. Docker is the primary boundary.
 })
 
@@ -72,7 +86,39 @@ DANGEROUS_FUNCTIONS: frozenset[str] = frozenset({
 # is treated as a sandbox escape vector.
 DUNDER_ALLOWLIST: frozenset[str] = frozenset({
     "__name__", "__main__", "__doc__", "__init__",
+    "__version__", "__author__", "__license__",
 })
+
+
+# Suspicious patterns that may indicate escape attempts
+SUSPICIOUS_PATTERNS: list[tuple[str, str]] = [
+    (r"__import__\s*\(", "Dynamic __import__ call"),
+    (r"exec\s*\(", "Direct exec call"),
+    (r"eval\s*\(", "Direct eval call"),
+    (r"compile\s*\(", "Direct compile call"),
+    (r"\.\s*__class__\s*\.", "Class traversal"),
+    (r"\.\s*__bases__\s*\[", "Base class access"),
+    (r"\.\s*__mro__\s*\[", "MRO access"),
+    (r"\.\s*__subclasses__\s*\(", "Subclasses access"),
+    (r"\.\s*__globals__\s*\[", "Globals access"),
+    (r"\.\s*__builtins__\s*\[", "Builtins access"),
+    (r"getattr\s*\([^,]+,\s*['\"]\s*__", "Dunder getattr"),
+    (r"setattr\s*\([^,]+,\s*['\"]\s*__", "Dunder setattr"),
+    (r"\.\s*__getattribute__\s*\(", "Getattribute override"),
+    (r"\.\s*__setattr__\s*\(", "Setattr override"),
+    (r"open\s*\(['\"]", "File open attempt"),
+    (r"__import__\s*\(\s*['\"]", "Import attempt"),
+]
+
+
+def check_suspicious_patterns(code: str) -> tuple[bool, str]:
+    """Quick pre-check for obvious escape attempt patterns before AST parsing.
+    Returns (is_safe, reason)."""
+    code_lower = code.lower()
+    for pattern, reason in SUSPICIOUS_PATTERNS:
+        if re.search(pattern, code_lower):
+            return False, f"Suspicious pattern detected: {reason}"
+    return True, ""
 
 
 @dataclass
@@ -208,6 +254,11 @@ def is_safe_python(code: str, max_bytes: int = 256_000) -> tuple[bool, str]:
     surface it back to the user so they can fix it (e.g. "Dunder
     attribute blocked: .__class__").
     """
+    # Quick pattern check before AST parsing
+    pattern_safe, pattern_reason = check_suspicious_patterns(code)
+    if not pattern_safe:
+        return False, pattern_reason
+
     if len(code.encode("utf-8", "ignore")) > max_bytes:
         return False, f"Code exceeds {max_bytes} bytes"
 

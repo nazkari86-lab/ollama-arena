@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import sys
 import textwrap
+import time
+from contextlib import contextmanager
 
 
 def _console():
@@ -41,6 +43,100 @@ def _wrap(text: str, width: int = 90) -> str:
 def _trunc(text: str, n: int = 120) -> str:
     text = text.strip()
     return text[:n] + "…" if len(text) > n else text
+
+
+# ── Progress Bars and Spinners ───────────────────────────────────────────────
+
+@contextmanager
+def progress_bar(description: str, total: int = None):
+    """Context manager for progress bar using rich.Progress."""
+    try:
+        from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, SpinnerColumn
+
+        console = _console()
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(description, total=total)
+            yield progress, task
+    except ImportError:
+        # Fallback to simple console output
+        print(f"{description}...")
+        yield None, None
+
+
+@contextmanager
+def spinner(text: str):
+    """Context manager for spinner animation using rich.live."""
+    try:
+        from rich.live import Live
+        from rich.spinner import Spinner
+
+        console = _console()
+        spin = Spinner("dots", text=text)
+        with Live(spin, console=console, refresh_per_second=10):
+            yield
+    except ImportError:
+        # Fallback to simple console output
+        print(f"{text}...")
+        yield
+
+
+def print_success(message: str):
+    """Print success message with green checkmark."""
+    console = _console()
+    console.print(f"[green]✓[/green] {message}")
+
+
+def print_error(message: str):
+    """Print error message with red cross."""
+    console = _console()
+    console.print(f"[red]✗[/red] {message}")
+
+
+def print_warning(message: str):
+    """Print warning message with yellow warning sign."""
+    console = _console()
+    console.print(f"[yellow]⚠[/yellow] {message}")
+
+
+def print_info(message: str):
+    """Print info message with blue info sign."""
+    console = _console()
+    console.print(f"[blue]ℹ[/blue] {message}")
+
+
+def print_step(step: int, total: int, message: str):
+    """Print step indicator with progress."""
+    console = _console()
+    console.print(f"[dim]Step {step}/{total}:[/dim] {message}")
+
+
+# ── Interactive Prompts ───────────────────────────────────────────────────────
+
+def confirm(prompt: str, default: bool = False) -> bool:
+    """Ask user for confirmation with y/n prompt."""
+    try:
+        from rich.prompt import Confirm
+
+        console = _console()
+        return Confirm.ask(prompt, default=default)
+    except ImportError:
+        # Fallback to simple input
+        suffix = " [Y/n]" if default else " [y/N]"
+        while True:
+            response = input(f"{prompt}{suffix}: ").strip().lower()
+            if not response:
+                return default
+            if response in ("y", "yes"):
+                return True
+            elif response in ("n", "no"):
+                return False
 
 
 # ── list ─────────────────────────────────────────────────────────────────────
