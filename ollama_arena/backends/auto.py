@@ -55,9 +55,21 @@ def spec_backend_for_model(model: str) -> Backend | None:
 
 
 def auto_backend(url: str | None = None, api_key: str | None = None) -> Backend:
-    """Return an Ollama or OpenAI-compat backend based on `url`."""
+    """Return an appropriate backend based on `url` or backend name.
+
+    Recognizes:
+      - None / "ollama" / Ollama URL        → OllamaBackend
+      - "anthropic" / api.anthropic.com     → AnthropicBackend (native protocol)
+      - any OpenAI-compat preset name        → OpenAICompatBackend
+      - other URL                            → OpenAICompatBackend
+    """
     if not url:
         return OllamaBackend()
+
+    # Native Anthropic backend — the compat shim breaks on streaming
+    if url in ("anthropic", "claude") or "api.anthropic.com" in (url or ""):
+        from .anthropic import AnthropicBackend
+        return AnthropicBackend(api_key=api_key)
 
     if url in OpenAICompatBackend.PRESETS:
         return OpenAICompatBackend(base_url=url, api_key=api_key)

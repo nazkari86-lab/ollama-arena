@@ -219,11 +219,17 @@ def leaderboard_table_html(board: list[dict]) -> str:
             f"<span style='color:{tcolor};font-weight:700' title='Last-5 ELO Δ: {delta:+.1f}'>"
             f"{icon} {abs(delta):.0f}</span>"
         )
+        ci = e.get("elo_ci", "")
+        ci_cell = (
+            f"<span style='color:#8b949e;font-size:0.85em' title='95% confidence interval'>"
+            f"±{ci:.0f}</span>"
+        ) if ci else ""
         rows.append(
             f"<tr>"
             f"<td style='font-weight:700;padding:8px 10px'>{e['rank']}</td>"
             f"<td style='padding:8px 10px'><strong>{e['model']}</strong></td>"
-            f"<td style='color:#58a6ff;font-weight:700;padding:8px 10px'>{e['elo']:.0f}</td>"
+            f"<td style='color:#58a6ff;font-weight:700;padding:8px 10px'>"
+            f"{e['elo']:.0f} {ci_cell}</td>"
             f"<td style='padding:8px 10px'>{trend_cell}</td>"
             f"<td style='color:#3fb950;padding:8px 10px'>{e['wins']}</td>"
             f"<td style='color:#f85149;padding:8px 10px'>{e['losses']}</td>"
@@ -237,7 +243,7 @@ def leaderboard_table_html(board: list[dict]) -> str:
         "<thead><tr style='border-bottom:1px solid #30363d'>"
         "<th style='text-align:left;padding:10px'>Rank</th>"
         "<th style='text-align:left;padding:10px'>Model</th>"
-        "<th style='padding:10px'>ELO</th>"
+        "<th style='padding:10px'>ELO ±σ</th>"
         "<th style='padding:10px'>Trend</th>"
         "<th style='padding:10px'>W</th>"
         "<th style='padding:10px'>L</th>"

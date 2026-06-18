@@ -98,6 +98,18 @@ class SqliteRatingsRepository:
         except Exception:
             return {}
 
+    @staticmethod
+    def _elo_confidence(n_games: int) -> float:
+        """±σ confidence interval that shrinks as match count grows.
+
+        At n=0: ±200 (prior uncertainty matches the 1200 starting point
+        being ±1 standard deviation of the FIDE provisional range).
+        Converges toward ±15 for veteran models (>300 games).
+        Formula: σ = 200 / sqrt(1 + n/5)
+        """
+        import math
+        return round(200.0 / math.sqrt(1 + n_games / 5), 1)
+
     def leaderboard(self) -> list[dict]:
         try:
             with read_conn(self.db) as cx:
@@ -111,8 +123,10 @@ class SqliteRatingsRepository:
                 wr = wins / max(matches, 1)
                 delta = trends.get(model, 0.0)
                 trend = "up" if delta > 1.0 else ("down" if delta < -1.0 else "stable")
+                ci = self._elo_confidence(matches)
                 result.append({
                     "rank": i + 1, "model": model, "elo": round(elo, 1),
+                    "elo_ci": ci,
                     "wins": wins, "losses": losses, "draws": draws,
                     "matches": matches, "win_rate": round(wr, 3),
                     "trend": trend, "trend_delta": round(delta, 1),

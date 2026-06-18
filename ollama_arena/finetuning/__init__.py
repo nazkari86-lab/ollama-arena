@@ -32,7 +32,7 @@ from .adversarial_gen import (
     WeaknessTarget,
     generate_harder_tasks,
     calibrate_difficulty,
-}
+)
 from .orchestrator import (
     FinetuningOrchestrator,
     FinetuningJob,

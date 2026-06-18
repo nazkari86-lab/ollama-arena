@@ -253,6 +253,21 @@ def run_web(
         _hist_cache[limit] = {"t": now, "data": data}
         return data
 
+    @app.get("/api/history/search")
+    def api_history_search(q: str = "", limit: int = 50):
+        """Full-text search over match history (model names, category)."""
+        if not q.strip():
+            return arena.match_history(limit=limit)
+        q_lower = q.lower()
+        all_matches = arena.match_history(limit=500)
+        results = [
+            m for m in all_matches
+            if q_lower in m.get("model_a", "").lower()
+            or q_lower in m.get("model_b", "").lower()
+            or q_lower in m.get("category", "").lower()
+        ]
+        return results[:limit]
+
     @app.get("/api/models")
     def api_models():
         models = arena.client.list_models()
