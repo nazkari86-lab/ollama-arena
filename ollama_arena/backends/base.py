@@ -1,7 +1,60 @@
-"""Backend protocol."""
+"""Backend protocol + shared text utilities."""
 from __future__ import annotations
+import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Protocol, Optional
+
+# ── Thinking-token stripping ──────────────────────────────────────────────────
+# Many local models emit reasoning/chain-of-thought blocks in various formats.
+# We strip them all before showing output to users or scoring responses.
+_THINK_PATTERNS = [
+    # DeepSeek-R1, Qwen3, QwQ: <think>...</think>
+    re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE),
+    # Some fine-tunes: <thinking>...</thinking>
+    re.compile(r"<thinking>.*?</thinking>", re.DOTALL | re.IGNORECASE),
+    # Reasoning block: <reasoning>...</reasoning>
+    re.compile(r"<reasoning>.*?</reasoning>", re.DOTALL | re.IGNORECASE),
+    # Custom channel-style: <|channel>thought\n<channel|>...
+    # Captures everything from the channel marker until either the next
+    # <|channel>answer marker (exclusive) or end of string, then removes
+    # the answer marker too so only the final text remains.
+    re.compile(r"<\|channel>thought.*?<channel\|>.*?(?=<\|channel>answer|$)", re.DOTALL | re.IGNORECASE),
+    re.compile(r"<\|channel>answer\s*\n?<channel\|>", re.DOTALL | re.IGNORECASE),
+    # Generic <|channel>NAME\n<channel|> delimiters (removes any channel header)
+    re.compile(r"<\|channel>[^\n]*\n<channel\|>", re.IGNORECASE),
+    # Llama-style [INST] that sometimes leaks: strip only the tag, not the content
+    re.compile(r"\[/?INST\]", re.IGNORECASE),
+]
+
+
+def strip_thinking(text: str) -> str:
+    """Remove all thinking/reasoning blocks from model output."""
+    for pat in _THINK_PATTERNS:
+        text = pat.sub("", text)
+    return text.strip()
+
+
+# ── Date-aware system prompt ──────────────────────────────────────────────────
+_DATE_SYSTEM = (
+    "You are a helpful, accurate assistant.\n"
+    "IMPORTANT: Today's date is {date}.\n"
+    "When asked about the current date, time, or recent events, use {date} as the reference.\n"
+    "Your training data has a knowledge cutoff in the past — clearly state this when relevant, "
+    "but never substitute your cutoff date for today's actual date."
+)
+
+
+def system_message_with_date() -> dict:
+    today = date.today().isoformat()
+    return {"role": "system", "content": _DATE_SYSTEM.format(date=today)}
+
+
+def inject_system(messages: list[dict]) -> list[dict]:
+    """Prepend date-aware system message unless the caller already supplied one."""
+    if messages and messages[0].get("role") == "system":
+        return messages
+    return [system_message_with_date()] + list(messages)
 
 
 @dataclass

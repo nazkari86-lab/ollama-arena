@@ -8,10 +8,9 @@ import json, logging, os, re, subprocess, time
 from pathlib import Path
 import requests
 
-from .base import GenResult
+from .base import GenResult, strip_thinking, inject_system
 
 log = logging.getLogger("arena.backend.spec")
-_THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 HOME = Path.home()
 
@@ -71,7 +70,7 @@ class SpeculativeBackend:
         return self.cfg["main"]
 
     def generate(self, model: str, prompt: str, **opts) -> GenResult:
-        messages = [{"role": "user", "content": prompt}]
+        messages = inject_system([{"role": "user", "content": prompt}])
         return self.generate_with_tools(model, messages, tools=[], **opts)
 
     def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
@@ -80,7 +79,7 @@ class SpeculativeBackend:
         max_tokens = opts.get("num_predict", opts.get("max_tokens", 2048))
         body = {
             "model":          server_model,
-            "messages":       messages,
+            "messages":       inject_system(messages),
             "temperature":    opts.get("temperature", 0.0),
             "max_tokens":     max_tokens,
             "stream":         True,
@@ -149,7 +148,7 @@ class SpeculativeBackend:
             if tool_calls:
                 text = json.dumps(tool_calls)
 
-            text = _THINK.sub("", text).strip()
+            text = strip_thinking(text)
 
             # TPS from timings (llama-server provides predicted_ms)
             if timings.get("predicted_ms") and tokens_out:

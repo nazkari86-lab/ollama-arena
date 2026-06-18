@@ -8,10 +8,9 @@ from __future__ import annotations
 import json, logging, os, re, time
 import requests
 
-from .base import GenResult, ChatTurnResult
+from .base import GenResult, ChatTurnResult, strip_thinking, inject_system
 
 log = logging.getLogger("arena.backend.openai")
-_THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
 class OpenAICompatBackend:
@@ -87,7 +86,7 @@ class OpenAICompatBackend:
         }
 
     def generate(self, model: str, prompt: str, **opts) -> GenResult:
-        messages = [{"role": "user", "content": prompt}]
+        messages = inject_system([{"role": "user", "content": prompt}])
         return self.generate_with_tools(model, messages, tools=[], **opts)
 
     def chat_turn(
@@ -96,7 +95,7 @@ class OpenAICompatBackend:
         """One chat completion turn; returns content and/or tool_calls separately."""
         body = {
             "model":       model,
-            "messages":    messages,
+            "messages":    inject_system(messages),
             "temperature": opts.get("temperature", 0.0),
             "max_tokens":  opts.get("num_predict", opts.get("max_tokens", 1024)),
             "stream":      True,
@@ -167,7 +166,7 @@ class OpenAICompatBackend:
                 text += piece
 
             latency = time.time() - t0
-            text = _THINK.sub("", text).strip()
+            text = strip_thinking(text)
             return ChatTurnResult(
                 text=text,
                 tool_calls=tool_calls,
