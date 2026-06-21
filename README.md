@@ -1,11 +1,11 @@
 # ollama-arena
 
-**"Which of my local models is actually better?"** — ollama-arena v3.0.0 now answers that through **agentic evaluation**, **continuous self-improvement**, and **global P2P testing**. 
+**"Which of my local models is actually better — and which one should I actually run?"** — ollama-arena v3.1.0 answers both questions: through **agentic evaluation**, **continuous self-improvement**, and **global P2P testing**, and now through a **hardware-aware model picker** that scores every model installed locally against your actual machine.
 
 The arena has evolved from simple model comparison to a continuous AI evolution factory where models compete, learn from their defeats, automatically fine-tune, and optimize their resource consumption.
 
 ```
-pip install ollama-arena==3.0.0
+pip install ollama-arena==3.1.0
 ollama-arena benchmark llama3.2:3b,qwen2.5-coder:7b --compare
 ```
 
@@ -15,7 +15,9 @@ ollama-arena benchmark llama3.2:3b,qwen2.5-coder:7b --compare
   Winner: qwen2.5-coder:7b  (margin: 16.9 pts)
 ```
 
-**NEW in v3.0.0**: Long-horizon agentic tasks, auto-finetuning, P2P global grid, hardware telemetry, and 3D visualization.
+**NEW in v3.1.0**: Hardware Fit Scanner with auto-selected best-fit models, Genome Explorer as a dashboard tab, and a fix for every dashboard action button having been silently CSP-blocked.
+
+**In v3.0.0**: Long-horizon agentic tasks, auto-finetuning, P2P global grid, hardware telemetry, and 3D visualization.
 
 ```bash
 # Long-horizon agentic evaluation
@@ -36,6 +38,38 @@ ollama-arena telemetry energy --model llama3.3:70b
 ![ollama-arena demo](demo.gif)
 
 *Quick demo showing model comparison, genome lineage exploration, and ELO leaderboard*
+
+## What's New in v3.1.0
+
+This release adds a hardware-aware model picker to the web dashboard and
+fixes a critical regression where every dashboard action button had been
+silently blocked since the 2.5.0 CSP hardening.
+
+- **Hardware Fit Scanner** — a new dashboard card scans your machine's RAM
+  and CPU, then scores every locally installed model on a 0-100% fit scale
+  using the same memory-pressure thresholds the match scheduler already
+  relies on. Each model also gets a tokens/sec estimate: measured directly
+  from your own past arena runs where available, otherwise scaled from your
+  fastest measured model — and reported as "unknown" rather than a
+  fabricated number when neither is available. Embedding-only models
+  (`nomic-embed-text`, `bge-m3`, etc.) are excluded since they can't run a
+  generation match. The two best-fitting models are auto-selected as the
+  default Arena Match pair, replacing the previous arbitrary alphabetical
+  default. New endpoint: `GET /api/hardware/scan`.
+- **Genome Explorer is now a dashboard tab**, not a separate page — the
+  lineage graph lives at the "🧬 Genome" tab alongside every other view.
+  The old `/genome` URL still works; it redirects straight to the tab.
+- **Critical fix: dashboard action buttons were silently dead.** CSP
+  nonces only ever cover `<script>` elements, never inline
+  `onclick="..."` attributes — so the 2.5.0 CSP hardening had been
+  blocking every Engage Combat / Tournament / Royale / Spec-Decode / vote
+  button in the browser, with no visible error unless the console
+  happened to be open at the moment of the click. All 28 affected sites
+  are now wired through `addEventListener` instead.
+- A module-by-module quality and test-coverage pass across ELO, Agentic
+  Evaluation, Model Caps, LLM Judge, Webhooks, and Long-horizon Tasks.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list.
 
 ## What's New in v3.0.0 "Apex Evolution"
 
@@ -350,6 +384,12 @@ The genome system tracks:
 - Lineage relationships (fine-tuned_from, distilled_from, merged_from, etc.)
 - Confidence scoring for inferred relationships
 
+In the web dashboard, this lives under the **🧬 Genome** tab (the old
+`/genome` page now redirects there). The same tab also hosts the
+**Hardware Fit Scanner**, which scores every installed model by how well
+it fits your RAM (0-100%) and estimates its tokens/sec, then pre-selects
+the two best-fitting models for your next Arena Match.
+
 ## CI / GitHub Actions
 
 Use ollama-arena as a quality gate in CI. Add to `.github/workflows/`:
@@ -485,7 +525,7 @@ CUDA is required for the Unsloth step.
 
 ## Community
 
-- **GitHub**: https://github.com/your-org/ollama-arena
+- **GitHub**: https://github.com/nazkari86-lab/ollama-arena
 - **Discussions**: Use GitHub Discussions for questions and ideas
 - **Issues**: Bug reports and feature requests via GitHub Issues
 - **Show HN**: Share your benchmarks and model comparisons on Hacker News

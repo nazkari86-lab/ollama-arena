@@ -1,5 +1,59 @@
 # Changelog
 
+## [3.1.0] - 2026-06-21
+### Added
+- **Hardware Fit Scanner:** New dashboard card that scans the local machine's
+  RAM/CPU and scores every installed Ollama model on a 0-100% "fit" scale,
+  derived from the same memory-pressure thresholds the scheduler already
+  uses for live matches (not a separate guessing heuristic)
+  - Tokens/sec estimate per model — measured directly from prior arena
+    matches when available, otherwise scaled from the user's fastest
+    measured model on the same hardware; reports "unknown" rather than a
+    fabricated number when no data exists yet
+  - Embedding-only architectures (`bert`, `nomic-bert` families) are
+    excluded from the ranking, since they can't run a generation match
+  - The two best-fitting models are auto-selected as the Arena Match
+    default pair on dashboard load, replacing the previous naive
+    first-two-alphabetically default
+  - New endpoint: `GET /api/hardware/scan`
+- **Genome Explorer promoted to a dashboard tab:** the lineage graph no
+  longer lives on a separate `/genome` page — it's now the "🧬 Genome" tab
+  inside the main dashboard, consistent with every other feature. The old
+  `/genome` URL now redirects straight to the new tab so existing bookmarks
+  keep working.
+
+### Fixed
+- **Critical: every dashboard action button was silently dead.** The CSP
+  hardening added in 2.5.0 correctly removed `unsafe-inline` from
+  `script-src`, but inline `onclick="..."` attributes were never covered by
+  that nonce scheme (CSP nonces/hashes only ever apply to `<script>`
+  elements, never to inline event-handler attributes) — so every Engage
+  Combat / Tournament / Royale / Spec-Decode / vote / export button in the
+  UI was blocked by the browser with no visible error unless the console
+  was open at the exact moment of the click. All 28 sites across the
+  dashboard, the (now-redirected) genome page, and the spec-decode and
+  match-history views were converted from inline `onclick` to
+  `addEventListener`-based wiring.
+  - Added `Cache-Control: no-cache` plus a per-process cache-busting query
+    string on every local script/style tag, so a fix to a static asset is
+    never masked by stale browser caching during verification.
+  - Added `https://unpkg.com` to `style-src` (Plotly's `maplibre-gl`
+    dependency loads a stylesheet from there).
+- Reconciled a version-string mismatch where `pyproject.toml` reported
+  3.0.0 while the running application's `/api/version` endpoint reported
+  1.1.0 — both now read 3.1.0.
+- `model_caps` detection now runs in parallel instead of issuing one HTTP
+  call per installed model in a serial loop.
+- `duration_s` now propagates correctly from a completed match into its
+  stored result record.
+
+### Quality
+- Full module-by-module quality pass across ELO/Arena Engine, Agentic
+  Evaluation, Model Caps, LLM Judge, Webhooks, and Long-horizon Tasks
+  (extending the audit already completed for P2P Grid, RAG, Finetuning,
+  Genome, Web API, CLI, Telemetry, Backends, MCP Bridge, Visualize, and
+  Storage). Test suite grown from 611 to 2,418 passing tests, 0 failures.
+
 ## [3.0.0] - 2026-06-18
 ### Added
 - **Deep Agentic Evaluation:** From single prompts to complex, multi-hour engineering tasks

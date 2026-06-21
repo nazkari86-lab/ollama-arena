@@ -1,5 +1,5 @@
 """Pair-wise evaluation arena for local LLMs."""
-__version__ = "1.1.0"
+__version__ = "3.1.0"
 
 from .arena import Arena, MatchResult
 from .backends import Backend, OllamaBackend, OpenAICompatBackend, GenResult
