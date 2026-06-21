@@ -65,7 +65,9 @@ class GenomeStore:
                 VALUES (?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, family=excluded.family,
-                    org=excluded.org, architecture=excluded.architecture,
+                    org=excluded.org, license=excluded.license,
+                    source_url=excluded.source_url,
+                    architecture=excluded.architecture,
                     lineage=excluded.lineage, updated_at=excluded.updated_at
             """, (data["id"], data.get("name", ""), data.get("family", ""),
                   data.get("org", ""), data.get("license", ""),

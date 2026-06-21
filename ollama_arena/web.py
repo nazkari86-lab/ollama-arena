@@ -14,7 +14,7 @@ try:
         FastAPI, BackgroundTasks, HTTPException, Request,
         WebSocket, WebSocketDisconnect,
     )
-    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, RedirectResponse
     from fastapi.staticfiles import StaticFiles
     from fastapi.middleware.cors import CORSMiddleware
     from starlette.middleware.base import BaseHTTPMiddleware
@@ -23,7 +23,7 @@ except ImportError:
     # — run_web() will raise the same friendly error when actually called.
     FastAPI = BackgroundTasks = HTTPException = Request = None       # type: ignore
     WebSocket = WebSocketDisconnect = None                            # type: ignore
-    HTMLResponse = JSONResponse = StreamingResponse = None            # type: ignore
+    HTMLResponse = JSONResponse = StreamingResponse = RedirectResponse = None  # type: ignore
     CORSMiddleware = BaseHTTPMiddleware = None                        # type: ignore
 
 log = logging.getLogger("arena.web")
@@ -100,6 +100,17 @@ def run_web(
         _cleanup_jobs()
         return str(uuid.uuid4())
 
+    def _body_num(body: dict, key: str, default, cast=int):
+        """Pull a numeric field out of a request body, raising a clean 400
+        instead of letting int()/float() throw an unhandled ValueError that
+        FastAPI would otherwise turn into a raw 500 on plausible bad input
+        (e.g. a client sending {"n": "abc"})."""
+        val = body.get(key, default)
+        try:
+            return cast(val)
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"{key!r} must be a {cast.__name__}, got {val!r}")
+
     class ConnectionManager:
         def __init__(self) -> None:
             self.active_connections: list[WebSocket] = []
@@ -169,8 +180,15 @@ def run_web(
                 f"script-src 'self' 'nonce-{nonce}' "
                 "  https://cdn.plot.ly https://cdnjs.cloudflare.com "
                 "  https://cdn.jsdelivr.net; "
-                f"style-src 'self' 'nonce-{nonce}' "
-                "  https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+                # No nonce here: dynamically-loaded chart/leaderboard HTML
+                # fragments (injected via innerHTML in match.js) carry inline
+                # style="..." attributes that the server already HTML-escapes
+                # for the values they embed, so 'unsafe-inline' is an
+                # acceptable tradeoff for style-src specifically — script-src
+                # above keeps the strict nonce requirement.
+                "style-src 'self' 'unsafe-inline' "
+                "  https://cdnjs.cloudflare.com https://fonts.googleapis.com "
+                "  https://unpkg.com; "
                 "font-src 'self' https://fonts.gstatic.com data:; "
                 "img-src 'self' data: blob: https:; "
                 "connect-src 'self' ws: wss:; "
@@ -187,6 +205,13 @@ def run_web(
                 "microphone=(), payment=(), usb=()"
             )
             response.headers["X-XSS-Protection"]       = "0"
+            if request.url.path.startswith("/static/"):
+                # FastAPI's StaticFiles sends no Cache-Control by default, so
+                # browsers fall back to heuristic caching and can keep serving
+                # a stale script/style indefinitely after a deploy. Force
+                # revalidation on every load (the ETag/Last-Modified pair
+                # StaticFiles already sets makes that revalidation cheap).
+                response.headers["Cache-Control"] = "no-cache"
             return response
     app.add_middleware(SecurityHeadersMiddleware)
 
@@ -195,6 +220,12 @@ def run_web(
         from fastapi.staticfiles import StaticFiles
         app.mount("/static", StaticFiles(directory=str(STATIC_ROOT)), name="static")
 
+    # Cache-busting query param for local static assets, set once per process
+    # start: without it, browsers that already cached an old script/style can
+    # keep serving it indefinitely after a deploy (no-cache still costs a
+    # revalidation round-trip per load; this avoids that entirely on top of it).
+    ASSET_VERSION = uuid.uuid4().hex[:8]
+
     from jinja2 import Environment, FileSystemLoader, select_autoescape
     jinja = Environment(
         loader=FileSystemLoader(str(HERE)),
@@ -202,9 +233,9 @@ def run_web(
     )
 
     @app.get("/", response_class=HTMLResponse)
-    def index():
+    def index(request: Request):
         tmpl = jinja.get_template("index.html")
-        return HTMLResponse(tmpl.render())
+        return HTMLResponse(tmpl.render(csp_nonce=request.state.csp_nonce, asset_version=ASSET_VERSION))
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
@@ -353,15 +384,17 @@ def run_web(
                          "(vision, tools, ctx_length) where available.")
     def api_models():
         models = arena.client.list_models()
-        # Enrich with capabilities (non-blocking — returns cached data if available)
+        # Enrich with capabilities. A cache miss makes one HTTP call per
+        # model (up to ~10s each) — detect_all() runs those in parallel
+        # threads instead of the previous serial loop, which could stall
+        # this endpoint for 10s x N models on a cold cache.
         try:
-            from .model_caps import get as get_caps
-            for m in models:
-                name = m if isinstance(m, str) else m.get("name", "")
-                if name:
-                    caps = get_caps(name, ollama_url)
-                    if isinstance(m, dict):
-                        m["caps"] = caps
+            from .model_caps import detect_all
+            names = [m if isinstance(m, str) else m.get("name", "") for m in models]
+            caps_by_name = detect_all([n for n in names if n], ollama_url)
+            for m, name in zip(models, names):
+                if name and isinstance(m, dict):
+                    m["caps"] = caps_by_name.get(name, {})
         except Exception:
             pass
         return models
@@ -566,8 +599,8 @@ def run_web(
         Lets the UI render a badge ("⚡ CONCURRENT", "↔️ HOT SWAP",
         "🔁 PIPELINE", "⛔ INSUFFICIENT") before the user hits Engage Combat.
         """
-        ma = body.get("model_a", "").strip()
-        mb = body.get("model_b", "").strip()
+        ma = str(body.get("model_a") or "").strip()
+        mb = str(body.get("model_b") or "").strip()
         if not ma or not mb:
             raise HTTPException(400, "model_a and model_b required")
         d = arena.scheduler.choose(ma, mb)
@@ -583,8 +616,8 @@ def run_web(
     @limiter.limit(_RL_MATCH)
     def api_run_match(request: Request, body: dict, tasks: BackgroundTasks):
         ma = body.get("model_a", ""); mb = body.get("model_b", "")
-        cat = body.get("category", "coding"); n = int(body.get("n", 5))
-        concurrency = int(body.get("concurrency", 1))
+        cat = body.get("category", "coding"); n = _body_num(body, "n", 5)
+        concurrency = _body_num(body, "concurrency", 1)
         if not ma or not mb:
             raise HTTPException(400, "model_a and model_b required")
         jid = _new_job_id()
@@ -654,10 +687,10 @@ def run_web(
     def api_run_tournament(request: Request, body: dict, tasks: BackgroundTasks):
         models = body.get("models", [])
         cat = body.get("category", "coding")
-        n = int(body.get("n", 3))
-        concurrency = int(body.get("concurrency", 1))
+        n = _body_num(body, "n", 3)
+        concurrency = _body_num(body, "concurrency", 1)
 
-        if len(models) < 2:
+        if not isinstance(models, list) or len(models) < 2:
             raise HTTPException(400, "At least 2 models required for a tournament")
 
         jid = _new_job_id()
@@ -736,8 +769,8 @@ def run_web(
     def api_run_royale(request: Request, body: dict, tasks: BackgroundTasks):
         models = body.get("models", [])
         cat = body.get("category", "coding")
-        n = int(body.get("n", 5))
-        if len(models) < 3:
+        n = _body_num(body, "n", 5)
+        if not isinstance(models, list) or len(models) < 3:
             raise HTTPException(400, "Battle Royale requires at least 3 models")
 
         jid = _new_job_id()
@@ -870,10 +903,10 @@ def run_web(
         prompt = body.get("prompt", "")
         response_x = body.get("response_x", "")
         response_y = body.get("response_y", "")
-        tps_x = float(body.get("tps_x", 0.0))
-        tps_y = float(body.get("tps_y", 0.0))
-        latency_x = float(body.get("latency_x", 0.0))
-        latency_y = float(body.get("latency_y", 0.0))
+        tps_x = _body_num(body, "tps_x", 0.0, cast=float)
+        tps_y = _body_num(body, "tps_y", 0.0, cast=float)
+        latency_x = _body_num(body, "latency_x", 0.0, cast=float)
+        latency_y = _body_num(body, "latency_y", 0.0, cast=float)
         agent_trace_x = body.get("agent_trace_x")
         agent_trace_y = body.get("agent_trace_y")
 
@@ -944,8 +977,18 @@ def run_web(
 
     # ── Speculative Decoding API ──────────────────────────────────────────────
     from .backends.spec import SpecManager, SPEC_SERVERS, SpeculativeBackend
+    import threading
 
     _spec_manager = SpecManager()
+    # Guards against overlapping start_all sweeps (each one launches up to
+    # len(SPEC_SERVERS) real GPU-loaded llama-server subprocesses, sequentially,
+    # waiting up to 30s per server). Without this, a second call landing while
+    # the first sweep is still mid-flight — including via the no-op limiter
+    # path when slowapi isn't installed — could pile on a second full set of
+    # launches concurrently with the first, racing on the same SpecManager
+    # state and multiplying resource usage with no cap.
+    _spec_start_all_lock = threading.Lock()
+    _spec_start_all_running = {"value": False}
 
     @app.get("/api/spec/servers")
     def api_spec_servers():
@@ -954,6 +997,8 @@ def run_web(
 
     @app.post("/api/spec/start/{name}")
     def api_spec_start(name: str):
+        if name not in SPEC_SERVERS:
+            raise HTTPException(404, f"Unknown spec model: {name}. Available: {list(SPEC_SERVERS)}")
         result = _spec_manager.start(name)
         if not result.get("ok"):
             raise HTTPException(500, result.get("error", "Failed to start"))
@@ -961,6 +1006,8 @@ def run_web(
 
     @app.post("/api/spec/stop/{name}")
     def api_spec_stop(name: str):
+        if name not in SPEC_SERVERS:
+            raise HTTPException(404, f"Unknown spec model: {name}. Available: {list(SPEC_SERVERS)}")
         return _spec_manager.stop(name)
 
     @app.post("/api/spec/stop_all")
@@ -970,13 +1017,31 @@ def run_web(
     @app.post("/api/spec/start_all")
     @limiter.limit("1/minute")
     def api_spec_start_all(request: Request, tasks: BackgroundTasks):
-        """Start all spec servers (sequentially, in background)."""
+        """Start all spec servers (sequentially, in background).
+
+        Guarded against overlap: if a previous sweep is still running (it can
+        take minutes — up to 30s per server, sequentially), reject the new
+        request instead of launching a second concurrent sweep.
+        """
+        with _spec_start_all_lock:
+            if _spec_start_all_running["value"]:
+                raise HTTPException(
+                    409,
+                    "A start_all sweep is already in progress. "
+                    "Wait for it to finish or check /api/spec/servers for current status.",
+                )
+            _spec_start_all_running["value"] = True
+
         def _do():
-            for name in SPEC_SERVERS:
-                try:
-                    _spec_manager.start(name)
-                except Exception as e:
-                    log.error(f"[spec] start_all: {name} failed: {e}")
+            try:
+                for name in SPEC_SERVERS:
+                    try:
+                        _spec_manager.start(name)
+                    except Exception as e:
+                        log.error(f"[spec] start_all: {name} failed: {e}")
+            finally:
+                with _spec_start_all_lock:
+                    _spec_start_all_running["value"] = False
         tasks.add_task(_do)
         return {"started": True, "count": len(SPEC_SERVERS)}
 
@@ -986,7 +1051,7 @@ def run_web(
         """Benchmark every running spec server in parallel and return TPS/accept-rate stats."""
         from concurrent.futures import ThreadPoolExecutor, as_completed
         prompt = body.get("prompt", "Write a Python function that returns the nth Fibonacci number.")
-        max_tokens = int(body.get("max_tokens", 512))
+        max_tokens = _body_num(body, "max_tokens", 512)
         running = [s for s in _spec_manager.status() if s["running"]]
         if not running:
             return {"results": [], "message": "No spec servers running."}
@@ -1020,7 +1085,7 @@ def run_web(
         """Benchmark a spec model vs its Ollama base model on the same prompt."""
         name = body.get("model", "")
         prompt = body.get("prompt", "Write a Python function that returns the nth Fibonacci number.")
-        max_tokens = int(body.get("max_tokens", 512))
+        max_tokens = _body_num(body, "max_tokens", 512)
         if name not in SPEC_SERVERS:
             raise HTTPException(404, f"Unknown spec model: {name}")
         cfg = SPEC_SERVERS[name]
@@ -1052,7 +1117,7 @@ def run_web(
         import json as _json
         name = body.get("model", "")
         prompt = body.get("prompt", "")
-        max_tokens = int(body.get("max_tokens", 1024))
+        max_tokens = _body_num(body, "max_tokens", 1024)
         if name not in SPEC_SERVERS:
             raise HTTPException(404, f"Unknown spec model: {name}")
         b = SpeculativeBackend(name)
@@ -1177,12 +1242,28 @@ def run_web(
             "running": False, "current": 0, "total": 0, "model": "", "done": False,
         }
 
-        @app.get("/genome", response_class=HTMLResponse)
-        async def genome_page():
-            tmpl = HERE.parent / "templates" / "genome.html"
-            if tmpl.exists():
-                return HTMLResponse(tmpl.read_text())
-            return HTMLResponse("<h1>genome.html not found</h1>")
+        @app.get("/genome")
+        async def genome_page_redirect():
+            # Genome Explorer is a dashboard tab now, not a standalone page —
+            # redirect old bookmarks/links straight to it instead of serving
+            # a second, differently-styled page.
+            return RedirectResponse(url="/#genome")
+
+        @app.get("/api/hardware/scan", summary="Hardware-aware model fit scan",
+                 description="Scans this machine's RAM and scores every installed "
+                             "model by how well it fits (0-100%), with a tokens/sec "
+                             "estimate (measured if this model has been benchmarked "
+                             "before, otherwise scaled from the fastest measured "
+                             "model on this machine). Also returns the two "
+                             "best-fitting models for default pre-selection.")
+        def api_hardware_scan():
+            from .hardware_fit import hardware_summary, score_models
+            models = score_models(ollama_url, db_path=db_path)
+            return {
+                "hardware": hardware_summary(ollama_url),
+                "models": models,
+                "best_two": [m["model"] for m in models[:2]],
+            }
 
         @app.get("/api/genome/tree")
         async def genome_tree(model: str | None = None):
@@ -1203,12 +1284,20 @@ def run_web(
                 "running": True, "current": 0, "total": 0, "model": "", "done": False,
             })
 
+            # _do_scan (below) runs via BackgroundTasks in a worker thread, which
+            # has no running event loop of its own — asyncio.get_event_loop()
+            # there either raises or returns a non-running loop, so
+            # loop.is_running() is always False and the broadcast silently never
+            # fires (the broad except swallowed the raise, masking the bug).
+            # Capture *this* request's running loop while we're still in async
+            # context, then hand events back to it from the worker thread via
+            # run_coroutine_threadsafe.
+            import asyncio
+            _loop = asyncio.get_running_loop()
+
             def _emit(event: dict):
-                import asyncio
                 try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        asyncio.ensure_future(manager.broadcast(event))
+                    asyncio.run_coroutine_threadsafe(manager.broadcast(event), _loop)
                 except Exception:
                     pass
 

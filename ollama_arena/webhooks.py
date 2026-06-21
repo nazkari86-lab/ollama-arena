@@ -15,6 +15,7 @@ import os
 import threading
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 log = logging.getLogger("arena.webhooks")
 
@@ -78,16 +79,35 @@ def _build_payload(event: str, data: dict) -> dict:
     return {"event": event, "data": data, "ts": time.time()}
 
 
+def _redact_url(url: str) -> str:
+    """Strip path/query from a webhook URL before logging.
+
+    Discord and Slack webhook URLs embed a bearer-equivalent secret token
+    directly in the path (e.g. /api/webhooks/<id>/<token>). Logging the
+    full URL — or letting an exception's string form leak it — hands
+    anyone with log access the ability to post as the configured webhook.
+    """
+    try:
+        parts = urlsplit(url)
+        return f"{parts.scheme}://{parts.netloc}/***"
+    except Exception:
+        return "<redacted>"
+
+
 def _post(url: str, payload: dict) -> None:
     sess = _session()
     if sess is None:
         return
+    safe_url = _redact_url(url)
     try:
         resp = sess.post(url, json=payload, timeout=8)
         if resp.status_code >= 400:
-            log.warning(f"Webhook {url!r} returned {resp.status_code}: {resp.text[:200]}")
+            log.warning(f"Webhook {safe_url} returned {resp.status_code}: {resp.text[:200]}")
     except Exception as e:
-        log.warning(f"Webhook POST failed: {e}")
+        # Don't interpolate the exception itself: requests/urllib3 errors
+        # (e.g. ConnectionError, MaxRetryError) often embed the full
+        # request URL — including the secret token — in their message.
+        log.warning(f"Webhook POST failed for {safe_url} ({type(e).__name__})")
 
 
 def notify_match(

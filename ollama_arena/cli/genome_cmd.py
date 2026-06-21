@@ -50,6 +50,11 @@ def cmd_genome(args):
             data = engine.subtree(gid or args.model)
         else:
             data = engine.to_d3()
+
+        if not data["nodes"]:
+            console.print(f"[yellow]No lineage data found{f' for {args.model}' if args.model else ''}.[/yellow]")
+            return
+
         targets = {l["target"] for l in data["links"]}
         roots = [n for n in data["nodes"] if n["id"] not in targets]
         if not roots:

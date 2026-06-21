@@ -271,7 +271,7 @@ class SandboxManager:
                 sandbox_id=sandbox_id,
             )
 
-        timeout = timeout or instance.config.timeout_seconds
+        timeout = timeout if timeout is not None else instance.config.timeout_seconds
         t0 = time.time()
 
         # Upload files if provided
@@ -292,13 +292,22 @@ class SandboxManager:
         """Upload files to the sandbox."""
         if instance.config.backend == SandboxBackend.DOCKER and instance.container_id:
             for filename, content in files.items():
+                # Reject path separators / traversal in filenames: an unsanitized
+                # filename ends up both in the host tempfile suffix (breaking out
+                # of the intended tmp directory) and in the in-container `docker cp`
+                # destination path (breaking out of working_dir).
+                safe_name = os.path.basename(filename)
+                if not safe_name or safe_name in (".", "..") or safe_name != filename:
+                    log.error(f"Rejecting unsafe upload filename: {filename!r}")
+                    continue
+
                 # Use docker cp to upload files
-                with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=f"_{filename}") as f:
+                with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=f"_{safe_name}") as f:
                     f.write(content)
                     temp_path = f.name
 
                 try:
-                    container_path = f"{instance.config.working_dir}/{filename}"
+                    container_path = f"{instance.config.working_dir}/{safe_name}"
                     subprocess.run(
                         ["docker", "cp", temp_path, f"{instance.container_id}:{container_path}"],
                         capture_output=True,

@@ -49,6 +49,7 @@ class OllamaBackend:
         finish_reason = "stop"
         tokens_in = tokens_out = 0
         first = True
+        r = None
         try:
             r = requests.post(f"{self.base}/api/chat", json=body, stream=True, timeout=call_timeout)
             for line in r.iter_lines():
@@ -73,6 +74,9 @@ class OllamaBackend:
                     break
         except Exception as e:
             return ChatTurnResult(error=str(e), latency_s=round(time.time() - t0, 3))
+        finally:
+            if r is not None:
+                r.close()
 
         return ChatTurnResult(
             text=strip_thinking(text),
@@ -128,6 +132,7 @@ class OllamaBackend:
         tool_calls: list[dict] = []
         tokens_in = tokens_out = 0
         first = True
+        r = None
         try:
             r = requests.post(f"{self.base}/api/chat", json=body, stream=True, timeout=call_timeout)
             for line in r.iter_lines():
@@ -152,6 +157,9 @@ class OllamaBackend:
         except Exception as e:
             return GenResult(text="", model=model, error=str(e),
                              latency_s=round(time.time() - t0, 3))
+        finally:
+            if r is not None:
+                r.close()
 
         latency = time.time() - t0
         clean = strip_thinking(text)
@@ -182,13 +190,14 @@ class OllamaBackend:
         text = ""
         tokens_in = tokens_out = 0
         first = True
+        r = None
         try:
             r = requests.post(f"{self.base}/api/generate", json=body, stream=True, timeout=call_timeout)
             for line in r.iter_lines():
                 if not line: continue
                 try: chunk = json.loads(line)
-                except: continue
-                
+                except json.JSONDecodeError: continue
+
                 content = chunk.get("response", "")
                 if first and content:
                     ttft = time.time() - t0
@@ -200,6 +209,9 @@ class OllamaBackend:
                     break
         except Exception as e:
             return GenResult(text="", model=model, error=str(e), latency_s=round(time.time() - t0, 3))
+        finally:
+            if r is not None:
+                r.close()
 
         latency = time.time() - t0
         clean = strip_thinking(text)

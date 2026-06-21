@@ -216,6 +216,7 @@ class SwarmBattle:
                 agent.add_message("user", f"Task: {task}")
 
         # Run collaboration rounds
+        round_num = 0
         for round_num in range(1, rounds + 1):
             log.info(f"Swarm battle round {round_num}/{rounds}")
             round_trace = self._run_round(team_a, team_b, round_num, max_steps_per_round)

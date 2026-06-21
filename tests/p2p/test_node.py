@@ -153,7 +153,29 @@ class TestP2PNode:
         assert "cpu_cores" in caps
         assert "memory_gb" in caps
         assert "platform" in caps
-    
+
+    def test_node_capabilities_cached_within_ttl(self, node):
+        """A second call within the cache TTL must reuse the same dict, not recompute."""
+        first = node._get_capabilities()
+        second = node._get_capabilities()
+        assert first is second
+
+    def test_node_capabilities_falls_back_without_psutil(self, node, monkeypatch):
+        """psutil missing must fall back to defaults, not crash (regression: import
+        was previously outside the try/except meant to catch it)."""
+        import builtins
+        real_import = builtins.__import__
+
+        def _no_psutil(name, *args, **kwargs):
+            if name == "psutil":
+                raise ImportError("no psutil")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _no_psutil)
+        caps = node._get_capabilities()
+        assert caps["cpu_cores"] == 4
+        assert caps["memory_gb"] == 16.0
+
     def test_task_acceptance(self, node):
         """Test task acceptance logic."""
         simple_task = {

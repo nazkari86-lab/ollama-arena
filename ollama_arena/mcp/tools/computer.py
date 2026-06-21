@@ -21,12 +21,16 @@ def computer_screenshot(args: dict) -> str:
 def computer_click(args: dict) -> str:
     x, y = args.get("x", 0), args.get("y", 0)
     try:
+        x_int, y_int = int(x), int(y)
+    except (TypeError, ValueError):
+        return "Error: x and y must be integers."
+    try:
         if platform.system() == "Darwin":
             subprocess.run(
-                ["osascript", "-e", f'tell application "System Events" to click at {{{x}, {y}}}'],
+                ["osascript", "-e", f'tell application "System Events" to click at {{{x_int}, {y_int}}}'],
                 check=True,
             )
-            return f"Clicked at ({x}, {y})"
+            return f"Clicked at ({x_int}, {y_int})"
         return "Clicking not supported on this OS."
     except Exception as exc:
         return f"Error: {exc}"

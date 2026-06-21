@@ -17,7 +17,7 @@ def _safe_path(rel: str) -> Path:
     rel = (rel or ".").lstrip("/")
     target = (WORKSPACE_DIR / rel).resolve()
     root = WORKSPACE_DIR.resolve()
-    if not str(target).startswith(str(root)):
+    if target != root and root not in target.parents:
         raise SecurityError("Path escape attempt")
     return target
 

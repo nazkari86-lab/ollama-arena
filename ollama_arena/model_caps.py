@@ -70,11 +70,23 @@ def _detect_one(model: str, ollama_url: str) -> dict:
         or '"tools"' in modelfile.lower()
     )
 
-    ctx = (
-        details.get("context_length")
-        or info.get("model_info", {}).get("llama.context_length")
-        or 0
-    )
+    model_info = info.get("model_info") or {}
+    ctx = details.get("context_length")
+    if not ctx:
+        # model_info keys are prefixed by the model's own architecture family
+        # (e.g. "qwen2.context_length", "gemma2.context_length"), not always
+        # "llama.*" — look up the actual family name(s) first, then fall back
+        # to scanning for any "*.context_length" key.
+        for fam in families:
+            ctx = model_info.get(f"{fam}.context_length")
+            if ctx:
+                break
+        else:
+            for key, val in model_info.items():
+                if key.endswith(".context_length"):
+                    ctx = val
+                    break
+    ctx = ctx or 0
     try:
         ctx = int(ctx)
     except (TypeError, ValueError):
@@ -96,6 +108,13 @@ def get(model: str, ollama_url: str = "http://localhost:11434") -> dict:
         if model in _cache and now - _cache_ts.get(model, 0) < _CACHE_TTL:
             return _cache[model]
     caps = _detect_one(model, ollama_url)
+    if not caps:
+        # _detect_one() returns {} on transient failure (network error, non-200,
+        # bad JSON). Caching that for the full TTL would make a momentary Ollama
+        # hiccup look like "this model has no vision/tools/context" for up to an
+        # hour. Don't poison the cache — just hand back the empty dict this once
+        # so the next call re-probes instead of serving stale-false data.
+        return caps
     with _lock:
         _cache[model] = caps
         _cache_ts[model] = now

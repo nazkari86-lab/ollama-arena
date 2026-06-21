@@ -277,10 +277,57 @@ class TestResultAggregator:
     def test_detect_fraud_insufficient_data(self, aggregator):
         """Test fraud detection with insufficient data."""
         result = {"task_id": "task123", "node_id": "node1"}
-        
+
         is_fraud, reason = aggregator.detect_fraud("task123", result)
         assert is_fraud is False
         assert reason == "insufficient_data"
+
+    @pytest.mark.asyncio
+    async def test_detect_fraud_outlier_flagged(self, aggregator):
+        """A score far outside the peer cluster should be flagged.
+
+        Peer scores need some natural spread — an exactly-zero stdev (e.g.
+        every peer reporting the identical score) is treated as "no signal"
+        and never flags anything, by design (see detect_fraud).
+        """
+        for i in range(5):
+            await aggregator.collect_result("task123", {"node_id": f"node{i}", "score": 0.80 + i * 0.001})
+
+        outlier = {"node_id": "node_outlier", "score": 99.0}
+        is_fraud, reason = aggregator.detect_fraud("task123", outlier)
+        assert is_fraud is True
+        assert reason == "score_outlier"
+
+    @pytest.mark.asyncio
+    async def test_detect_fraud_within_spread_not_flagged(self, aggregator):
+        """A score close to the peer cluster should not be flagged."""
+        for i in range(5):
+            await aggregator.collect_result("task123", {"node_id": f"node{i}", "score": 0.80 + i * 0.01})
+
+        normal = {"node_id": "node_normal", "score": 0.82}
+        is_fraud, reason = aggregator.detect_fraud("task123", normal)
+        assert is_fraud is False
+        assert reason == "ok"
+
+    @pytest.mark.asyncio
+    async def test_compute_consensus_includes_score(self, aggregator):
+        """Weighted consensus must produce an actual consensus_score, not raw inputs."""
+        for i in range(3):
+            await aggregator.collect_result("task123", {"node_id": f"node{i}", "score": 0.80})
+
+        consensus = aggregator.compute_consensus("task123")
+        assert consensus["consensus_score"] == pytest.approx(0.80)
+
+    @pytest.mark.asyncio
+    async def test_compute_consensus_majority_winner(self, aggregator):
+        """A categorical 'winner' field should produce a weighted majority vote."""
+        await aggregator.collect_result("task123", {"node_id": "node0", "winner": "A"})
+        await aggregator.collect_result("task123", {"node_id": "node1", "winner": "A"})
+        await aggregator.collect_result("task123", {"node_id": "node2", "winner": "B"})
+
+        consensus = aggregator.compute_consensus("task123")
+        assert consensus["consensus_winner"] == "A"
+        assert 0.0 < consensus["agreement_ratio"] <= 1.0
 
 
 class TestTaskDistributor:

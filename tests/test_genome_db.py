@@ -48,3 +48,23 @@ def test_add_lineage(store):
     edges = store.get_lineage("b")
     assert edges[0]["parent_id"] == "a"
     assert edges[0]["relation"] == "fine_tuned_from"
+
+
+def test_upsert_canonical_updates_license_and_source_url(store):
+    """Regression test: the ON CONFLICT DO UPDATE clause previously omitted
+    license and source_url, so re-seeding a canonical model with updated
+    metadata silently kept the original (possibly stale) values forever.
+    """
+    store.upsert_canonical({
+        "id": "a", "name": "A", "family": "F", "org": "O",
+        "license": "MIT", "source_url": "https://old",
+        "architecture": {}, "lineage": {},
+    })
+    store.upsert_canonical({
+        "id": "a", "name": "A2", "family": "F2", "org": "O2",
+        "license": "Apache-2.0", "source_url": "https://new",
+        "architecture": {}, "lineage": {},
+    })
+    row = store.get_canonical("a")
+    assert row["license"] == "Apache-2.0"
+    assert row["source_url"] == "https://new"

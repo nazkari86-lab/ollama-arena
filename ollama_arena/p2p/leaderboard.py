@@ -397,16 +397,24 @@ class GlobalLeaderboard:
         # Calculate average score
         scores = [e.score for e in model_entries]
         avg_score = sum(scores) / len(scores)
-        
-        # Find rank
+
+        # Rank this model's average score among every other model's average
+        # score. Group by model_name first — the previous implementation
+        # built a {model_name: score} dict directly from individual entries,
+        # which silently dropped all but one entry per model and ranked
+        # against single, arbitrary scores instead of per-model averages.
         all_verified = [e for e in self.entries if e.verification_status == "verified"]
-        sorted_scores = sorted(
-            {e.model_name: e.score for e in all_verified}.values(),
-            reverse=True
+        scores_by_model: Dict[str, List[float]] = defaultdict(list)
+        for e in all_verified:
+            scores_by_model[e.model_name].append(e.score)
+
+        model_avg_scores = sorted(
+            (sum(s) / len(s) for s in scores_by_model.values()),
+            reverse=True,
         )
-        
+
         rank = None
-        for i, score in enumerate(sorted_scores):
+        for i, score in enumerate(model_avg_scores):
             if abs(score - avg_score) < 0.01:
                 rank = i + 1
                 break

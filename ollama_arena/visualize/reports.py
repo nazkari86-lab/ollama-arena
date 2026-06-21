@@ -1,5 +1,6 @@
 """Generators for single-match and single-royale reports (JSON/HTML)."""
 from __future__ import annotations
+import html
 import json
 import datetime
 from pathlib import Path
@@ -42,21 +43,21 @@ def export_match_report(
         rows.append(f"""
             <div class="task-card">
                 <div class="task-header">
-                    <span class="task-id">{t['task_id']}</span>
-                    <span class="outcome" style="color: {outcome_color}">{t['outcome'].replace('_', ' ').upper()}</span>
+                    <span class="task-id">{html.escape(str(t['task_id']))}</span>
+                    <span class="outcome" style="color: {outcome_color}">{html.escape(t['outcome'].replace('_', ' ').upper())}</span>
                 </div>
-                <div class="instruction">{t['instruction']}</div>
+                <div class="instruction">{html.escape(str(t['instruction']))}</div>
                 <div class="responses">
                     <div class="resp-box">
-                        <div class="resp-header">{info['model_a']} ({t['score_a']})</div>
-                        <pre><code>{t['response_a']}</code></pre>
+                        <div class="resp-header">{html.escape(str(info['model_a']))} ({t['score_a']})</div>
+                        <pre><code>{html.escape(str(t['response_a']))}</code></pre>
                     </div>
                     <div class="resp-box">
-                        <div class="resp-header">{info['model_b']} ({t['score_b']})</div>
-                        <pre><code>{t['response_b']}</code></pre>
+                        <div class="resp-header">{html.escape(str(info['model_b']))} ({t['score_b']})</div>
+                        <pre><code>{html.escape(str(t['response_b']))}</code></pre>
                     </div>
                 </div>
-                {f'<div class="expected">Expected: {t["expected"]}</div>' if t.get("expected") else ""}
+                {f'<div class="expected">Expected: {html.escape(str(t["expected"]))}</div>' if t.get("expected") else ""}
             </div>
         """)
     
@@ -86,16 +87,16 @@ def export_match_report(
     <div class="container">
         <h1>Match #{match_id} Report</h1>
         <div class="meta">
-            Model A: <b>{info['model_a']}</b> | Model B: <b>{info['model_b']}</b> | Category: <b>{info['category']}</b><br>
+            Model A: <b>{html.escape(str(info['model_a']))}</b> | Model B: <b>{html.escape(str(info['model_b']))}</b> | Category: <b>{html.escape(str(info['category']))}</b><br>
             Timestamp: {ts_str}
         </div>
         <div class="summary">
             <div class="stat-card">
-                <div>{info['model_a']} Score</div>
+                <div>{html.escape(str(info['model_a']))} Score</div>
                 <div class="stat-val">{info['score_a']}</div>
             </div>
             <div class="stat-card">
-                <div>{info['model_b']} Score</div>
+                <div>{html.escape(str(info['model_b']))} Score</div>
                 <div class="stat-val">{info['score_b']}</div>
             </div>
         </div>
@@ -152,15 +153,15 @@ def export_royale_report(
         for e in entries:
             model_responses.append(f"""
                 <div class="resp-box">
-                    <div class="resp-header">#{e['rank']} {e['model']} (Score: {e['score']})</div>
-                    <pre><code>{e['response']}</code></pre>
+                    <div class="resp-header">#{e['rank']} {html.escape(str(e['model']))} (Score: {e['score']})</div>
+                    <pre><code>{html.escape(str(e['response']))}</code></pre>
                 </div>
             """)
-            
+
         task_sections.append(f"""
             <div class="task-card">
                 <div class="task-header">
-                    <span class="task-id">{tid}</span>
+                    <span class="task-id">{html.escape(str(tid))}</span>
                 </div>
                 <div class="responses-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;">
                     {''.join(model_responses)}
@@ -185,7 +186,7 @@ def export_royale_report(
     <div class="container">
         <h1>Battle Royale #{royale_id} Report</h1>
         <div class="meta">
-            Models: <b>{', '.join(models)}</b> | Category: <b>{category}</b>
+            Models: <b>{html.escape(', '.join(str(m) for m in models))}</b> | Category: <b>{html.escape(str(category))}</b>
         </div>
         
         <h2>Match Details</h2>

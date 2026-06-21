@@ -106,6 +106,68 @@ def test_review_pr_sarif_output(tmp_path):
     assert len(sarif["runs"][0]["results"]) >= 2
 
 
+def test_review_pr_reports_git_failure_not_no_changes(tmp_path):
+    """If git diff/show actually failed (nonzero exit, stderr, no stdout — e.g. not
+    a git repo), cmd_review_pr must report the git error and exit 1, not the
+    misleading 'No changes found in repository.' message that implies success."""
+    args = argparse.Namespace(
+        models="reviewer:7b",
+        sarif=None,
+        files=None,
+        ollama="http://localhost:11434",
+        backend=None,
+        api_key=None,
+        db="arena.db",
+    )
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.stdout = ""
+        result.stderr = "fatal: not a git repository (or any of the parent directories): .git"
+        return result
+
+    with patch("ollama_arena.cli.agents.subprocess.run", side_effect=fake_run), \
+         patch("ollama_arena.cli.agents._console") as mock_console:
+        mock_console.return_value.print = MagicMock()
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_review_pr(args)
+
+    assert exc_info.value.code == 1
+    printed = " ".join(str(c) for c in mock_console.return_value.print.call_args_list)
+    assert "not a git repository" in printed
+    assert "No changes found" not in printed
+
+
+def test_review_pr_no_changes_when_git_succeeds_with_empty_diff():
+    """A real no-op case (clean repo, no diff, git exits 0 with empty stdout/stderr)
+    must still print the friendly 'No changes found' message and exit 0."""
+    args = argparse.Namespace(
+        models="reviewer:7b",
+        sarif=None,
+        files=None,
+        ollama="http://localhost:11434",
+        backend=None,
+        api_key=None,
+        db="arena.db",
+    )
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.stdout = ""
+        result.stderr = ""
+        return result
+
+    with patch("ollama_arena.cli.agents.subprocess.run", side_effect=fake_run), \
+         patch("ollama_arena.cli.agents._console") as mock_console:
+        mock_console.return_value.print = MagicMock()
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_review_pr(args)
+
+    assert exc_info.value.code == 0
+    printed = " ".join(str(c) for c in mock_console.return_value.print.call_args_list)
+    assert "No changes found" in printed
+
+
 def test_optimize_prompt_uses_genome_and_failures():
     args = argparse.Namespace(
         model="llama3.1:8b-instruct",

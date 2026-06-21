@@ -68,6 +68,14 @@ class CodebaseIndexer:
         }
         skip_dirs = {"__pycache__", ".git", ".venv", "venv", "node_modules", ".idea", ".vscode"}
 
+        # Never follow symlinks: a symlinked file inside the workspace can
+        # point anywhere on disk (e.g. ~/.ssh/id_rsa renamed to *.py), and
+        # relative_to() succeeds on the symlink's own path even though the
+        # *content* read comes from outside workspace_dir. Skipping symlinks
+        # prevents arbitrary files from being read into the persisted index.
+        if file_path.is_symlink():
+            return False
+
         if file_path.suffix in skip_extensions:
             return False
         if any(part in skip_dirs for part in file_path.parts):
@@ -141,7 +149,8 @@ class CodebaseIndexer:
                 client.delete_collection(name=collection_name)
                 collection = client.create_collection(name=collection_name)
                 log.info("Force reindex: cleared existing collection")
-        except:
+        except Exception as e:
+            log.info(f"No existing collection found ({e}); creating new collection")
             collection = client.create_collection(name=collection_name)
             log.info("Created new collection")
 
@@ -179,16 +188,22 @@ class CodebaseIndexer:
                     # Create document with context
                     document = self._extract_context(file_path, chunk, chunk_index) + "\n\n" + chunk
 
-                    # Add to collection
+                    # Add to collection. Use the full relative path (not just
+                    # file_path.name) in the id: two different files that
+                    # share a basename (e.g. multiple __init__.py) and happen
+                    # to have identical content would otherwise collide on
+                    # the same id and silently overwrite each other's chunks.
+                    relative_path = str(file_path.relative_to(self.workspace_dir))
+                    safe_id_prefix = relative_path.replace("/", "_").replace("\\", "_")
                     collection.add(
                         embeddings=[embedding.tolist()],
                         documents=[document],
                         metadatas=[{
-                            "file_path": str(file_path.relative_to(self.workspace_dir)),
+                            "file_path": relative_path,
                             "chunk_index": chunk_index,
                             "file_hash": file_hash,
                         }],
-                        ids=[f"{file_path.name}_{file_hash}_{chunk_index}"]
+                        ids=[f"{safe_id_prefix}_{file_hash}_{chunk_index}"]
                     )
                     chunks_created += 1
 
@@ -219,5 +234,6 @@ class CodebaseIndexer:
             collection = client.get_collection(name="codebase_index")
             count = collection.count()
             return {"collection": "codebase_index", "chunks_indexed": count}
-        except:
+        except Exception as e:
+            log.info(f"No index collection found: {e}")
             return {"collection": "codebase_index", "chunks_indexed": 0}

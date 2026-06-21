@@ -103,6 +103,8 @@ def build_dpo_dataset(
     teacher = teacher_model or _top_model_for_category(db_path, category)
     if not teacher:
         raise RuntimeError(f"No teacher model found for category '{category}'")
+    if teacher == weak_model:
+        raise RuntimeError("Teacher == student. Pass --teacher to override.")
     if backend is None:
         from ..backends.auto import auto_backend
         backend = auto_backend()

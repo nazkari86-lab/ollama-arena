@@ -14,7 +14,9 @@ from .common import _console, _make_arena
 
 def _anonymize(text: str, mapping: dict[str, str]) -> str:
     out = text
-    for real, alias in mapping.items():
+    # Replace longest model names first so a prefix (e.g. "llama3") doesn't
+    # clobber part of a longer name (e.g. "llama3.1") before it's matched.
+    for real, alias in sorted(mapping.items(), key=lambda kv: -len(kv[0])):
         out = out.replace(real, alias)
     return out
 
@@ -307,14 +309,21 @@ def cmd_review_pr(args):
         cmd = ["git", "diff", "HEAD"]
         if file_filter:
             cmd.extend(file_filter.split(","))
-        diff = subprocess.run(cmd, capture_output=True, text=True).stdout
+        diff_result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        diff = diff_result.stdout
+        diff_err = diff_result.stderr
         if not diff:
-            diff = subprocess.run(["git", "show", "HEAD"], capture_output=True, text=True).stdout
+            show_result = subprocess.run(["git", "show", "HEAD"], capture_output=True, text=True, timeout=30)
+            diff = show_result.stdout
+            diff_err = diff_err or show_result.stderr
     except Exception as e:
         c.print(f"[red]Failed to get git diff: {e}[/red]")
         sys.exit(1)
 
     if not diff.strip():
+        if diff_err and diff_err.strip():
+            c.print(f"[red]git diff failed:[/red] {diff_err.strip().splitlines()[0]}")
+            sys.exit(1)
         c.print("[yellow]No changes found in repository.[/yellow]")
         sys.exit(0)
 

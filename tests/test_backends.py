@@ -189,6 +189,76 @@ class TestMessagesToAnthropic:
         img_part = next(p for p in turns[0]["content"] if p["type"] == "image")
         assert img_part["source"]["media_type"] == "image/jpeg"
 
+    def test_tool_role_converted_to_user_tool_result(self):
+        """agent_loop.py appends OpenAI-shaped {"role": "tool", ...} messages
+        regardless of backend. Anthropic has no "tool" role — it must become
+        a user message with a tool_result content block, or the API rejects
+        the request on turn 2+ of any agent run."""
+        msgs = [{
+            "role": "tool",
+            "tool_call_id": "toolu_01",
+            "content": "72 degrees and sunny",
+        }]
+        _, turns = self._convert(msgs)
+        assert len(turns) == 1
+        assert turns[0]["role"] == "user"
+        block = turns[0]["content"][0]
+        assert block["type"] == "tool_result"
+        assert block["tool_use_id"] == "toolu_01"
+        assert block["content"] == "72 degrees and sunny"
+
+    def test_assistant_tool_calls_converted_to_tool_use_blocks(self):
+        """An OpenAI-shaped assistant message carrying msg["tool_calls"]
+        must become Anthropic content blocks of type tool_use, not be
+        passed through with the unrecognized "tool_calls" key dropped."""
+        msgs = [{
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{
+                "id": "toolu_01",
+                "function": {"name": "get_weather", "arguments": '{"city": "NYC"}'},
+            }],
+        }]
+        _, turns = self._convert(msgs)
+        assert len(turns) == 1
+        assert turns[0]["role"] == "assistant"
+        block = next(p for p in turns[0]["content"] if p["type"] == "tool_use")
+        assert block["id"] == "toolu_01"
+        assert block["name"] == "get_weather"
+        assert block["input"] == {"city": "NYC"}
+
+    def test_assistant_tool_calls_with_text_keeps_text_block(self):
+        msgs = [{
+            "role": "assistant",
+            "content": "Let me check that.",
+            "tool_calls": [{
+                "id": "t1",
+                "function": {"name": "fn", "arguments": "{}"},
+            }],
+        }]
+        _, turns = self._convert(msgs)
+        text_block = next(p for p in turns[0]["content"] if p["type"] == "text")
+        assert text_block["text"] == "Let me check that."
+
+    def test_full_tool_round_trip_message_sequence(self):
+        """Simulates the exact message shape agent_loop.py builds across a
+        full tool round trip and asserts every turn converts to a role
+        Anthropic accepts (only "user"/"assistant")."""
+        msgs = [
+            {"role": "user", "content": "What's the weather in NYC?"},
+            {
+                "role": "assistant", "content": "",
+                "tool_calls": [{
+                    "id": "toolu_01",
+                    "function": {"name": "get_weather", "arguments": '{"city": "NYC"}'},
+                }],
+            },
+            {"role": "tool", "tool_call_id": "toolu_01", "content": "72F sunny"},
+        ]
+        _, turns = self._convert(msgs)
+        assert len(turns) == 3
+        assert all(t["role"] in ("user", "assistant") for t in turns)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # AnthropicBackend — text streaming
@@ -249,6 +319,24 @@ class TestAnthropicBackendTextStreaming:
             result = backend.generate("claude-sonnet-4-6", "prompt")
         assert result.error != ""
         assert "401" in result.error
+
+    def test_http_error_still_closes_response(self):
+        """Non-200 responses return early but must still close the
+        underlying streaming connection rather than leaking it."""
+        backend = self._backend()
+        err_resp = mock.MagicMock()
+        err_resp.status_code = 401
+        err_resp.text = "Unauthorized"
+        with mock.patch("requests.post", return_value=err_resp):
+            backend.generate("claude-sonnet-4-6", "prompt")
+        err_resp.close.assert_called_once()
+
+    def test_success_response_closed(self):
+        backend = self._backend()
+        resp = _fake_response(self._sse_text("ok"))
+        with mock.patch("requests.post", return_value=resp):
+            backend.generate("claude-sonnet-4-6", "prompt")
+        resp.close.assert_called_once()
 
     def test_connection_exception(self):
         backend = self._backend()
@@ -477,6 +565,55 @@ class TestOllamaBackend:
     def test_name_is_ollama(self):
         backend = self._backend()
         assert backend.name == "ollama"
+
+    def test_raw_generate_malformed_json_does_not_crash(self):
+        """_do_generate used a bare `except:` that would also swallow
+        KeyboardInterrupt/SystemExit; it must only catch JSON decode errors
+        on malformed lines and otherwise still produce a clean result."""
+        backend = self._backend()
+        chunks = [
+            b"not-json-at-all",
+            json.dumps({"response": "fine"}).encode(),
+            json.dumps({
+                "response": "", "done": True,
+                "prompt_eval_count": 5, "eval_count": 3,
+            }).encode(),
+        ]
+        resp = _fake_ollama_response(chunks)
+        with mock.patch("requests.post", return_value=resp):
+            result = backend._do_generate("llama3", "raw prompt")
+        assert result.error == ""
+        assert "fine" in result.text
+
+    def test_chat_turn_closes_streaming_response(self):
+        """The streaming requests.Response must be closed on every path so
+        the connection is released back to the pool instead of leaking."""
+        backend = self._backend()
+        chunks = _ollama_chunks("hi")
+        resp = _fake_ollama_response(chunks)
+        with mock.patch("requests.post", return_value=resp):
+            backend.generate("llama3", "q")
+        resp.close.assert_called_once()
+
+    def test_do_generate_closes_streaming_response(self):
+        backend = self._backend()
+        chunks = _ollama_chunks("hi")
+        resp = _fake_ollama_response(chunks)
+        with mock.patch("requests.post", return_value=resp):
+            backend._do_generate("llama3", "q")
+        resp.close.assert_called_once()
+
+    def test_response_closed_even_on_mid_stream_exception(self):
+        """If iterating the stream raises partway through, the response
+        must still be closed rather than leaked."""
+        backend = self._backend()
+        resp = mock.MagicMock()
+        resp.status_code = 200
+        resp.iter_lines = mock.MagicMock(side_effect=RuntimeError("connection reset"))
+        with mock.patch("requests.post", return_value=resp):
+            result = backend.generate("llama3", "q")
+        assert result.error != ""
+        resp.close.assert_called_once()
 
 
 # ──────────────────────────────────────────────────────────────────────────────

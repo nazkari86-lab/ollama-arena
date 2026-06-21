@@ -31,7 +31,24 @@ class SqliteRatingsRepository:
             log.error(f"Error fetching elo for {model}: {e}")
             return _DEFAULT_ELO
 
-    def upsert_rating(self, model: str, elo: float, now: float) -> None:
+    def upsert_rating(self, model: str, elo: float, now: float, conn=None) -> None:
+        """Insert/update one model's rating.
+
+        `conn` lets a caller (EloStore.record_match) thread a single shared
+        connection/transaction through multiple repository calls instead of
+        each call committing its own separate transaction — see
+        `apply_match_stats` docstring for why that matters. When `conn` is
+        omitted this opens its own connection and commits immediately,
+        same as before.
+        """
+        if conn is not None:
+            conn.execute("""
+                INSERT INTO ratings(model, elo, wins, losses, draws, matches, updated_at)
+                VALUES (?, ?, 0, 0, 0, 0, ?)
+                ON CONFLICT(model) DO UPDATE SET
+                    elo=excluded.elo, updated_at=excluded.updated_at
+            """, (model, elo, now))
+            return
         with write_conn(self.db) as cx:
             cx.execute("""
                 INSERT INTO ratings(model, elo, wins, losses, draws, matches, updated_at)
@@ -42,35 +59,56 @@ class SqliteRatingsRepository:
 
     def apply_match_stats(
         self, model_a: str, model_b: str, score_a: float, score_b: float,
+        conn=None,
     ) -> None:
+        """Bump win/loss/draw/matches counters for both models.
+
+        Requires a `ratings` row to already exist for each model (callers
+        always run upsert_rating() first — see EloManager.record_match). If
+        a row is missing, the UPDATE silently affects 0 rows and the stats
+        bump is lost with no error; we log a warning so that failure mode
+        is at least visible instead of corrupting data quietly.
+
+        `conn`: optional shared connection (see upsert_rating docstring).
+        """
+        if conn is not None:
+            self._apply_match_stats_on(conn, model_a, model_b, score_a, score_b)
+            return
         with write_conn(self.db) as cx:
-            if score_a > score_b:
-                cx.execute(
-                    "UPDATE ratings SET wins=wins+1, matches=matches+1 WHERE model=?",
-                    (model_a,),
-                )
-                cx.execute(
-                    "UPDATE ratings SET losses=losses+1, matches=matches+1 WHERE model=?",
-                    (model_b,),
-                )
-            elif score_b > score_a:
-                cx.execute(
-                    "UPDATE ratings SET losses=losses+1, matches=matches+1 WHERE model=?",
-                    (model_a,),
-                )
-                cx.execute(
-                    "UPDATE ratings SET wins=wins+1, matches=matches+1 WHERE model=?",
-                    (model_b,),
-                )
-            else:
-                cx.execute(
-                    "UPDATE ratings SET draws=draws+1, matches=matches+1 WHERE model=?",
-                    (model_a,),
-                )
-                cx.execute(
-                    "UPDATE ratings SET draws=draws+1, matches=matches+1 WHERE model=?",
-                    (model_b,),
-                )
+            self._apply_match_stats_on(cx, model_a, model_b, score_a, score_b)
+
+    def _apply_match_stats_on(self, cx, model_a, model_b, score_a, score_b) -> None:
+        if score_a > score_b:
+            cur_a = cx.execute(
+                "UPDATE ratings SET wins=wins+1, matches=matches+1 WHERE model=?",
+                (model_a,),
+            )
+            cur_b = cx.execute(
+                "UPDATE ratings SET losses=losses+1, matches=matches+1 WHERE model=?",
+                (model_b,),
+            )
+        elif score_b > score_a:
+            cur_a = cx.execute(
+                "UPDATE ratings SET losses=losses+1, matches=matches+1 WHERE model=?",
+                (model_a,),
+            )
+            cur_b = cx.execute(
+                "UPDATE ratings SET wins=wins+1, matches=matches+1 WHERE model=?",
+                (model_b,),
+            )
+        else:
+            cur_a = cx.execute(
+                "UPDATE ratings SET draws=draws+1, matches=matches+1 WHERE model=?",
+                (model_a,),
+            )
+            cur_b = cx.execute(
+                "UPDATE ratings SET draws=draws+1, matches=matches+1 WHERE model=?",
+                (model_b,),
+            )
+        if cur_a.rowcount == 0:
+            log.warning(f"apply_match_stats: no ratings row for {model_a!r}; stats bump lost")
+        if cur_b.rowcount == 0:
+            log.warning(f"apply_match_stats: no ratings row for {model_b!r}; stats bump lost")
 
     def _elo_trends(self, cx, n: int = 5) -> dict[str, float]:
         """Return net ELO delta over the last `n` matches per model."""
@@ -190,30 +228,47 @@ class SqliteRatingsRepository:
         new_elo_a: float, new_elo_b: float,
         score_a: float, score_b: float,
         now: float,
+        conn=None,
     ) -> None:
+        """`conn`: optional shared connection (see upsert_rating docstring)."""
+        if conn is not None:
+            self._upsert_category_rating_on(
+                conn, model_a, model_b, category,
+                new_elo_a, new_elo_b, score_a, score_b, now,
+            )
+            return
         with write_conn(self.db) as cx:
-            for model, elo, sa, sb in (
-                (model_a, new_elo_a, score_a, score_b),
-                (model_b, new_elo_b, score_b, score_a),
-            ):
-                if sa > sb:
-                    w, lo, d = 1, 0, 0
-                elif sb > sa:
-                    w, lo, d = 0, 1, 0
-                else:
-                    w, lo, d = 0, 0, 1
-                cx.execute("""
-                    INSERT INTO category_ratings
-                        (model, category, elo, wins, losses, draws, matches, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 1, ?)
-                    ON CONFLICT(model, category) DO UPDATE SET
-                        elo=excluded.elo,
-                        wins=wins+excluded.wins,
-                        losses=losses+excluded.losses,
-                        draws=draws+excluded.draws,
-                        matches=matches+1,
-                        updated_at=excluded.updated_at
-                """, (model, category, elo, w, lo, d, now))
+            self._upsert_category_rating_on(
+                cx, model_a, model_b, category,
+                new_elo_a, new_elo_b, score_a, score_b, now,
+            )
+
+    def _upsert_category_rating_on(
+        self, cx, model_a, model_b, category,
+        new_elo_a, new_elo_b, score_a, score_b, now,
+    ) -> None:
+        for model, elo, sa, sb in (
+            (model_a, new_elo_a, score_a, score_b),
+            (model_b, new_elo_b, score_b, score_a),
+        ):
+            if sa > sb:
+                w, lo, d = 1, 0, 0
+            elif sb > sa:
+                w, lo, d = 0, 1, 0
+            else:
+                w, lo, d = 0, 0, 1
+            cx.execute("""
+                INSERT INTO category_ratings
+                    (model, category, elo, wins, losses, draws, matches, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                ON CONFLICT(model, category) DO UPDATE SET
+                    elo=excluded.elo,
+                    wins=wins+excluded.wins,
+                    losses=losses+excluded.losses,
+                    draws=draws+excluded.draws,
+                    matches=matches+1,
+                    updated_at=excluded.updated_at
+            """, (model, category, elo, w, lo, d, now))
 
     def category_leaderboard(self, category: str) -> list[dict]:
         try:

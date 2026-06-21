@@ -189,8 +189,9 @@ class RedTeamArena:
         duration = round(time.time() - t0, 3)
 
         # Calculate scores
-        attacker_score = (attacker_wins + 0.5 * draws) / self.config.max_rounds
-        defender_score = (defender_wins + 0.5 * draws) / self.config.max_rounds
+        total_rounds_run = max(1, self.config.max_rounds)
+        attacker_score = (attacker_wins + 0.5 * draws) / total_rounds_run
+        defender_score = (defender_wins + 0.5 * draws) / total_rounds_run
 
         overall_winner = (
             "attacker" if attacker_score > defender_score else

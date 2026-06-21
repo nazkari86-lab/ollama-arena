@@ -34,7 +34,20 @@ class SqliteMatchRepository:
         score_a: float, score_b: float,
         elo_a_before: float, elo_b_before: float,
         elo_a_after: float, elo_b_after: float, ts: float,
+        conn=None,
     ) -> None:
+        """`conn`: optional shared connection (see ratings.upsert_rating
+        docstring) so this can join EloStore.record_match's single
+        transaction instead of opening/committing its own."""
+        if conn is not None:
+            conn.execute("""
+                INSERT INTO match_log
+                (model_a,model_b,category,score_a,score_b,
+                 elo_a_before,elo_b_before,elo_a_after,elo_b_after,ts)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+            """, (model_a, model_b, category, score_a, score_b,
+                  elo_a_before, elo_b_before, elo_a_after, elo_b_after, ts))
+            return
         with write_conn(self.db) as cx:
             cx.execute("""
                 INSERT INTO match_log

@@ -201,6 +201,26 @@ class TestOpenAICompatText:
         body = m.call_args[1]["json"]
         assert body["stream"] is True
 
+    def test_success_response_closed(self):
+        """The streaming requests.Response must be closed once consumed so
+        the connection is released back to the pool instead of leaking."""
+        b = self._backend()
+        lines = _oai_sse(_oai_delta("ok", finish_reason="stop"))
+        resp = _fake_resp(lines)
+        with mock.patch("requests.post", return_value=resp):
+            b.generate("mistral", "hi")
+        resp.close.assert_called_once()
+
+    def test_http_error_response_still_closed(self):
+        """Non-200 responses return early but must still close the
+        underlying streaming connection rather than leaking it."""
+        b = self._backend()
+        err = _fake_resp([], status=500)
+        err.text = "Internal Server Error"
+        with mock.patch("requests.post", return_value=err):
+            b.generate("mistral", "q")
+        err.close.assert_called_once()
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # OpenAICompatBackend — tool_calls streaming
@@ -523,3 +543,67 @@ class TestPostFunction:
         with mock.patch.object(wh, "_SESSION", None):
             with mock.patch("ollama_arena.webhooks._session", return_value=None):
                 wh._post("http://x.com", {})  # must not raise
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# webhooks.py — secret-leakage prevention (_post must never log the raw
+# webhook URL: Discord/Slack webhook URLs embed a bearer-equivalent secret
+# token directly in the path, e.g. /api/webhooks/<id>/<token>).
+# ──────────────────────────────────────────────────────────────────────────────
+
+class TestWebhookSecretRedaction:
+    SECRET_URL = "https://discord.com/api/webhooks/123456/TOTALLY_SECRET_TOKEN_ABC"
+
+    def test_4xx_response_does_not_leak_token_in_log(self, caplog):
+        import ollama_arena.webhooks as wh
+        import logging
+        fake_sess = mock.MagicMock()
+        r = mock.MagicMock()
+        r.status_code = 403
+        r.text = "Forbidden"
+        fake_sess.post.return_value = r
+
+        with (
+            mock.patch.object(wh, "_SESSION", fake_sess),
+            caplog.at_level(logging.WARNING, logger="arena.webhooks"),
+        ):
+            wh._post(self.SECRET_URL, {"event": "test"})
+
+        assert not any("TOTALLY_SECRET_TOKEN_ABC" in rec.message for rec in caplog.records)
+        # The 403 is still observable, just without the secret path.
+        assert any("403" in rec.message for rec in caplog.records)
+
+    def test_exception_message_does_not_leak_token_in_log(self, caplog):
+        """requests/urllib3 ConnectionError messages often embed the full
+        request URL (including the secret token) in their str() — the
+        warning log must not interpolate the exception object directly."""
+        import ollama_arena.webhooks as wh
+        import logging
+        fake_sess = mock.MagicMock()
+        # Simulate a requests-style error whose message embeds the full URL.
+        fake_sess.post.side_effect = ConnectionError(
+            f"HTTPSConnectionPool(host='discord.com'): Max retries exceeded "
+            f"with url: {self.SECRET_URL.replace('https://discord.com', '')} "
+            f"(refused)"
+        )
+
+        with (
+            mock.patch.object(wh, "_SESSION", fake_sess),
+            caplog.at_level(logging.WARNING, logger="arena.webhooks"),
+        ):
+            wh._post(self.SECRET_URL, {"event": "test"})  # must not raise
+
+        assert not any("TOTALLY_SECRET_TOKEN_ABC" in rec.message for rec in caplog.records)
+        assert any("Webhook POST failed" in rec.message for rec in caplog.records)
+
+    def test_redact_url_strips_path_and_query(self):
+        import ollama_arena.webhooks as wh
+        redacted = wh._redact_url("https://hooks.slack.com/services/T0/B0/SECRETTOKEN?x=1")
+        assert "SECRETTOKEN" not in redacted
+        assert redacted == "https://hooks.slack.com/***"
+
+    def test_redact_url_handles_garbage_input(self):
+        import ollama_arena.webhooks as wh
+        # Must never raise, even on malformed input.
+        result = wh._redact_url("not a url at all :::")
+        assert isinstance(result, str)

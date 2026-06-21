@@ -1,7 +1,9 @@
 """Canonical LLM registry loaded from bundled seed_registry.json."""
 from __future__ import annotations
-import json, re
+import json, logging, re
 from pathlib import Path
+
+log = logging.getLogger("arena.genome.registry")
 
 _SEED = Path(__file__).parent / "data" / "seed_registry.json"
 
@@ -22,7 +24,18 @@ class CanonicalRegistry:
         self._alias_map: dict[str, str] = {}
         for m in data["models"]:
             for alias in m.get("aliases", []):
-                self._alias_map[_normalize(alias)] = m["id"]
+                key = _normalize(alias)
+                existing = self._alias_map.get(key)
+                if existing and existing != m["id"]:
+                    # Two different models normalize to the same alias key —
+                    # a silent dict overwrite here would make match_by_name()
+                    # resolve to whichever model happened to be seeded last,
+                    # so at least log it instead of hiding the collision.
+                    log.warning(
+                        f"alias '{alias}' (key={key!r}) already maps to "
+                        f"{existing!r}; overwriting with {m['id']!r}"
+                    )
+                self._alias_map[key] = m["id"]
             self._alias_map[_normalize(m["id"].split("/")[-1])] = m["id"]
 
     def all_models(self) -> list[dict]:

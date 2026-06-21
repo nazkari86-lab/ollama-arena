@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from .agentic import cmd_long_horizon, cmd_redteam, cmd_sandbox, cmd_swarm
 from .agents import cmd_council, cmd_optimize_prompt, cmd_resolve_issue, cmd_review_pr
 from .common import add_common
 from .mcp_cmd import cmd_mcp_diagnose, cmd_mcp_enable, cmd_mcp_disable, cmd_mcp_install, cmd_mcp_list
@@ -24,6 +25,7 @@ from .data import (
 from .finetune_cmd import cmd_finetune
 from .genome_cmd import cmd_genome
 from .match import cmd_benchmark, cmd_match, cmd_royale, cmd_tournament
+from .p2p_cmd import cmd_node, cmd_p2p
 from .web_cmd import cmd_web
 
 
@@ -244,6 +246,103 @@ def main():
     pmcp_install = pmcp_sub.add_parser("install", help="Install a popular MCP server")
     pmcp_install.add_argument("server", help="Server template to install (sqlite, filesystem, memory, git, time)")
     pmcp_install.set_defaults(func=cmd_mcp_install)
+
+    psb = sub.add_parser("sandbox", help="Manage VM sandboxes for isolated task execution")
+    psb.add_argument("sandbox_action",
+                     choices=["create", "execute", "stop", "list", "cleanup"],
+                     help="Sandbox action to perform")
+    psb.add_argument("--sandbox-id", dest="sandbox_id", default=None,
+                     help="Sandbox identifier (required for create/execute/stop; "
+                          "optional for cleanup — omit to clean up all)")
+    psb.add_argument("--backend", dest="backend", default=None,
+                     choices=["docker", "firecracker", "kubevirt", "mock"],
+                     help="Sandbox backend (default: docker)")
+    psb.add_argument("--cpu-limit", dest="cpu_limit", default="2",
+                     help="CPU limit passed to the sandbox backend (default: 2)")
+    psb.add_argument("--memory", dest="memory", default="4g",
+                     help="Memory limit passed to the sandbox backend (default: 4g)")
+    psb.add_argument("--timeout", dest="timeout", type=int, default=300,
+                     help="Sandbox timeout in seconds (default: 300)")
+    psb.add_argument("--no-network-isolation", action="store_true",
+                     help="Disable network isolation for the sandbox")
+    psb.add_argument("--task", default=None, help="Task to execute (with 'execute')")
+    add_common(psb)
+    psb.set_defaults(func=cmd_sandbox)
+
+    psw = sub.add_parser("swarm", help="Run swarm battles between teams of agents")
+    psw.add_argument("--mode", default="2v2", choices=["2v2", "3v3"],
+                     help="Team size preset (default: 2v2)")
+    psw.add_argument("--task", required=True, help="Task for the swarm to solve")
+    psw.add_argument("--rounds", type=int, default=3)
+    psw.add_argument("--max-steps", dest="max_steps", type=int, default=10,
+                     help="Max steps per round (default: 10)")
+    psw.add_argument("--team-a", dest="team_a", default=None, metavar="MODEL:ROLE[,MODEL:ROLE]",
+                     help="Override Team A composition (default: example preset for --mode)")
+    psw.add_argument("--team-b", dest="team_b", default=None, metavar="MODEL:ROLE[,MODEL:ROLE]",
+                     help="Override Team B composition (default: example preset for --mode)")
+    psw.add_argument("--output", default=None, metavar="PATH",
+                     help="Save full results as JSON to this path")
+    add_common(psw)
+    psw.set_defaults(func=cmd_swarm)
+
+    prt = sub.add_parser("redteam", help="Run red team arena for security evaluation")
+    prt.add_argument("--attacker", required=True, help="Attacker model")
+    prt.add_argument("--defender", required=True, help="Defender model")
+    prt.add_argument("--context", required=True, help="Task context for the evaluation")
+    prt.add_argument("--rounds", type=int, default=3)
+    prt.add_argument("--severity", default=None, metavar="LOW,MEDIUM,...",
+                     help="Comma-separated severity levels (default: low,medium,high,critical)")
+    prt.add_argument("--no-adaptive", action="store_true",
+                     help="Disable adaptive attack escalation")
+    prt.add_argument("--timeout", type=int, default=60, help="Timeout per round in seconds")
+    prt.add_argument("--output", default=None, metavar="PATH",
+                     help="Save full results as JSON to this path")
+    add_common(prt)
+    prt.set_defaults(func=cmd_redteam)
+
+    plh = sub.add_parser("long-horizon", aliases=["lh"],
+                         help="Manage and execute long-horizon agent tasks")
+    plh.add_argument("lh_action",
+                     choices=["list", "start", "pause", "resume", "progress", "complete", "status"],
+                     help="Long-horizon task action")
+    plh.add_argument("--task-id", dest="task_id", default=None,
+                     help="Task ID (required for all actions except 'list')")
+    plh.add_argument("--checkpoint-dir", dest="checkpoint_dir", default="checkpoints",
+                     help="Directory for task checkpoints (default: checkpoints)")
+    plh.add_argument("--progress", type=float, default=0.0,
+                     help="Progress percentage (with 'progress')")
+    plh.add_argument("--step-description", dest="step_description", default="",
+                     help="Description of the current step (with 'progress')")
+    plh.set_defaults(func=cmd_long_horizon)
+
+    pn = sub.add_parser("node", help="P2P Grid node management")
+    pn.add_argument("--join-global", dest="join_global", action="store_true",
+                    help="Join the global P2P network and run until interrupted")
+    pn.add_argument("--status", action="store_true", help="Show node status")
+    pn.add_argument("--peers", action="store_true", help="List discovered peers")
+    pn.add_argument("--global-leaderboard", dest="global_leaderboard", action="store_true",
+                    help="Show the global verified leaderboard")
+    pn.add_argument("--distribute-task", dest="distribute_task", action="store_true",
+                    help="Distribute an A/B test task across the network")
+    pn.add_argument("--bootstrap", default=None, metavar="HOST:PORT[,HOST:PORT]",
+                    help="Comma-separated bootstrap node addresses")
+    pn.add_argument("--host", default="0.0.0.0")
+    pn.add_argument("--port", type=int, default=8080)
+    pn.add_argument("--model-a", dest="model_a", default=None)
+    pn.add_argument("--model-b", dest="model_b", default=None)
+    pn.add_argument("--category", default="coding")
+    pn.add_argument("--limit", type=int, default=10)
+    pn.set_defaults(func=cmd_node)
+
+    pp2p = sub.add_parser("p2p", help="P2P Grid cryptographic proof utilities")
+    pp2p.add_argument("--verify-result", dest="verify_result", default=None, metavar="FILE",
+                      help="Verify a cryptographic proof bundle from FILE")
+    pp2p.add_argument("--generate-proof", dest="generate_proof", action="store_true",
+                      help="Generate a cryptographic proof bundle")
+    pp2p.add_argument("--task-id", dest="task_id", default=None)
+    pp2p.add_argument("--result", default=None, metavar="JSON",
+                      help="Result data as a JSON string (with --generate-proof)")
+    pp2p.set_defaults(func=cmd_p2p)
 
     pw = sub.add_parser("web", help="Launch web dashboard")
     pw.add_argument("--host", default="0.0.0.0")

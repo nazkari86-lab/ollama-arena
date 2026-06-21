@@ -40,11 +40,20 @@ class GraphEngine:
 
         seen_ids = {n["id"] for n in nodes}
         links = []
+        seen_edges: set[tuple[str, str, str]] = set()
         for m in canonicals:
+            # get_lineage(id) matches rows where id is EITHER child_id OR
+            # parent_id, so the same edge is returned once while processing
+            # the child's canonical row and again while processing the
+            # parent's — dedupe on (child, parent, relation) to avoid
+            # doubling every link in the graph.
             edges = self.store.get_lineage(m["id"])
             for e in edges:
+                edge_key = (e["child_id"], e["parent_id"], e["relation"])
                 if (e["child_id"] in seen_ids and e["parent_id"] in seen_ids
-                        and e["child_id"] != e["parent_id"]):
+                        and e["child_id"] != e["parent_id"]
+                        and edge_key not in seen_edges):
+                    seen_edges.add(edge_key)
                     links.append({
                         "source": e["child_id"],
                         "target": e["parent_id"],

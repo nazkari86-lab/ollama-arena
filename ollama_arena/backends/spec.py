@@ -101,6 +101,7 @@ class SpeculativeBackend:
         tokens_in = tokens_out = 0
         tool_calls: list[dict] = []
         finish_reason = "stop"
+        r = None
         try:
             r = requests.post(
                 f"{self.base}/chat/completions",
@@ -170,6 +171,9 @@ class SpeculativeBackend:
             return ChatTurnResult(
                 error=str(e), latency_s=round(time.time() - t0, 3),
             )
+        finally:
+            if r is not None:
+                r.close()
 
     def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
         turn = self.chat_turn(model, messages, tools, **opts)
@@ -224,11 +228,20 @@ class SpeculativeBackend:
         }
 
 
+#  Hard cap on how many spec servers (each loading a full model + draft
+#  model onto the GPU with --n-gpu-layers 999) may be running at once.
+#  This is a real safety limit, not a tuning knob: starting all 8
+#  registered servers concurrently has previously pushed this host into
+#  swap. Override only if you know the box has the headroom.
+MAX_CONCURRENT_SPEC_SERVERS = 3
+
+
 class SpecManager:
     """Start/stop speculative decoding servers and check their status."""
 
     def __init__(self):
         self._procs: dict[str, subprocess.Popen] = {}
+        self._starting: set[str] = set()  # names currently mid-start()
 
     def status(self) -> list[dict]:
         out = []
@@ -260,9 +273,36 @@ class SpecManager:
         cfg = SPEC_SERVERS[name]
         if self._is_port_open(cfg["port"]):
             return {"ok": True, "message": f"{name} already running on :{cfg['port']}"}
+
+        # Refuse a second concurrent start of the *same* server — without
+        # this, two near-simultaneous calls (e.g. a manual start racing
+        # start_all's background loop) can each pass the port-open check
+        # above before either process has bound its port, and both spawn
+        # a llama-server pointed at the same port.
+        if name in self._starting:
+            return {"ok": False, "error": f"{name} is already starting"}
+
+        # Hard cap on concurrently running/starting spec servers — each one
+        # loads a full model + draft model onto the GPU. Starting all of
+        # them at once is what previously drove this host into swap.
+        running_or_starting = {
+            n for n, c in SPEC_SERVERS.items() if self._is_port_open(c["port"])
+        } | self._starting
+        if name not in running_or_starting and len(running_or_starting) >= MAX_CONCURRENT_SPEC_SERVERS:
+            return {
+                "ok": False,
+                "error": (
+                    f"Refusing to start {name}: {len(running_or_starting)} spec server(s) "
+                    f"already running/starting (limit {MAX_CONCURRENT_SPEC_SERVERS}). "
+                    "Stop one first."
+                ),
+            }
+
         script = cfg["script"]
         if not Path(script).exists():
             return {"ok": False, "error": f"Script not found: {script}"}
+
+        self._starting.add(name)
         try:
             proc = subprocess.Popen(
                 ["bash", script],
@@ -280,6 +320,8 @@ class SpecManager:
             return {"ok": False, "error": "Server did not start within 30s"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+        finally:
+            self._starting.discard(name)
 
     def stop(self, name: str) -> dict:
         cfg = SPEC_SERVERS.get(name)
@@ -287,21 +329,43 @@ class SpecManager:
             return {"ok": False, "error": f"Unknown: {name}"}
         port = cfg["port"]
         killed = False
-        # Kill by port
+        # Kill by port — graceful SIGTERM first, give the server a moment
+        # to shut down cleanly (flush/unload GPU memory), then SIGKILL only
+        # the PIDs that are still alive. A bare SIGKILL skips llama-server's
+        # own cleanup and risks leaving GPU memory pinned until the driver
+        # reclaims it.
         try:
             result = subprocess.run(
                 ["lsof", "-ti", f":{port}"],
                 capture_output=True, text=True, timeout=3,
             )
-            for pid_str in result.stdout.strip().split():
-                subprocess.run(["kill", "-9", pid_str], timeout=2)
+            pids = result.stdout.strip().split()
+            for pid_str in pids:
+                subprocess.run(["kill", "-15", pid_str], timeout=2)
                 killed = True
+            if pids:
+                for _ in range(10):
+                    time.sleep(0.3)
+                    if not self._is_port_open(port):
+                        break
+                if self._is_port_open(port):
+                    survivors = subprocess.run(
+                        ["lsof", "-ti", f":{port}"],
+                        capture_output=True, text=True, timeout=3,
+                    )
+                    for pid_str in survivors.stdout.strip().split():
+                        subprocess.run(["kill", "-9", pid_str], timeout=2)
         except Exception:
             pass
-        # Kill tracked proc
+        # Kill tracked proc — same graceful-then-forceful approach.
         if name in self._procs:
+            proc = self._procs[name]
             try:
-                self._procs[name].kill()
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
             except Exception:
                 pass
             del self._procs[name]

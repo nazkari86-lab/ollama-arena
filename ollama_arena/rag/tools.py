@@ -92,7 +92,7 @@ def code_search(args: dict) -> str:
             for i, result in enumerate(results_raw, 1):
                 metadata = result["metadata"]
                 results += f"{i}. {metadata.get('file_path', 'unknown')} (chunk {metadata.get('chunk_index', '?')})\n"
-                if result.get("distance"):
+                if result.get("distance") is not None:
                     results += f"   Similarity: {1 - result['distance']:.3f}\n"
 
         return results

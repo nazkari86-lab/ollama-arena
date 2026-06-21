@@ -82,22 +82,53 @@ def cmd_anti_leaderboard(args):
 # ── match ─────────────────────────────────────────────────────────────────────
 
 def cmd_import(args):
-    """Import a local CSV/JSON dataset for evaluation."""
+    """Import a local CSV/JSON dataset for evaluation.
+
+    NOTE: this command currently only validates and counts records in the
+    file — it does not yet register a queryable 'local_<name>' task category.
+    """
     console = _console()
-    import os
+    import csv
+    import json as _json
     import sys
     from pathlib import Path
-    
+
     file_path = Path(args.file)
     if not file_path.exists():
         console.print(f"[red]File not found: {file_path}[/red]")
         sys.exit(1)
-        
+
     console.print(f"Importing local dataset: [cyan]{file_path.name}[/cyan]")
-    # Basic skeleton for CSV/JSON import
     console.print("[dim]Parsing file format...[/dim]")
-    console.print(f"[green]✓ Successfully imported 150 tasks into 'local_{file_path.stem}' category.[/green]")
-    console.print(f"Run matches using: [bold]ollama-arena match ... --category local_{file_path.stem}[/bold]")
+
+    suffix = file_path.suffix.lower()
+    try:
+        if suffix == ".csv":
+            with file_path.open(newline="", encoding="utf-8") as f:
+                n_records = sum(1 for _ in csv.reader(f)) - 1  # minus header
+                n_records = max(n_records, 0)
+        elif suffix in (".json", ".jsonl"):
+            text = file_path.read_text(encoding="utf-8")
+            if suffix == ".jsonl":
+                n_records = sum(1 for ln in text.splitlines() if ln.strip())
+            else:
+                data = _json.loads(text)
+                n_records = len(data) if isinstance(data, list) else 1
+        else:
+            console.print(f"[red]Unsupported file format: {suffix or '(none)'}. Use .csv, .json, or .jsonl[/red]")
+            sys.exit(1)
+    except (OSError, _json.JSONDecodeError, csv.Error) as e:
+        console.print(f"[red]Failed to parse {file_path.name}: {e}[/red]")
+        sys.exit(1)
+
+    if n_records == 0:
+        console.print(f"[yellow]⚠ {file_path.name} contains no records — nothing imported.[/yellow]")
+        sys.exit(1)
+
+    console.print(
+        f"[green]✓ Parsed {n_records} record(s) from {file_path.name}[/green] "
+        f"[dim](category registration for 'local_{file_path.stem}' is not yet implemented)[/dim]"
+    )
 
 
 # ── tasks ─────────────────────────────────────────────────────────────────────
@@ -179,6 +210,11 @@ def cmd_results(args):
             if info:
                 out = export_match_report(args.match, info, tasks)
                 console.print(f"\n  [green]✓ Match report exported to: [bold]{out}[/bold][/green]")
+            else:
+                console.print(
+                    f"\n  [yellow]⚠ Could not export match #{args.match}: "
+                    f"not found in recent match history.[/yellow]"
+                )
         return
 
     # List recent matches
@@ -455,7 +491,7 @@ def cmd_publish(args):
 
     try:
         console.print("[cyan]Uploading results to GitHub Gist...[/cyan]")
-        r = requests.post("https://api.github.com/gists", json=payload, headers=headers)
+        r = requests.post("https://api.github.com/gists", json=payload, headers=headers, timeout=30)
         if r.status_code == 201:
             gist_url = r.json().get("html_url")
             console.print(f"[green]Successfully published! Gist URL:[/green] [cyan]{gist_url}[/cyan]")

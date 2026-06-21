@@ -306,6 +306,11 @@ class P2PNode:
         self.messages_received = 0
         self.tasks_completed = 0
         self.tasks_failed = 0
+
+        # _get_capabilities() shells out to psutil; cache briefly since
+        # _can_accept_task() calls it on every task offer.
+        self._capabilities_cache: Optional[Dict[str, Any]] = None
+        self._capabilities_cache_time: float = 0.0
     
     async def start(self) -> None:
         """Start the P2P node."""
@@ -361,15 +366,18 @@ class P2PNode:
                 },
             )
             
+            stale_peer_ids = []
             for peer_id, peer in list(self.peers.items()):
-                try:
-                    await self._send_message(peer, heartbeat_msg)
+                sent = await self._send_message(peer, heartbeat_msg)
+                if sent:
                     peer.last_seen = time.time()
-                except Exception as e:
-                    print(f"Failed to send heartbeat to {peer_id}: {e}")
-                    # Remove stale peer
-                    if time.time() - peer.last_seen > 300:  # 5 minutes
-                        del self.peers[peer_id]
+                elif time.time() - peer.last_seen > 300:  # 5 minutes unreachable
+                    stale_peer_ids.append(peer_id)
+
+            # _send_message() already logs failures and never raises, so
+            # pruning must be driven by its return value, not an exception.
+            for peer_id in stale_peer_ids:
+                self.peers.pop(peer_id, None)
     
     async def _send_message(self, peer: NodeInfo, message: P2PMessage) -> bool:
         """
@@ -465,18 +473,22 @@ class P2PNode:
         return {"peers": peers_list}
     
     def _get_capabilities(self) -> Dict[str, Any]:
-        """Get node capabilities."""
+        """Get node capabilities (cached for 30s to avoid repeated psutil calls)."""
+        now = time.time()
+        if self._capabilities_cache is not None and now - self._capabilities_cache_time < 30:
+            return self._capabilities_cache
+
         import platform
-        import psutil
-        
+
         try:
+            import psutil
             cpu_count = psutil.cpu_count()
             memory_gb = psutil.virtual_memory().total / (1024**3)
         except ImportError:
             cpu_count = 4
             memory_gb = 16.0
-        
-        return {
+
+        self._capabilities_cache = {
             "cpu_cores": cpu_count,
             "memory_gb": round(memory_gb, 2),
             "platform": platform.system(),
@@ -484,6 +496,8 @@ class P2PNode:
             "supported_backends": ["ollama", "openai_compat"],
             "max_concurrent_tasks": 2,
         }
+        self._capabilities_cache_time = now
+        return self._capabilities_cache
     
     def _can_accept_task(self, task: Dict[str, Any]) -> bool:
         """Check if node can accept a task."""

@@ -1,6 +1,6 @@
 """Plotly chart generators returning embeddable HTML fragments."""
 from __future__ import annotations
-import datetime, json, math
+import datetime, html as html_lib, json, math
 from collections import defaultdict
 from pathlib import Path
 
@@ -31,7 +31,7 @@ def elo_timeline_html(matches: list[dict], top_n: int = 8) -> str:
     # Walk in chronological order to build per-model curves
     ms = sorted(matches, key=lambda m: m.get("ts", 0))
     for m in ms:
-        ts = m["ts"]
+        ts = m.get("ts", 0)
         series[m["model_a"]].append((ts, m["elo_a_after"]))
         series[m["model_b"]].append((ts, m["elo_b_after"]))
 
@@ -69,6 +69,9 @@ def elo_timeline_html(matches: list[dict], top_n: int = 8) -> str:
 def radar_html(matches: list[dict], categories: list[str], top_n: int = 5) -> str:
     """Radar chart of each model's win-rate per category."""
     go = _require_plotly()
+
+    if not categories:
+        return "<div style='color:#8b949e;padding:20px'>No category data yet.</div>"
 
     # model → category → (wins, total)
     per: dict[str, dict[str, list[int]]] = defaultdict(
@@ -188,7 +191,7 @@ def _category_elo_radar_fallback(
     })
     if not all_cats:
         return "<div style='color:#8b949e;padding:20px'>No category data yet.</div>"
-    header = "".join(f"<th style='padding:8px'>{c}</th>" for c in all_cats)
+    header = "".join(f"<th style='padding:8px'>{html_lib.escape(str(c))}</th>" for c in all_cats)
     rows = []
     for model, entries in profiles.items():
         elo_by_cat = {e["category"]: round(e["elo"], 0) for e in entries}
@@ -196,7 +199,9 @@ def _category_elo_radar_fallback(
             f"<td style='padding:8px;color:#58a6ff'>{elo_by_cat.get(c, '—')}</td>"
             for c in all_cats
         )
-        rows.append(f"<tr><td style='padding:8px;font-weight:700'>{model}</td>{cells}</tr>")
+        rows.append(
+            f"<tr><td style='padding:8px;font-weight:700'>{html_lib.escape(str(model))}</td>{cells}</tr>"
+        )
     return (
         "<table style='width:100%;border-collapse:collapse'>"
         f"<thead><tr style='border-bottom:1px solid #30363d'>"
@@ -279,10 +284,10 @@ def performance_chart_html(perf: list[dict] | dict) -> str:
         plot_bgcolor="#161b22", paper_bgcolor="#0d1117",
         font=dict(color="#e6edf3"),
         xaxis=dict(title="Model"),
-        yaxis=dict(title="Tokens/sec", side="left", gridcolor="#30363d",
-                   titlefont=dict(color="#58a6ff"), tickfont=dict(color="#58a6ff")),
-        yaxis2=dict(title="Latency (s)", side="right", overlaying="y",
-                    titlefont=dict(color="#f85149"), tickfont=dict(color="#f85149")),
+        yaxis=dict(title=dict(text="Tokens/sec", font=dict(color="#58a6ff")),
+                   side="left", gridcolor="#30363d", tickfont=dict(color="#58a6ff")),
+        yaxis2=dict(title=dict(text="Latency (s)", font=dict(color="#f85149")),
+                    side="right", overlaying="y", tickfont=dict(color="#f85149")),
         barmode="group", height=420,
         legend=dict(bgcolor="#161b22", bordercolor="#30363d", borderwidth=1),
     )
@@ -306,15 +311,15 @@ def leaderboard_table_html(board: list[dict]) -> str:
             f"<span style='color:{tcolor};font-weight:700' title='Last-5 ELO Δ: {delta:+.1f}'>"
             f"{icon} {abs(delta):.0f}</span>"
         )
-        ci = e.get("elo_ci", "")
+        ci = e.get("elo_ci")
         ci_cell = (
             f"<span style='color:#8b949e;font-size:0.85em' title='95% confidence interval'>"
             f"±{ci:.0f}</span>"
-        ) if ci else ""
+        ) if ci is not None and ci != "" else ""
         rows.append(
             f"<tr>"
             f"<td style='font-weight:700;padding:8px 10px'>{e['rank']}</td>"
-            f"<td style='padding:8px 10px'><strong>{e['model']}</strong></td>"
+            f"<td style='padding:8px 10px'><strong>{html_lib.escape(str(e['model']))}</strong></td>"
             f"<td style='color:#58a6ff;font-weight:700;padding:8px 10px'>"
             f"{e['elo']:.0f} {ci_cell}</td>"
             f"<td style='padding:8px 10px'>{trend_cell}</td>"
@@ -353,7 +358,7 @@ def anti_leaderboard_table_html(board: list[dict]) -> str:
         rows.append(
             f"<tr>"
             f"<td style='font-weight:700'>{e['rank']}</td>"
-            f"<td><strong>{e['model']}</strong></td>"
+            f"<td><strong>{html_lib.escape(str(e['model']))}</strong></td>"
             f"<td style='color:{color};font-weight:800'>{rate}</td>"
             f"<td>{e['hallucinations']}</td>"
             f"<td>{e['total_checked']}</td>"
@@ -390,9 +395,10 @@ def full_dashboard_html(
     lb_table   = leaderboard_table_html(leaderboard)
     alb_table  = anti_leaderboard_table_html(anti_leaderboard or [])
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    safe_title = html_lib.escape(str(title))
 
     return f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>{title}</title>
+<html><head><meta charset="UTF-8"><title>{safe_title}</title>
 <style>
   body {{ background:#0d1117; color:#e6edf3; font-family:system-ui; margin:0; padding:32px; }}
   h1 {{ font-size:28px; margin-bottom:4px; font-weight:600; }}

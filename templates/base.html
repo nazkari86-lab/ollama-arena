@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Ollama Arena — Ultimate LLM Evaluation{% endblock %}</title>
+<script nonce="{{ csp_nonce }}">window.__CSP_NONCE__ = "{{ csp_nonce }}";</script>
 <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
@@ -12,8 +13,9 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-<script src="/static/arena3d.js"></script>
-<script src="/static/agent_trace.js"></script>
+<script src="/static/arena3d.js?v={{ asset_version }}"></script>
+<script src="/static/agent_trace.js?v={{ asset_version }}"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
@@ -25,16 +27,17 @@
         integrity="sha384-tx/QFuFzdzRut7nP+Xdtxd2C8/8bPSXhHk1eD+u2HV+YLcruFxA8L4Dj74XVqI0/"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@500;600;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/css/arena.css">
+<link rel="stylesheet" href="/static/css/arena.css?v={{ asset_version }}">
 {% block head_extra %}{% endblock %}
 </head>
 <body>
 {% block body %}{% endblock %}
-<script src="/static/js/utils.js"></script>
-<script src="/static/js/ws-client.js"></script>
-<script src="/static/js/match.js"></script>
-<script src="/static/js/spec.js"></script>
-<script src="/static/js/bootstrap.js"></script>
+<script src="/static/js/utils.js?v={{ asset_version }}"></script>
+<script src="/static/genome.js?v={{ asset_version }}"></script>
+<script src="/static/js/ws-client.js?v={{ asset_version }}"></script>
+<script src="/static/js/match.js?v={{ asset_version }}"></script>
+<script src="/static/js/spec.js?v={{ asset_version }}"></script>
+<script src="/static/js/bootstrap.js?v={{ asset_version }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

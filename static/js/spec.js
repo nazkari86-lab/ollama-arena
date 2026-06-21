@@ -3,6 +3,15 @@
 // ═══════════════════════════════════════════════════════════════
 let _specSparklines = {};  // name → [tps history]
 
+document.getElementById('spec-servers-grid')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const name = btn.dataset.name;
+  if (btn.dataset.action === 'spec-start') specStart(name, btn);
+  else if (btn.dataset.action === 'spec-stop') specStop(name, btn);
+  else if (btn.dataset.action === 'spec-try') specQuickTry(name);
+});
+
 async function loadSpec() {
   const grid = document.getElementById('spec-servers-grid');
   const sel  = document.getElementById('spec-model-select');
@@ -17,9 +26,9 @@ async function loadSpec() {
       const running = s.running;
       const color   = running ? 'var(--accent-green)' : 'var(--text-muted)';
       const dot     = running ? '●' : '○';
-      const btnStart = `<button class="btn" style="width:auto;padding:6px 12px;font-size:11px;" onclick="specStart('${s.name}', this)" ${running ? 'disabled' : ''}>▶ START</button>`;
-      const btnStop  = `<button class="btn" style="width:auto;padding:6px 12px;font-size:11px;background:rgba(248,81,73,0.15);border-color:rgba(248,81,73,0.3);color:var(--accent-red);" onclick="specStop('${s.name}', this)" ${!running ? 'disabled' : ''}>■ STOP</button>`;
-      const btnTry   = running ? `<button class="btn" style="width:auto;padding:6px 12px;font-size:11px;background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.3);color:var(--accent-blue);" onclick="specQuickTry('${s.name}')" data-tip="Quick TPS test">⚡ TRY</button>` : '';
+      const btnStart = `<button class="btn" data-action="spec-start" data-name="${escText(s.name)}" style="width:auto;padding:6px 12px;font-size:11px;" ${running ? 'disabled' : ''}>▶ START</button>`;
+      const btnStop  = `<button class="btn" data-action="spec-stop" data-name="${escText(s.name)}" style="width:auto;padding:6px 12px;font-size:11px;background:rgba(248,81,73,0.15);border-color:rgba(248,81,73,0.3);color:var(--accent-red);" ${!running ? 'disabled' : ''}>■ STOP</button>`;
+      const btnTry   = running ? `<button class="btn" data-action="spec-try" data-name="${escText(s.name)}" style="width:auto;padding:6px 12px;font-size:11px;background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.3);color:var(--accent-blue);" data-tip="Quick TPS test">⚡ TRY</button>` : '';
       return `<div class="spec-card ${running ? 'running' : ''}">
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
           <span style="font-size:18px; color:${color}; line-height:1">${dot}</span>

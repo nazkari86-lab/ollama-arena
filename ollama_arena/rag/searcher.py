@@ -76,8 +76,8 @@ class CodeSearcher:
 
         try:
             collection = client.get_collection(name="codebase_index")
-        except:
-            log.warning("No index found. Run indexer first.")
+        except Exception as e:
+            log.warning(f"No index found ({e}). Run indexer first.")
             return []
 
         # Create query embedding
@@ -132,7 +132,9 @@ class CodeSearcher:
 
         for i, result in enumerate(results, 1):
             metadata = result["metadata"]
-            formatted += f"Result {i} (distance: {result['distance']:.3f})\n"
+            distance = result.get("distance")
+            distance_str = f"{distance:.3f}" if distance is not None else "unknown"
+            formatted += f"Result {i} (distance: {distance_str})\n"
             formatted += f"File: {metadata.get('file_path', 'unknown')}\n"
             formatted += f"Chunk: {metadata.get('chunk_index', 'unknown')}\n"
             formatted += "-" * 60 + "\n"
@@ -191,5 +193,6 @@ class CodeSearcher:
         try:
             collection = client.get_collection(name="codebase_index")
             return collection.count() > 0
-        except:
+        except Exception as e:
+            log.info(f"No index found: {e}")
             return False

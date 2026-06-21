@@ -156,3 +156,139 @@ class TestCategoryEloRadar:
         from ollama_arena.visualize.charts import category_elo_radar_html
         html = category_elo_radar_html({})
         assert "No category data" in html
+
+
+class TestHtmlInjectionFixes:
+    """Model names / categories / task text must never be embedded raw into
+    generated HTML — they can contain arbitrary LLM output or attacker-chosen
+    model names."""
+
+    def test_match_report_escapes_model_and_task_fields(self, tmp_path):
+        from ollama_arena.visualize.reports import export_match_report
+        info = {
+            "model_a": "<img src=x onerror=alert(1)>", "model_b": "phi3",
+            "category": "<b>cat</b>", "ts": 1700000000.0,
+            "score_a": 1.0, "score_b": 0.0,
+            "elo_a_after": 1200.0, "elo_b_after": 1190.0,
+        }
+        tasks = [{
+            "task_id": "<svg onload=alert(2)>", "outcome": "a_wins",
+            "instruction": "<script>steal()</script>",
+            "response_a": "<b>bold</b>", "response_b": "plain",
+            "score_a": 1.0, "score_b": 0.0, "expected": "<i>e</i>",
+        }]
+        html_path = export_match_report(1, info, tasks, str(tmp_path))
+        html = Path(html_path).read_text()
+        assert "<img src=x onerror=" not in html
+        assert "<script>steal()</script>" not in html
+        assert "<svg onload=" not in html
+        assert "&lt;img src=x onerror=alert(1)&gt;" in html
+
+    def test_royale_report_escapes_model_and_response_fields(self, tmp_path):
+        from ollama_arena.visualize.reports import export_royale_report
+        tasks = [{
+            "task_id": "t1", "model": "<script>m</script>", "rank": 1,
+            "score": 5.0, "response": "<script>alert(3)</script>",
+            "tps": 30.0, "latency_s": 1.0, "ts": 0.0,
+        }]
+        html_path = export_royale_report(
+            7, "<b>math</b>", ["<script>m</script>"], tasks, str(tmp_path),
+        )
+        html = Path(html_path).read_text()
+        assert "<script>m</script>" not in html
+        assert "<script>alert(3)</script>" not in html
+        assert "&lt;script&gt;m&lt;/script&gt;" in html
+
+    def test_leaderboard_table_escapes_model_name(self):
+        from ollama_arena.visualize.charts import leaderboard_table_html
+        board = [{
+            "rank": 1, "model": "<script>alert(1)</script>", "elo": 1200.0,
+            "wins": 1, "losses": 0, "draws": 0, "matches": 1, "win_rate": 1.0,
+        }]
+        html = leaderboard_table_html(board)
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_anti_leaderboard_table_escapes_model_name(self):
+        from ollama_arena.visualize.charts import anti_leaderboard_table_html
+        board = [{
+            "rank": 1, "model": "<script>alert(1)</script>",
+            "halluc_rate": 0.5, "hallucinations": 1, "total_checked": 2,
+        }]
+        html = anti_leaderboard_table_html(board)
+        assert "<script>alert(1)</script>" not in html
+
+    def test_dashboard_title_is_escaped(self):
+        from ollama_arena.visualize.charts import full_dashboard_html
+        html = full_dashboard_html(
+            [], [], ["code"], title="</title><script>alert(1)</script>",
+        )
+        assert "<script>alert(1)</script>" not in html
+
+    def test_category_radar_fallback_escapes_model_and_category(self):
+        from ollama_arena.visualize.charts import _category_elo_radar_fallback
+        profiles = {
+            "<script>m</script>": [{"category": "<script>c</script>", "elo": 1200.0}],
+        }
+        html = _category_elo_radar_fallback(profiles, 1200.0)
+        assert "<script>m</script>" not in html
+        assert "<script>c</script>" not in html
+
+
+class TestLeaderboardEloCiFalsyZeroFix:
+    def test_elo_ci_exactly_zero_is_rendered_not_dropped(self):
+        from ollama_arena.visualize.charts import leaderboard_table_html
+        board = [{
+            "rank": 1, "model": "veteran-model", "elo": 1200.0,
+            "wins": 100, "losses": 0, "draws": 0, "matches": 100,
+            "win_rate": 1.0, "elo_ci": 0.0,
+        }]
+        html = leaderboard_table_html(board)
+        assert "±0" in html
+
+    def test_elo_ci_missing_renders_nothing(self):
+        from ollama_arena.visualize.charts import leaderboard_table_html
+        board = [{
+            "rank": 1, "model": "m", "elo": 1200.0,
+            "wins": 1, "losses": 0, "draws": 0, "matches": 1, "win_rate": 1.0,
+        }]
+        html = leaderboard_table_html(board)
+        assert "confidence interval" not in html
+
+
+class TestRadarHtmlEmptyCategories:
+    def test_empty_categories_does_not_crash(self):
+        from ollama_arena.visualize.charts import radar_html
+        pytest.importorskip("plotly")
+        matches = [{
+            "model_a": "a", "model_b": "b", "score_a": 1.0, "score_b": 0.0,
+            "category": "code",
+        }]
+        html = radar_html(matches, [])
+        assert "No category data" in html
+
+
+class TestPerformanceChartHtmlRendersWithoutCrash:
+    def test_renders_real_plotly_figure(self):
+        """performance_chart_html used to crash with ValueError on any
+        non-empty input ('Invalid property... titlefont') under modern
+        plotly versions. Verify the real (non-mocked) render path works."""
+        plotly = pytest.importorskip("plotly")
+        from ollama_arena.visualize.charts import performance_chart_html
+        html = performance_chart_html([
+            {"model": "phi-4", "tps_mean": 50.0, "latency_mean_s": 0.5},
+        ])
+        assert "phi-4" in html
+        assert len(html) > 100
+
+
+class TestEloTimelineMissingTimestamp:
+    def test_missing_ts_key_does_not_crash(self):
+        pytest.importorskip("plotly")
+        from ollama_arena.visualize.charts import elo_timeline_html
+        matches = [{
+            "model_a": "a", "model_b": "b",
+            "elo_a_after": 1200.0, "elo_b_after": 1190.0,
+        }]
+        html = elo_timeline_html(matches)
+        assert len(html) > 0

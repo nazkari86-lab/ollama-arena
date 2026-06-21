@@ -39,8 +39,8 @@
 </header>
 <div id="controls">
   <input id="search" type="text" placeholder="Filter by model name or family...">
-  <button onclick="scanModels()">🔍 Scan Local Models</button>
-  <button onclick="loadTree(null)">Show All Families</button>
+  <button id="scan-models-btn">🔍 Scan Local Models</button>
+  <button id="show-all-families-btn">Show All Families</button>
   <span id="status" style="font-size:0.85rem; color:#888;"></span>
 </div>
 <div id="graph"></div>
@@ -57,14 +57,16 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-<script src="/static/genome.js"></script>
-<script>
+<script src="/static/genome.js?v={{ asset_version }}"></script>
+<script nonce="{{ csp_nonce }}">
   loadTree(null);
   document.getElementById('search').addEventListener('input', e => {
     const q = e.target.value.trim();
     if (q.length >= 2) loadTree(q);
     else if (q.length === 0) loadTree(null);
   });
+  document.getElementById('scan-models-btn').addEventListener('click', () => scanModels());
+  document.getElementById('show-all-families-btn').addEventListener('click', () => loadTree(null));
   async function scanModels() {
     document.getElementById('status').textContent = 'Scanning...';
     await fetch('/api/genome/scan', {method: 'POST'});

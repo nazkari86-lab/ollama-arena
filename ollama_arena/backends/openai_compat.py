@@ -144,6 +144,7 @@ class OpenAICompatBackend:
         tokens_in = tokens_out = 0
         tool_calls: list[dict] = []
         finish_reason = "stop"
+        r = None
         try:
             r = requests.post(
                 f"{self.base}/chat/completions",
@@ -214,6 +215,9 @@ class OpenAICompatBackend:
             return ChatTurnResult(
                 error=str(e), latency_s=round(time.time() - t0, 3),
             )
+        finally:
+            if r is not None:
+                r.close()
 
     def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
         """Single-turn completion; legacy path for backends without AgentLoop."""

@@ -53,7 +53,7 @@ def cmd_mcp_list(args):
 
     for name, server_config in config.servers.items():
         status = "✅" if server_config.enabled else "🔴"
-        tier_icon = {"essential": "🔥", "useful": "⚡", "advanced": "🚀"}[server_config.tier]
+        tier_icon = {"essential": "🔥", "useful": "⚡", "advanced": "🚀"}.get(server_config.tier, "❔")
         api_key = "🔐" if server_config.requires_api_key else ""
 
         c.print(f"{status} {tier_icon} {api_key} {name:30} [{server_config.tier}]")
@@ -153,10 +153,16 @@ def cmd_mcp_install(args):
         command, server_args = server_templates[args.server]
         try:
             c.print(f"Installing MCP server: {args.server}")
-            result = subprocess.run([command] + server_args, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                [command] + server_args, capture_output=True, text=True, check=True, timeout=120,
+            )
             print_success(f"✓ Successfully installed {args.server}")
         except subprocess.CalledProcessError as e:
             print_error(f"✗ Failed to install {args.server}: {e.stderr}")
+        except subprocess.TimeoutExpired:
+            print_error(f"✗ Failed to install {args.server}: timed out after 120s")
+        except FileNotFoundError:
+            print_error(f"✗ Failed to install {args.server}: '{command}' not found on PATH")
     else:
         print_error(f"Unknown server template: {args.server}")
         print(f"Available templates: {', '.join(server_templates.keys())}")

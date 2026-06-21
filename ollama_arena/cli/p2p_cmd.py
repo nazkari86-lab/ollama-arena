@@ -311,8 +311,9 @@ async def cmd_generate_proof(args) -> None:
         generator = CryptoProofGenerator(node_id=node.local_node_id)
         
         bundle = generator.create_proof_bundle(task_id, result)
-        
-        output_file = f"proof_{task_id}.json"
+
+        safe_task_id = Path(task_id).name or "unknown"
+        output_file = f"proof_{safe_task_id}.json"
         with open(output_file, 'w') as f:
             json.dump(bundle, f, indent=2)
         

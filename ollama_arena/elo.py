@@ -15,6 +15,7 @@ from .storage.sqlite import (
     SqliteTaskDetailRepository,
     apply_migrations,
 )
+from .storage.sqlite._conn import write_conn
 
 log = logging.getLogger("arena.elo")
 
@@ -73,7 +74,8 @@ class EloStore:
         return 0
 
     def record_match(self, model_a: str, model_b: str, category: str,
-                     score_a: float, score_b: float) -> tuple[float, float]:
+                     score_a: float, score_b: float,
+                     duration_s: float = 0.0) -> tuple[float, float]:
         ra = self.get(model_a)
         rb = self.get(model_b)
 
@@ -88,23 +90,35 @@ class EloStore:
         new_ra, new_rb = update_elo(ra, rb, result, na=na, nb=nb)
         now = time.time()
 
+        # Per-category ELO is read before the writes below (it needs the
+        # pre-match category rating), so do it before opening the shared
+        # write transaction — get_category_elo() uses its own read
+        # connection and doesn't need to join this transaction.
+        new_cat_ra = new_cat_rb = None
+        if category:
+            cat_ra = self._ratings.get_category_elo(model_a, category)
+            cat_rb = self._ratings.get_category_elo(model_b, category)
+            new_cat_ra, new_cat_rb = update_elo(cat_ra, cat_rb, result, na=na, nb=nb)
+
+        # All writes below share one connection/transaction: either every
+        # update lands together or (on a crash/exception mid-sequence) none
+        # of them do, instead of partial writes silently desyncing ELO
+        # ratings from match history (e.g. ratings updated but no
+        # match_log row, or vice versa).
         try:
-            self._ratings.upsert_rating(model_a, new_ra, now)
-            self._ratings.upsert_rating(model_b, new_rb, now)
-            self._ratings.apply_match_stats(model_a, model_b, score_a, score_b)
-            self._matches.insert_match_log(
-                model_a, model_b, category, score_a, score_b,
-                ra, rb, new_ra, new_rb, now,
-            )
-            # Per-category ELO update (uses same K-factor as global)
-            if category:
-                cat_ra = self._ratings.get_category_elo(model_a, category)
-                cat_rb = self._ratings.get_category_elo(model_b, category)
-                new_cat_ra, new_cat_rb = update_elo(cat_ra, cat_rb, result, na=na, nb=nb)
-                self._ratings.upsert_category_rating(
-                    model_a, model_b, category,
-                    new_cat_ra, new_cat_rb, score_a, score_b, now,
+            with write_conn(self.db) as cx:
+                self._ratings.upsert_rating(model_a, new_ra, now, conn=cx)
+                self._ratings.upsert_rating(model_b, new_rb, now, conn=cx)
+                self._ratings.apply_match_stats(model_a, model_b, score_a, score_b, conn=cx)
+                self._matches.insert_match_log(
+                    model_a, model_b, category, score_a, score_b,
+                    ra, rb, new_ra, new_rb, now, conn=cx,
                 )
+                if category:
+                    self._ratings.upsert_category_rating(
+                        model_a, model_b, category,
+                        new_cat_ra, new_cat_rb, score_a, score_b, now, conn=cx,
+                    )
         except Exception as e:
             log.error(f"Error recording match between {model_a} and {model_b}: {e}")
 
@@ -113,7 +127,7 @@ class EloStore:
             from .webhooks import notify_match
             notify_match(
                 model_a, model_b, category, score_a, score_b,
-                ra, new_ra, rb, new_rb, duration_s=0.0,
+                ra, new_ra, rb, new_rb, duration_s=duration_s,
             )
         except Exception:
             pass

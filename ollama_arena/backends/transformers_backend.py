@@ -84,20 +84,28 @@ class TransformersBackend:
                 for m in normalized
             )
 
-        inputs = tok(inputs_text, return_tensors="pt").to(model_obj.device)
-        tokens_in = inputs["input_ids"].shape[1]
         t0 = time.time()
-        with torch.inference_mode():
-            out = model_obj.generate(
-                **inputs,
-                max_new_tokens=max_new,
-                do_sample=do_sample,
-                temperature=max(temperature, 1e-3) if do_sample else 1.0,
-                pad_token_id=tok.pad_token_id,
-            )
+        try:
+            inputs = tok(inputs_text, return_tensors="pt").to(model_obj.device)
+            tokens_in = inputs["input_ids"].shape[1]
+            with torch.inference_mode():
+                out = model_obj.generate(
+                    **inputs,
+                    max_new_tokens=max_new,
+                    do_sample=do_sample,
+                    temperature=max(temperature, 1e-3) if do_sample else 1.0,
+                    pad_token_id=tok.pad_token_id,
+                )
+            tokens_out = out.shape[1] - tokens_in
+            text = tok.decode(out[0, tokens_in:], skip_special_tokens=True).strip()
+        except Exception as e:
+            # Mirrors every other backend's contract: generation failures
+            # (e.g. CUDA OOM, tokenizer mismatch) come back as an error
+            # result instead of an uncaught exception killing the caller
+            # (agent loops, benchmark runs, etc.).
+            return ChatTurnResult(error=str(e), latency_s=round(time.time() - t0, 3))
+
         latency = time.time() - t0
-        tokens_out = out.shape[1] - tokens_in
-        text = tok.decode(out[0, tokens_in:], skip_special_tokens=True).strip()
         return ChatTurnResult(
             text=text,
             tool_calls=[],

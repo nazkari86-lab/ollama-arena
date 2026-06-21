@@ -161,7 +161,10 @@ class ROCmMonitor:
                 timeout=5
             )
             return result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired):
+            # OSError covers FileNotFoundError (binary absent) as well as
+            # PermissionError and other launch failures (e.g. a stale
+            # non-executable rocm-smi stub on PATH).
             return False
     
     def is_available(self) -> bool:
@@ -293,14 +296,21 @@ class MPSMonitor:
             
             return None
         except Exception:
-            # Fallback: return estimated idle power
-            return 5.0  # Estimated idle GPU power for Apple Silicon
-    
+            # powermetrics requires sudo and typically fails without a TTY
+            # or passwordless sudo configured. Report "unknown" honestly
+            # instead of fabricating a measurement (see get_metrics()).
+            return None
+
     def get_metrics(self) -> PowerMetrics:
-        """Get all power metrics."""
+        """Get all power metrics.
+
+        Note: when the real powermetrics-based measurement is unavailable
+        (the common case — it needs sudo), this falls back to a rough,
+        clearly-labeled idle-power estimate rather than a real reading.
+        """
         return PowerMetrics(
             timestamp=time.time(),
-            power_w=self.get_power_usage() or 5.0,  # Fallback estimate
+            power_w=self.get_power_usage() or 5.0,  # Fallback estimate, not a real measurement
         )
 
 

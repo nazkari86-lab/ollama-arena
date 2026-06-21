@@ -107,6 +107,38 @@ class TestDetectOne:
             caps = _detect_one("llama3:7b", "http://localhost:11434")
         assert caps["ctx_length"] == 32768
 
+    def test_ctx_length_fallback_uses_model_family_prefix(self):
+        """details.context_length missing → must check the model's own family
+        prefix in model_info (e.g. "qwen2.context_length"), not a hardcoded
+        "llama.context_length" key. Regression for a bug where every
+        non-llama-family model silently got ctx_length == 0."""
+        from ollama_arena.model_caps import _detect_one
+        r = mock.MagicMock()
+        r.status_code = 200
+        r.json = mock.MagicMock(return_value={
+            "details": {"families": ["qwen2"]},  # no context_length here
+            "modelfile": "",
+            "model_info": {"qwen2.context_length": 32768},
+        })
+        with mock.patch("requests.post", return_value=r):
+            caps = _detect_one("qwen2.5:7b", "http://localhost:11434")
+        assert caps["ctx_length"] == 32768
+
+    def test_ctx_length_fallback_scans_any_context_length_key(self):
+        """If the family list doesn't line up with the model_info key prefix
+        at all, fall back to any "*.context_length" key rather than giving up."""
+        from ollama_arena.model_caps import _detect_one
+        r = mock.MagicMock()
+        r.status_code = 200
+        r.json = mock.MagicMock(return_value={
+            "details": {"families": ["gemma2"]},
+            "modelfile": "",
+            "model_info": {"gemma2.context_length": 8192},
+        })
+        with mock.patch("requests.post", return_value=r):
+            caps = _detect_one("gemma2:9b", "http://localhost:11434")
+        assert caps["ctx_length"] == 8192
+
     def test_families_normalized_lowercase(self):
         from ollama_arena.model_caps import _detect_one
         resp = _make_show_response(families=["Llama", "CLIP"])
@@ -202,6 +234,39 @@ class TestGetCaching:
                 model_caps.get("llama3:7b", "http://localhost:11434")
                 model_caps.get("llama3:7b", "http://localhost:11434")
         assert m.call_count == 1
+
+    def test_transient_failure_not_cached(self):
+        """A connection error/non-200 response must not poison the cache for
+        the full TTL — otherwise one network hiccup makes a model look like it
+        has no vision/tools/context for up to an hour. Regression for a bug
+        where _detect_one()'s {} error sentinel was cached unconditionally."""
+        from ollama_arena.model_caps import get, invalidate
+        invalidate()
+        with mock.patch("requests.post", side_effect=ConnectionError("refused")):
+            caps = get("llama3:7b", "http://localhost:11434")
+        assert caps == {}
+
+        resp = self._fake_resp(ctx=8192)
+        with mock.patch("requests.post", return_value=resp) as m:
+            caps2 = get("llama3:7b", "http://localhost:11434")
+        # Ollama recovered — the failed probe must not have been cached, so
+        # this call should re-probe and return real data.
+        assert m.call_count == 1
+        assert caps2["ctx_length"] == 8192
+
+    def test_successful_probe_after_failure_is_cached_normally(self):
+        """Once a real (non-empty) result is obtained, normal TTL caching
+        resumes — only the error sentinel skips the cache, not everything."""
+        from ollama_arena.model_caps import get, invalidate
+        invalidate()
+        with mock.patch("requests.post", side_effect=ConnectionError("refused")):
+            get("llama3:7b", "http://localhost:11434")
+
+        resp = self._fake_resp()
+        with mock.patch("requests.post", return_value=resp) as m:
+            get("llama3:7b", "http://localhost:11434")
+            get("llama3:7b", "http://localhost:11434")
+        assert m.call_count == 1  # second call hit the now-populated cache
 
 
 # ──────────────────────────────────────────────────────────────────────────────

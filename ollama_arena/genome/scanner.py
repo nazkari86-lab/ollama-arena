@@ -89,10 +89,22 @@ class OllamaScanner:
             import requests
             r = requests.get(f"{self.ollama_url}/api/tags", timeout=10)
             r.raise_for_status()
-            return [m["name"] for m in r.json().get("models", [])]
+            models = r.json().get("models", [])
         except Exception as e:
             log.warning(f"ollama /api/tags failed ({self.ollama_url}): {e}")
             return []
+        # The Ollama API is an external trust boundary — one malformed entry
+        # (e.g. missing "name") must not blank out every other valid model
+        # in the response, so skip bad entries individually instead of
+        # letting a single KeyError discard the whole list.
+        names = []
+        for m in models:
+            name = m.get("name") if isinstance(m, dict) else None
+            if name:
+                names.append(name)
+            else:
+                log.warning(f"ollama /api/tags returned a model entry without a name: {m!r}")
+        return names
 
     def _get_list_cli(self) -> list[str]:
         try:
@@ -140,8 +152,12 @@ class OllamaScanner:
             r2 = subprocess.run(["ollama", "list"], capture_output=True, text=True,
                                 timeout=5)
             for line in r2.stdout.splitlines():
-                if line.startswith(name):
-                    parts = line.split()
+                parts = line.split()
+                # Match on the exact first column, not line.startswith(name) —
+                # a substring/prefix match would also match e.g. "llama3:8b"
+                # against the row for "llama3:8b-instruct" and report the
+                # wrong model's size.
+                if parts and parts[0] == name:
                     if len(parts) >= 4:
                         size_gb = _parse_size(parts[2] + " " + parts[3])
                     break

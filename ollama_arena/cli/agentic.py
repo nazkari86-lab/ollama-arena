@@ -93,23 +93,27 @@ def cmd_swarm(args):
         c.print("[red]Invalid mode. Use 2v2 or 3v3[/red]")
         sys.exit(1)
 
-    # Override with custom configs if provided
+    # Override with custom configs if provided. Format is "model:role,model:role".
+    # Model names (e.g. Ollama tags like "llama3.1:8b") may themselves contain a
+    # colon, so split on the *last* colon — the role is always the final token.
+    def _parse_team_config(spec: str) -> dict:
+        try:
+            raw = dict(item.rsplit(":", 1) for item in spec.split(","))
+        except ValueError:
+            c.print(f"[red]Invalid team config '{spec}'. Expected format: model:role,model:role[/red]")
+            sys.exit(1)
+        try:
+            return {model: AgentRole(role) for model, role in raw.items()}
+        except ValueError as e:
+            valid = ", ".join(r.value for r in AgentRole)
+            c.print(f"[red]Invalid role in team config: {e}. Valid roles: {valid}[/red]")
+            sys.exit(1)
+
     if args.team_a:
-        team_a_config = dict(
-            item.split(":") for item in args.team_a.split(",")
-        )
-        # Convert role strings to AgentRole
-        team_a_config = {
-            model: AgentRole(role) for model, role in team_a_config.items()
-        }
+        team_a_config = _parse_team_config(args.team_a)
 
     if args.team_b:
-        team_b_config = dict(
-            item.split(":") for item in args.team_b.split(",")
-        )
-        team_b_config = {
-            model: AgentRole(role) for model, role in team_b_config.items()
-        }
+        team_b_config = _parse_team_config(args.team_b)
 
     battle = SwarmBattle(arena.client, arena.mcp)
     team_a = battle.create_team("Team A", team_a_config)

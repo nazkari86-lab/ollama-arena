@@ -39,6 +39,7 @@
   <div class="tab" role="tab" tabindex="-1" data-tab="performance">⚡ Performance</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="hallucinations">🍄 Hallucinations</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="spec">🚀 Spec Decode</div>
+  <div class="tab" role="tab" tabindex="-1" data-tab="genome">🧬 Genome</div>
 
 </div>
 
@@ -56,7 +57,7 @@
     </div>
 
     <div class="card">
-      <h2>Global Leaderboard <button class="btn" style="width:auto; padding:6px 12px; font-size:11px; margin-left:auto; background:transparent; border-color:var(--border-color);" onclick="loadAll()">Refresh</button></h2>
+      <h2>Global Leaderboard <button class="btn" id="lb-refresh-btn" style="width:auto; padding:6px 12px; font-size:11px; margin-left:auto; background:transparent; border-color:var(--border-color);">Refresh</button></h2>
       <div id="leaderboard-table" style="overflow-x: auto;"></div>
     </div>
 
@@ -134,7 +135,7 @@
               <span>🎭 Blind Mode <span style="color:var(--text-muted); font-weight:400; font-size:11px; margin-left:6px;">— models hidden as X / Y until results</span></span>
             </label>
           </div>
-          <button class="btn primary" id="run-btn" onclick="runMatch()">Engage Combat</button>
+          <button class="btn primary" id="run-btn">Engage Combat</button>
         </div>
       </div>
     </div>
@@ -171,7 +172,7 @@
             <label for="tourney-concurrency">Concurrency</label>
             <input type="number" id="tourney-concurrency" value="2" min="1" max="8">
           </div>
-          <button class="btn primary" id="tourney-run-btn" onclick="runTournament()">Commence Tournament</button>
+          <button class="btn primary" id="tourney-run-btn">Commence Tournament</button>
         </div>
       </div>
     </div>
@@ -205,7 +206,7 @@
             <label for="royale-n">Match Cycles (Rounds)</label>
             <input type="number" id="royale-n" value="5" min="1" max="50">
           </div>
-          <button class="btn primary" id="royale-run-btn" onclick="runRoyale()">Initiate Royale</button>
+          <button class="btn primary" id="royale-run-btn">Initiate Royale</button>
         </div>
       </div>
     </div>
@@ -218,7 +219,7 @@
         <div style="max-width: 1000px; margin: 0 auto;">
           <h2>Manual Override (A/B Test)</h2>
           <textarea id="play-prompt" rows="5" placeholder="Inject custom neural instruction..." style="margin-bottom:24px; font-family:'JetBrains Mono', monospace; font-size:14px; resize:vertical;"></textarea>
-          <button class="btn primary" id="play-gen-btn" onclick="generatePlayground()" style="width: 250px;">Execute Generation</button>
+          <button class="btn primary" id="play-gen-btn" style="width: 250px;">Execute Generation</button>
 
           <div id="play-battlefield" style="display:none; margin-top:40px">
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:32px">
@@ -240,9 +241,9 @@
               </div>
             </div>
             <div style="display:flex; justify-content:center; gap:16px" id="play-vote-controls">
-              <button class="btn" style="width:auto; padding:14px 48px; background:var(--accent-green); border-color:var(--accent-green);" onclick="votePlayground('x')">Prefer Left</button>
-              <button class="btn" style="width:auto; padding:14px 48px; background:var(--accent-red); border-color:var(--accent-red);" onclick="votePlayground('y')">Prefer Right</button>
-              <button class="btn" style="width:auto; padding:14px 48px; background:rgba(255,255,255,0.1); border-color:transparent;" onclick="votePlayground('draw')">Tie</button>
+              <button class="btn" id="vote-x-btn" style="width:auto; padding:14px 48px; background:var(--accent-green); border-color:var(--accent-green);">Prefer Left</button>
+              <button class="btn" id="vote-y-btn" style="width:auto; padding:14px 48px; background:var(--accent-red); border-color:var(--accent-red);">Prefer Right</button>
+              <button class="btn" id="vote-draw-btn" style="width:auto; padding:14px 48px; background:rgba(255,255,255,0.1); border-color:transparent;">Tie</button>
             </div>
             <div class="status" id="play-status" aria-live="polite"></div>
           </div>
@@ -284,7 +285,7 @@
       <h2>Deep Packet Inspection</h2>
       <div style="display:flex; gap:16px; margin-bottom:32px">
         <input type="text" id="inspect-task-id" placeholder="Task ID Hash (e.g., math_001)">
-        <button class="btn primary" style="width:auto; padding:0 48px" onclick="loadInspect()">Decrypt</button>
+        <button class="btn primary" id="inspect-btn" style="width:auto; padding:0 48px">Decrypt</button>
       </div>
       <div id="inspect-results"></div>
     </div>
@@ -296,7 +297,7 @@
       <h2>Intelligence Synthesis</h2>
       <div style="display:flex; gap:16px; margin-bottom:32px">
         <select id="report-model"></select>
-        <button class="btn primary" style="width:auto; padding:0 48px" onclick="loadReport()">Generate Intel</button>
+        <button class="btn primary" id="report-btn" style="width:auto; padding:0 48px">Generate Intel</button>
       </div>
       <div id="report-results"></div>
     </div>
@@ -339,9 +340,9 @@
     <div class="card">
       <h2>🚀 Speculative Decoding Servers
         <div style="margin-left:auto; display:flex; gap:8px;">
-          <button class="btn" style="width:auto; padding:6px 14px; font-size:11px; background:transparent; border-color:var(--border-color);" onclick="loadSpec()">Refresh</button>
-          <button class="btn" style="width:auto; padding:6px 14px; font-size:11px; background:rgba(63,185,80,0.12); border-color:rgba(63,185,80,0.3); color:var(--accent-green);" onclick="specStartAll()" data-tip="Start every server (background)">Start All</button>
-          <button class="btn" style="width:auto; padding:6px 14px; font-size:11px; background:rgba(248,81,73,0.12); border-color:rgba(248,81,73,0.3); color:var(--accent-red);" onclick="specStopAll()">Stop All</button>
+          <button class="btn" id="spec-refresh-btn" style="width:auto; padding:6px 14px; font-size:11px; background:transparent; border-color:var(--border-color);">Refresh</button>
+          <button class="btn" id="spec-start-all-btn" style="width:auto; padding:6px 14px; font-size:11px; background:rgba(63,185,80,0.12); border-color:rgba(63,185,80,0.3); color:var(--accent-green);" data-tip="Start every server (background)">Start All</button>
+          <button class="btn" id="spec-stop-all-btn" style="width:auto; padding:6px 14px; font-size:11px; background:rgba(248,81,73,0.12); border-color:rgba(248,81,73,0.3); color:var(--accent-red);">Stop All</button>
         </div>
       </h2>
       <p style="color:var(--text-muted); font-size:13px; margin-bottom:24px; line-height:1.6;">
@@ -372,8 +373,8 @@
             <textarea id="spec-prompt" rows="5" placeholder="Enter a prompt…">Write a Python function that implements binary search with type hints. Include docstrings and a usage example.</textarea>
           </div>
           <div style="display:flex; gap:10px;">
-            <button class="btn primary" onclick="specStream()" style="flex:1;">▶ Stream Tokens</button>
-            <button class="btn" onclick="specGenerate()" style="flex:0 0 auto; padding:14px 18px; background:rgba(255,255,255,0.04);" data-tip="Non-streaming benchmark">Bench</button>
+            <button class="btn primary" id="spec-stream-btn" style="flex:1;">▶ Stream Tokens</button>
+            <button class="btn" id="spec-bench-btn" style="flex:0 0 auto; padding:14px 18px; background:rgba(255,255,255,0.04);" data-tip="Non-streaming benchmark">Bench</button>
           </div>
           <div id="spec-live-stats" style="display:none; margin-top:16px;">
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
@@ -400,7 +401,7 @@
       <div style="display:flex; gap:16px; margin-bottom:20px; flex-wrap:wrap;">
         <select id="vs-model-select" style="flex:1; min-width:200px;"></select>
         <input type="text" id="vs-prompt" placeholder="Prompt…" value="Write quicksort in Python." style="flex:2; min-width:240px;">
-        <button class="btn primary" onclick="specVsBase()" style="width:auto; padding:0 32px;">Compare</button>
+        <button class="btn primary" id="spec-vs-base-btn" style="width:auto; padding:0 32px;">Compare</button>
       </div>
       <div id="vs-result" style="min-height:120px;">
         <div style="color:var(--text-muted); font-size:13px;">Comparison results will appear here…</div>
@@ -410,13 +411,55 @@
     <!-- Bench all -->
     <div class="card">
       <h2>🏁 Benchmark All Running Servers
-        <button class="btn" style="width:auto; padding:6px 16px; font-size:11px; margin-left:auto; background:transparent; border-color:var(--border-color);" onclick="specBenchAll()">Run</button>
+        <button class="btn" id="spec-bench-all-btn" style="width:auto; padding:6px 16px; font-size:11px; margin-left:auto; background:transparent; border-color:var(--border-color);">Run</button>
       </h2>
       <p style="color:var(--text-muted); font-size:13px; margin-bottom:20px;">
         Runs the same prompt in parallel against every currently-running spec server. Results sorted by TPS.
       </p>
       <div id="bench-all-result">
         <div style="color:var(--text-muted); font-size:13px;">Click <b>Run</b> to benchmark all running servers.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GENOME -->
+  <div class="tab-content" id="tab-genome" role="tabpanel">
+    <div class="card">
+      <h2>🧬 LLM Genome Explorer
+        <div style="margin-left:auto; display:flex; gap:8px;">
+          <button class="btn" id="genome-scan-btn" style="width:auto; padding:6px 14px; font-size:11px; background:transparent; border-color:var(--border-color);">🔍 Scan Local Models</button>
+          <button class="btn" id="genome-show-all-btn" style="width:auto; padding:6px 14px; font-size:11px; background:transparent; border-color:var(--border-color);">Show All Families</button>
+        </div>
+      </h2>
+      <p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">
+        Lineage graph of your local models — who was fine-tuned, distilled, merged, or trained from whom. Drag nodes, scroll to zoom, click a node for details.
+      </p>
+      <div style="display:flex; gap:16px; align-items:center; margin-bottom:16px;">
+        <input type="text" id="search" placeholder="Filter by model name or family..." style="flex:1;">
+        <span id="status" style="font-size:12px; color:var(--text-muted);"></span>
+      </div>
+      <div id="graph" style="width:100%; height:500px; position:relative; border:1px solid var(--border-color); border-radius:var(--radius-inner); overflow:hidden; background:rgba(1,4,9,0.4);"></div>
+      <div class="legend" style="position:fixed; bottom:2rem; left:2rem; background:var(--card-bg); border:1px solid var(--border-color); border-radius:8px; padding:1rem; z-index:60;">
+        <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.5rem;">Lineage Relations</div>
+        <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.8rem; margin:0.25rem 0;"><div style="width:12px; height:12px; border-radius:50%; flex-shrink:0; background:#58a6ff;"></div>fine_tuned_from</div>
+        <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.8rem; margin:0.25rem 0;"><div style="width:12px; height:12px; border-radius:50%; flex-shrink:0; background:#3fb950;"></div>distilled_from</div>
+        <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.8rem; margin:0.25rem 0;"><div style="width:12px; height:12px; border-radius:50%; flex-shrink:0; background:#f85149;"></div>merged_from</div>
+        <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.8rem; margin:0.25rem 0;"><div style="width:12px; height:12px; border-radius:50%; flex-shrink:0; background:#e3b341;"></div>trained_from</div>
+      </div>
+      <div id="model-detail" style="display:none; position:fixed; top:100px; right:2rem; width:320px; background:var(--card-bg); border:1px solid var(--border-color); border-radius:8px; padding:1rem; font-size:0.85rem; z-index:70;"></div>
+      <div id="tooltip" style="position:fixed; background:var(--card-bg); border:1px solid var(--border-color); padding:0.75rem 1rem; border-radius:8px; font-size:0.85rem; pointer-events:none; opacity:0; transition:opacity 0.15s; max-width:280px; z-index:80;"></div>
+    </div>
+
+    <div class="card">
+      <h2>🖥️ Hardware Fit Scanner
+        <button class="btn primary" id="hw-scan-btn" style="width:auto; margin-left:auto; padding:6px 16px; font-size:11px;">Scan My Hardware</button>
+      </h2>
+      <p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">
+        Scores every installed model by how well it fits in this machine's available memory (0–100%) and estimates tokens/sec — measured if the model has been benchmarked before, otherwise scaled from your fastest measured model. The two best-fitting models become the default pick on the Arena Match tab.
+      </p>
+      <div id="hw-summary" style="display:none; gap:8px; flex-wrap:wrap; margin-bottom:20px;"></div>
+      <div id="hw-fit-table">
+        <div style="color:var(--text-muted); font-size:13px;">Click <b>Scan My Hardware</b> to score your installed models.</div>
       </div>
     </div>
   </div>

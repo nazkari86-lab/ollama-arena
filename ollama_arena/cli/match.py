@@ -230,8 +230,9 @@ def cmd_benchmark(args):
     for model in models:
         cat_scores = {}
         for cat in categories:
-            cat_scores[cat] = round(sum(results[model][cat]) / len(results[model][cat]) * 100, 1)
-        total_score = round(sum(cat_scores.values()) / len(cat_scores), 1)
+            cat_results = results[model][cat]
+            cat_scores[cat] = round(sum(cat_results) / len(cat_results) * 100, 1) if cat_results else 0.0
+        total_score = round(sum(cat_scores.values()) / len(cat_scores), 1) if cat_scores else 0.0
         scores_summary[model] = {"by_category": cat_scores, "total": total_score}
 
         row = [model] + [f"{cat_scores[c]:.0f}" for c in categories] + [f"{total_score:.1f}"]

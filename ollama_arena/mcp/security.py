@@ -21,14 +21,14 @@ def check_security_gate(
     if danger_tier == "safe":
         return True, ""
 
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        return True, ""
-
     if danger_tier == "deny":
         if os.environ.get("ARENA_AUTO_APPROVE") == "1":
             log.warning("[security] auto-approving denied tool %s via ARENA_AUTO_APPROVE", name)
             return True, ""
         return False, f"Error: Tool '{name}' is permanently denied."
+
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True, ""
 
     # confirm tier
     if os.environ.get("ARENA_AUTO_APPROVE") == "1":

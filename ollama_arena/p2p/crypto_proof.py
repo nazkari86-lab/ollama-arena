@@ -19,6 +19,7 @@ try:
     from cryptography.hazmat.primitives.asymmetric import ed25519
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.backends import default_backend
+    from cryptography.exceptions import InvalidSignature
     CRYPTO_AVAILABLE = True
 except ImportError:
     CRYPTO_AVAILABLE = False
@@ -307,7 +308,7 @@ class CryptoProofGenerator:
             result_hash = self._hash_result(result)
             
             # Reconstruct public key
-            pub_key = ed25519.Ed25519PublicKey.from_bytes(
+            pub_key = ed25519.Ed25519PublicKey.from_public_bytes(
                 bytes.fromhex(signature.public_key)
             )
             
@@ -316,9 +317,11 @@ class CryptoProofGenerator:
                 bytes.fromhex(signature.signature),
                 result_hash
             )
-            
+
             return True
-        except Exception:
+        except (InvalidSignature, ValueError):
+            # InvalidSignature: signature doesn't match the result hash.
+            # ValueError: malformed hex in signature.signature/public_key.
             return False
     
     def generate_execution_proof(
@@ -503,13 +506,13 @@ class BlockchainAnchorer:
         """
         # Create anchor hash
         anchor_hash = self.create_anchor_hash(proof_bundle)
-        
+
         # In production, submit transaction to actual blockchain
         # For now, simulate anchoring
         simulated_tx_hash = hashlib.sha256(
             f"{anchor_hash}-{time.time()}".encode()
         ).hexdigest()
-        
+
         anchor = BlockchainAnchor(
             transaction_hash=simulated_tx_hash,
             block_height=0,  # Would be actual block height
@@ -517,9 +520,17 @@ class BlockchainAnchorer:
             timestamp=time.time(),
             network=self.network,
         )
-        
+
+        # Track what we anchored so verify_anchor/get_anchor_status can
+        # check a real anchor against the bundle it was created for,
+        # instead of only checking the transaction_hash's string format.
+        self.pending_anchors.append({
+            "tx_hash": simulated_tx_hash,
+            "anchor_hash": anchor_hash,
+        })
+
         return anchor
-    
+
     def verify_anchor(
         self,
         proof_bundle: Dict[str, Any],
@@ -527,28 +538,36 @@ class BlockchainAnchorer:
     ) -> bool:
         """
         Verify blockchain anchor.
-        
+
+        Checks that the anchor's transaction hash is well-formed and was
+        actually produced (by this anchorer instance) for the given
+        proof_bundle. In production this would query the real chain for
+        the transaction instead of an in-memory record.
+
         Args:
             proof_bundle: Original proof bundle
             anchor: Blockchain anchor to verify
-        
+
         Returns:
             True if anchor is valid
         """
-        # Recreate anchor hash
+        if len(anchor.transaction_hash) != 64:
+            return False
+
         expected_hash = self.create_anchor_hash(proof_bundle)
-        
-        # In production, verify against actual blockchain
-        # For simulation, just check format
-        return len(anchor.transaction_hash) == 64
-    
+        return any(
+            record["tx_hash"] == anchor.transaction_hash
+            and record["anchor_hash"] == expected_hash
+            for record in self.pending_anchors
+        )
+
     def get_anchor_status(self, tx_hash: str) -> str:
         """
         Get status of blockchain transaction.
-        
+
         Args:
             tx_hash: Transaction hash
-        
+
         Returns:
             Status string (pending, confirmed, failed)
         """
@@ -581,9 +600,9 @@ class ProofValidator:
         
         # Check required fields
         required_fields = ["task_id", "result", "signature", "hardware_attestation"]
-        for field in required_fields:
-            if field not in bundle:
-                errors.append(f"missing_field_{field}")
+        for field_name in required_fields:
+            if field_name not in bundle:
+                errors.append(f"missing_field_{field_name}")
         
         if errors:
             return False, errors

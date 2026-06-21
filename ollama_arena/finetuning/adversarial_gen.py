@@ -1,6 +1,7 @@
 """Adversarial Dataset Generation for targeted fine-tuning."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sqlite3
@@ -290,10 +291,12 @@ Create a harder version that tests the same core skills but adds:
 
 Output ONLY the new problem instruction, nothing else."""
 
+        generation_ok = False
         try:
             result = self.backend.generate("llama3.1:8b", prompt)  # Use a capable model
             if result.ok and result.text.strip():
                 new_instruction = result.text.strip()
+                generation_ok = True
             else:
                 # Fallback: add complexity manually
                 new_instruction = self._add_complexity_manually(base_task['instruction'])
@@ -315,7 +318,7 @@ Output ONLY the new problem instruction, nothing else."""
             target_model="",  # To be filled when used
             metadata={
                 "base_task_id": base_task['task_id'],
-                "generation_method": "ai" if result.ok else "manual",
+                "generation_method": "ai" if generation_ok else "manual",
                 "difficulty_increase": difficulty_increase,
             },
         )
@@ -534,7 +537,3 @@ def generate_harder_tasks(
 
     output_file = generator.save_adversarial_tasks(tasks, output_path)
     return tasks, output_file
-
-
-# Import hashlib for the generate_harder_variant method
-import hashlib

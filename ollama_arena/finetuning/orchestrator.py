@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Callable, Any
 from queue import Queue, Empty
 import hashlib
+import uuid
 
 log = logging.getLogger("arena.finetuning.orchestrator")
 
@@ -214,6 +215,26 @@ class JobQueue:
                 log.error("[queue] Queue is full")
                 return False
 
+    def requeue(self, job: FinetuningJob) -> bool:
+        """Put a previously-dequeued job back on the queue.
+
+        Unlike enqueue(), this does not reject jobs already tracked in
+        self._jobs — a job that was dequeued for execution is still in
+        _jobs (it's only removed from the internal Queue), so routing it
+        through enqueue() would always be rejected as a duplicate and the
+        job would be silently dropped (stuck in RUNNING forever).
+        """
+        with self._lock:
+            try:
+                self._queue.put(job, block=False)
+                self._jobs[job.job_id] = job
+                job.status = JobStatus.QUEUED
+                log.info(f"[queue] Re-queued job {job.job_id}")
+                return True
+            except Exception:
+                log.error(f"[queue] Failed to re-queue job {job.job_id} — queue is full")
+                return False
+
     def dequeue(self, timeout: float = 1.0) -> Optional[FinetuningJob]:
         """Get the next job from the queue."""
         try:
@@ -386,8 +407,9 @@ class FinetuningMonitor:
         params.append(limit)
 
         with sqlite3.connect(self.db_path) as cx:
-            rows = cx.execute(query, params).fetchall()
-            cols = [desc[0] for desc in cx.description]
+            cursor = cx.execute(query, params)
+            rows = cursor.fetchall()
+            cols = [desc[0] for desc in cursor.description]
 
             history = []
             for row in rows:
@@ -464,8 +486,9 @@ class FinetuningOrchestrator:
             # Check GPU availability
             gpu = self.gpu_allocator.allocate_gpu(job.estimated_gpu_memory_gb)
             if not gpu:
-                # Put job back in queue
-                self.job_queue.enqueue(job)
+                # Put job back in queue (it's already tracked in _jobs from
+                # the original enqueue, so use requeue() not enqueue())
+                self.job_queue.requeue(job)
                 time.sleep(5.0)
                 continue
 
@@ -538,7 +561,15 @@ class FinetuningOrchestrator:
         Returns:
             Job ID
         """
-        job_id = f"ft_{int(time.time())}_{hashlib.sha256(model.encode()).hexdigest()[:8]}"
+        # uuid4 suffix avoids collisions when two jobs for the same model are
+        # submitted within the same second (timestamp+model-hash alone would
+        # produce identical IDs and the second submission would be silently
+        # rejected as a duplicate by JobQueue.enqueue).
+        job_id = (
+            f"ft_{int(time.time())}_"
+            f"{hashlib.sha256(model.encode()).hexdigest()[:8]}_"
+            f"{uuid.uuid4().hex[:8]}"
+        )
 
         job = FinetuningJob(
             job_id=job_id,

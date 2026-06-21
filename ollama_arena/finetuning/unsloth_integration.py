@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Dict, List, Callable
+from typing import Optional, Dict, List, Callable, Tuple
 
 from ..finetune.unsloth_runner import unsloth_train, UnslothConfig
 from ..finetune.ollama_export import build_modelfile, install_to_ollama
@@ -153,14 +153,15 @@ class ModelRegistry:
     def get_model_info(self, finetuned_name: str) -> Optional[Dict]:
         """Get information about a fine-tuned model."""
         with sqlite3.connect(self.db_path) as cx:
-            row = cx.execute("""
+            cursor = cx.execute("""
                 SELECT * FROM finetuned_models WHERE finetuned_name = ?
-            """, (finetuned_name,)).fetchone()
+            """, (finetuned_name,))
+            row = cursor.fetchone()
 
             if not row:
                 return None
 
-            cols = [desc[0] for desc in cx.description]
+            cols = [desc[0] for desc in cursor.description]
             info = dict(zip(cols, row))
             if info.get("metadata"):
                 info["metadata"] = json.loads(info["metadata"])
@@ -189,8 +190,9 @@ class ModelRegistry:
         query += " ORDER BY created_at DESC"
 
         with sqlite3.connect(self.db_path) as cx:
-            rows = cx.execute(query, params).fetchall()
-            cols = [desc[0] for desc in cx.description]
+            cursor = cx.execute(query, params)
+            rows = cursor.fetchall()
+            cols = [desc[0] for desc in cursor.description]
 
             models = []
             for row in rows:
@@ -301,19 +303,19 @@ class AutoUnslothIntegrator:
                     SELECT COUNT(*) FROM task_detail d
                     JOIN match_log m ON m.id = d.match_id
                     WHERE (m.model_a = ? OR m.model_b = ?)
+                      AND (
+                          (m.model_a = ? AND d.outcome = 'b_wins')
+                          OR (m.model_b = ? AND d.outcome = 'a_wins')
+                      )
                 """
-                params = [model, model]
+                params = [model, model, model, model]
 
                 if category:
                     query += " AND d.category = ?"
                     params.append(category)
 
-                # Count losses
-                losses = 0
-                rows = cx.execute(query, params).fetchall()
-                # Simplified: count all tasks as potential losses
-                # In production, you'd filter by outcome
-                return rows[0][0] if rows else 0
+                row = cx.execute(query, params).fetchone()
+                return row[0] if row else 0
         except Exception as e:
             log.error(f"Failed to get loss count: {e}")
             return 0
@@ -350,17 +352,20 @@ class AutoUnslothIntegrator:
         """Get the ELO gap between model and the leader."""
         try:
             with sqlite3.connect(self.db_path) as cx:
-                # Get model's ELO
-                model_elo = cx.execute("""
-                    SELECT elo_after FROM match_log
+                # Get model's most recent ELO (it may have played as either side)
+                row = cx.execute("""
+                    SELECT model_a, model_b, elo_a_after, elo_b_after FROM match_log
                     WHERE model_a = ? OR model_b = ?
                     ORDER BY ts DESC LIMIT 1
                 """, (model, model)).fetchone()
 
-                if not model_elo:
+                if not row:
                     return 0.0
 
-                model_elo = max(model_elo[0], model_elo[1]) if model_elo[1] else model_elo[0]
+                row_model_a, row_model_b, elo_a_after, elo_b_after = row
+                model_elo = elo_a_after if row_model_a == model else elo_b_after
+                if model_elo is None:
+                    return 0.0
 
                 # Get leader's ELO
                 query = """
@@ -371,10 +376,10 @@ class AutoUnslothIntegrator:
                     query += " WHERE category = ?"
 
                 leader_elo = cx.execute(query, (category,) if category else ()).fetchone()
-                if not leader_elo:
+                if not leader_elo or leader_elo[0] is None:
                     return 0.0
 
-                return leader_elo[0] - model_elo if leader_elo[0] else 0.0
+                return leader_elo[0] - model_elo
         except Exception as e:
             log.error(f"Failed to get ELO gap: {e}")
             return 0.0

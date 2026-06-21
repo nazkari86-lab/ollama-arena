@@ -167,14 +167,14 @@ class ParetoFrontier:
             Optimal quantization format or None if no format meets constraints.
         """
         candidates = self.frontier
-        
-        if max_vram_gb:
+
+        if max_vram_gb is not None:
             # Convert to VRAM usage from savings
             baseline = max(self.results, key=lambda r: r.elo_score)
-            candidates = [p for p in candidates 
+            candidates = [p for p in candidates
                          if (baseline.vram_usage_gb - p.vram_savings_gb) <= max_vram_gb]
-        
-        if min_elo:
+
+        if min_elo is not None:
             candidates = [p for p in candidates if p.elo_score >= min_elo]
         
         if not candidates:

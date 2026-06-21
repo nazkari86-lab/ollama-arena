@@ -367,7 +367,8 @@ class Arena:
             elif outcome == "b_wins": b_wins += 1
             else: draws += 1
 
-            self.elo.record_match(model_a, model_b, category, score_a, score_b)
+            self.elo.record_match(model_a, model_b, category, score_a, score_b,
+                                   duration_s=res_a.latency_s + res_b.latency_s)
             last_match_id = self.elo.last_match_id()
 
             # Hallucination check (if judge enabled)
@@ -528,7 +529,8 @@ class Arena:
         else: outcome = "draw"
 
         # ELO + persistence (a single-sample update)
-        self.elo.record_match(model_a, model_b, category, score_a, score_b)
+        self.elo.record_match(model_a, model_b, category, score_a, score_b,
+                               duration_s=res_a.latency_s + res_b.latency_s)
         match_id = self.elo.last_match_id()
         self.elo.save_task_detail(
             match_id=match_id, task_id=task_id, category=category,

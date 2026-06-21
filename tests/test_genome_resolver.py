@@ -1,4 +1,4 @@
-import os, tempfile
+import json, os, tempfile
 from ollama_arena.genome.registry import CanonicalRegistry
 
 
@@ -23,6 +23,32 @@ def test_normalize_instruct_variant():
 def test_unknown_returns_none():
     reg = CanonicalRegistry()
     assert reg.match_by_name("totally-unknown-model:latest") is None
+
+
+def test_alias_collision_logs_warning_instead_of_silent_overwrite(caplog):
+    """Regression test: two different models whose aliases normalize to the
+    same key previously caused a silent dict overwrite in _alias_map, with
+    no signal that one model's alias became unreachable. The collision must
+    now be logged so it's visible rather than silently swallowed.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        seed_path = os.path.join(tmp, "seed.json")
+        with open(seed_path, "w") as f:
+            json.dump({
+                "version": "1.0",
+                "models": [
+                    {"id": "org-a/model-one", "name": "Model One",
+                     "aliases": ["shared-alias"]},
+                    {"id": "org-b/model-two", "name": "Model Two",
+                     "aliases": ["shared-alias"]},
+                ],
+            }, f)
+        import logging
+        with caplog.at_level(logging.WARNING, logger="arena.genome.registry"):
+            reg = CanonicalRegistry(seed_path=seed_path)
+        assert any("shared-alias" in rec.message for rec in caplog.records)
+        # last-seeded model wins the lookup (documented, now-visible behavior)
+        assert reg.match_by_name("shared-alias") == "org-b/model-two"
 
 
 # ── Resolver tests (added in Task A4) ────────────────────────────────────────

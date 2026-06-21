@@ -69,11 +69,17 @@ def cmd_finetune(args):
             return
 
         gguf = artifacts.get("gguf_path")
-        if gguf and Path(gguf).exists():
-            mf = build_modelfile(gguf, out_path=str(Path(args.out_dir or "outputs/lora") / "Modelfile"))
-            ollama_name = args.ollama_name or f"{args.model}-finetuned"
-            if install_to_ollama(mf, ollama_name):
-                console.print(f"  exported to Ollama model [green]{ollama_name}[/green]")
+        if not gguf or not Path(gguf).exists():
+            console.print(f"[red]✗ Export failed: no GGUF artifact found at '{gguf}'[/red]")
+            sys.exit(1)
+
+        mf = build_modelfile(gguf, out_path=str(Path(args.out_dir or "outputs/lora") / "Modelfile"))
+        ollama_name = args.ollama_name or f"{args.model}-finetuned"
+        if install_to_ollama(mf, ollama_name):
+            console.print(f"  exported to Ollama model [green]{ollama_name}[/green]")
+        else:
+            console.print(f"[red]✗ Failed to install '{ollama_name}' to Ollama[/red]")
+            sys.exit(1)
         return
 
     if args.analyze:

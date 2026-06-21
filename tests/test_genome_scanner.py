@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from ollama_arena.genome.scanner import OllamaScanner, parse_modelfile
 
 
@@ -38,3 +38,40 @@ def test_scanner_offline_fallback():
     with patch("subprocess.run", side_effect=FileNotFoundError()):
         result = scanner.scan_local()
     assert result == []
+
+
+def test_get_modelfile_cli_does_not_prefix_match_size():
+    """Regression test: size lookup previously used line.startswith(name),
+    which matches the wrong model when one name is a prefix of another
+    (e.g. 'llama3:8b' is a prefix of 'llama3:8b-instruct'). It must match
+    on the exact first column instead.
+    """
+    scanner = OllamaScanner()
+    mock_show = MagicMock()
+    mock_show.stdout = "FROM base\n"
+    mock_list = MagicMock()
+    mock_list.stdout = (
+        "NAME                    ID   SIZE    MODIFIED\n"
+        "llama3:8b-instruct      abc  9.0 GB  1 week\n"
+        "llama3:8b               def  4.7 GB  1 week\n"
+    )
+    with patch("subprocess.run", side_effect=[mock_show, mock_list]):
+        content, size_gb = scanner._get_modelfile_cli("llama3:8b")
+    assert size_gb == pytest.approx(4.7)
+
+
+def test_get_list_api_skips_malformed_entry_keeps_rest():
+    """Regression test: a single malformed model entry (missing 'name') in
+    the Ollama API response previously raised inside the list comprehension
+    and the broad except discarded the entire result, including valid
+    entries alongside the bad one.
+    """
+    scanner = OllamaScanner()
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "models": [{"notname": "x"}, {"name": "good:model"}]
+    }
+    mock_resp.raise_for_status = MagicMock()
+    with patch("requests.get", return_value=mock_resp):
+        names = scanner._get_list_api()
+    assert names == ["good:model"]

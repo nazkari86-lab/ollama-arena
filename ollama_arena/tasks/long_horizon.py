@@ -406,7 +406,11 @@ class LongHorizonTaskManager:
 
     def _create_checkpoint(self, task: LongHorizonTask) -> TaskCheckpoint:
         """Create a checkpoint for a task."""
-        checkpoint_id = f"{task.id}_{int(time.time())}"
+        # Second-granularity alone collides under rapid pause/resume/complete cycles
+        # within the same wall-clock second, silently overwriting an earlier
+        # checkpoint's on-disk file with a later one's data. The sequence number
+        # makes each checkpoint_id unique regardless of timing.
+        checkpoint_id = f"{task.id}_{int(time.time())}_{len(task.checkpoints)}"
         return TaskCheckpoint(
             checkpoint_id=checkpoint_id,
             task_id=task.id,
@@ -476,9 +480,16 @@ class LongHorizonTaskManager:
             return None
 
     def _restore_checkpoint(self, task: LongHorizonTask, checkpoint: TaskCheckpoint) -> None:
-        """Restore task state from checkpoint."""
+        """Restore task state from checkpoint.
+
+        Replaces (not merges) intermediate_results so that results saved after this
+        checkpoint was taken (e.g. from a later attempt that is now being rolled back)
+        don't survive a rollback to an earlier checkpoint. task.metadata legitimately
+        mixes static config (difficulty/role/checkpoints, set once at task creation)
+        with checkpoint-derived progress info, so it is still merged.
+        """
         task.current_progress = checkpoint.progress
-        task.intermediate_results.update(checkpoint.intermediate_results)
+        task.intermediate_results = dict(checkpoint.intermediate_results)
         task.metadata.update(checkpoint.metadata)
         checkpoint.state = CheckpointState.RESTORED
 

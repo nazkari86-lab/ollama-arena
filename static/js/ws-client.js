@@ -198,7 +198,7 @@ document.querySelectorAll('.tab').forEach(el => {
     document.getElementById('tab-' + el.dataset.tab).classList.add('active');
     
     savePref('lastTab', el.dataset.tab);
-    const m = { dashboard: loadCharts, datasets: loadDatasets, performance: loadPerf, hallucinations: loadHallucinations, spec: loadSpec, tournament: () => {}, royale: () => {}, history: loadHistory };
+    const m = { dashboard: loadCharts, datasets: loadDatasets, performance: loadPerf, hallucinations: loadHallucinations, spec: loadSpec, genome: initGenomeTab, tournament: () => {}, royale: () => {}, history: loadHistory };
     if (m[el.dataset.tab]) m[el.dataset.tab]();
   });
   

@@ -14,6 +14,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
 import hashlib
 import random
+import statistics
 from collections import defaultdict
 
 from .node import P2PNode, NodeInfo, P2PMessage, MessageType
@@ -506,34 +507,50 @@ class ResultAggregator:
         # Weight results by node reputation
         weighted_results = []
         total_weight = 0.0
-        
+
         for result in results:
             node_id = result.get("node_id", "")
             rep = self.reputation.get_node_reputation(node_id)
             weight = rep.trust_score if rep else 0.5
-            
+
             weighted_results.append((weight, result))
             total_weight += weight
-        
-        # Simple weighted average for numeric scores
-        # For more complex results, use majority voting
+
         if total_weight == 0:
-            # Fallback to simple average
+            # All contributing nodes are fully untrusted; fall back to an
+            # unweighted average rather than producing no consensus at all.
+            scores = [r.get("score", 0.0) for r in results]
             return {
                 "task_id": task_id,
-                "results": results,
                 "result_count": len(results),
                 "consensus_method": "simple_average",
+                "consensus_score": sum(scores) / len(scores),
             }
-        
-        # Weighted consensus
+
+        # Weighted average score
+        consensus_score = sum(
+            weight * result.get("score", 0.0) for weight, result in weighted_results
+        ) / total_weight
+
+        # Weighted majority vote on a categorical field, if results carry one
+        # (e.g. an A/B test "winner" label).
+        vote_totals: Dict[Any, float] = defaultdict(float)
+        for weight, result in weighted_results:
+            if "winner" in result:
+                vote_totals[result["winner"]] += weight
+
         consensus = {
             "task_id": task_id,
             "result_count": len(results),
             "consensus_method": "weighted_average",
-            "weighted_results": weighted_results,
+            "consensus_score": consensus_score,
         }
-        
+
+        if vote_totals:
+            consensus_winner = max(vote_totals, key=vote_totals.get)
+            consensus["consensus_winner"] = consensus_winner
+            consensus["agreement_ratio"] = vote_totals[consensus_winner] / total_weight
+
         return consensus
     
     def detect_fraud(
@@ -552,13 +569,28 @@ class ResultAggregator:
             Tuple of (is_fraudulent, reason)
         """
         results = self.task_results.get(task_id, [])
-        
+
         if len(results) < 2:
             return False, "insufficient_data"
-        
-        # Check if result is an outlier
-        # This is a simple implementation
-        # In production, use statistical anomaly detection
+
+        scores = [r["score"] for r in results if isinstance(r.get("score"), (int, float))]
+        score = result.get("score")
+
+        if len(scores) < 2 or not isinstance(score, (int, float)):
+            return False, "no_score_field"
+
+        stdev = statistics.pstdev(scores)
+        if stdev == 0:
+            return False, "ok"
+
+        # Flag results more than 3 standard deviations from the peer mean.
+        # This is intentionally a simple z-score check; a production system
+        # would use a more robust estimator (e.g. MAD) and per-task-type
+        # thresholds rather than one fixed cutoff.
+        z_score = abs(score - statistics.mean(scores)) / stdev
+        if z_score > 3.0:
+            return True, "score_outlier"
+
         return False, "ok"
 
 

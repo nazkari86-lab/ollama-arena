@@ -67,10 +67,17 @@ class TestSecurityHeaders:
         r = client.get("/api/version")
         assert "Content-Security-Policy" in r.headers
 
-    def test_csp_no_unsafe_inline(self, client):
+    def test_csp_script_src_no_unsafe_inline(self, client):
+        # script-src must stay nonce-only — that's what actually prevents XSS.
+        # style-src intentionally allows 'unsafe-inline': CSP nonces can't
+        # cover inline style="..." attributes at all (only <style> blocks),
+        # and the dynamic content placed in those attributes is already
+        # HTML-escaped server-side, so 'unsafe-inline' there is a deliberate,
+        # low-risk tradeoff rather than an oversight.
         r = client.get("/api/version")
         csp = r.headers.get("Content-Security-Policy", "")
-        assert "'unsafe-inline'" not in csp
+        script_src = next(d for d in csp.split(";") if d.strip().startswith("script-src"))
+        assert "'unsafe-inline'" not in script_src
 
     def test_csp_has_nonce(self, client):
         r = client.get("/api/version")
@@ -279,6 +286,14 @@ class TestInfoEndpoints:
         r = client.get("/api/perf")
         assert r.status_code == 200
 
+    def test_perf_has_models_list(self, client):
+        # static/js/match.js's loadPerf() reads data.models — pin the
+        # contract so frontend and backend can't silently drift apart again
+        # (this previously broke the Performance tab with no test catching it).
+        data = client.get("/api/perf").json()
+        assert "models" in data
+        assert isinstance(data["models"], list)
+
     def test_datasets_200(self, client):
         r = client.get("/api/datasets")
         assert r.status_code == 200
@@ -305,6 +320,26 @@ class TestModelsEndpoint:
         # list_models is mocked → ["llama3", "phi3"]
         data = client.get("/api/models").json()
         assert isinstance(data, list)
+
+    def test_models_caps_use_batched_parallel_detection(self, client, monkeypatch):
+        # api_models() used to call model_caps.get() once per model in a
+        # serial loop -- a cache miss did a blocking ~10s HTTP call per
+        # model. It must now call detect_all() once with the full model
+        # list instead (detect_all runs the per-model probes in parallel
+        # threads), not get() in a loop.
+        calls = []
+
+        def fake_detect_all(names, ollama_url):
+            calls.append(list(names))
+            return {n: {"vision": False} for n in names}
+
+        def fail_if_called(*a, **kw):
+            raise AssertionError("get() must not be called directly from api_models()")
+
+        monkeypatch.setattr("ollama_arena.model_caps.detect_all", fake_detect_all)
+        monkeypatch.setattr("ollama_arena.model_caps.get", fail_if_called)
+        client.get("/api/models")
+        assert len(calls) == 1
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -378,3 +413,36 @@ class TestChartEndpoints:
     def test_leaderboard_chart_200(self, client):
         r = client.get("/charts/leaderboard")
         assert r.status_code == 200
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# /api/hardware/scan + /genome redirect
+# ──────────────────────────────────────────────────────────────────────────────
+
+class TestHardwareScan:
+    def test_hardware_scan_200(self, client):
+        r = client.get("/api/hardware/scan")
+        assert r.status_code == 200
+
+    def test_hardware_scan_shape(self, client):
+        data = client.get("/api/hardware/scan").json()
+        assert set(data) == {"hardware", "models", "best_two"}
+        assert "total_ram_gb" in data["hardware"]
+        assert "usable_ram_gb" in data["hardware"]
+        assert isinstance(data["models"], list)
+        assert isinstance(data["best_two"], list)
+
+    def test_hardware_scan_unreachable_ollama_returns_empty_models(self, client, monkeypatch):
+        import requests
+        monkeypatch.setattr(requests, "get",
+                             mock.Mock(side_effect=ConnectionError("offline")))
+        data = client.get("/api/hardware/scan").json()
+        assert data["models"] == []
+        assert data["best_two"] == []
+
+
+class TestGenomeRedirect:
+    def test_genome_page_redirects_to_tab(self, client):
+        r = client.get("/genome", follow_redirects=False)
+        assert r.status_code in (302, 307)
+        assert r.headers["location"] == "/#genome"

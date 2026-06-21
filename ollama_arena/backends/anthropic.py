@@ -41,7 +41,19 @@ _THINKING_MODELS = {
 
 
 def _messages_to_anthropic(messages: list[dict]) -> tuple[str | None, list[dict]]:
-    """Split system prompt from conversation turns and convert to Anthropic format."""
+    """Split system prompt from conversation turns and convert to Anthropic format.
+
+    Anthropic's Messages API only accepts role "user"/"assistant" — tool
+    round-trips use content blocks, not OpenAI's "tool" role or top-level
+    "tool_calls" key. Agent loops (see agent_loop.py) build messages in the
+    OpenAI shape regardless of backend, so this conversion has to translate:
+      - assistant message with msg["tool_calls"]  -> assistant content
+        blocks of type "tool_use"
+      - {"role": "tool", "tool_call_id": ..., "content": ...} -> a user
+        message with a "tool_result" content block
+    Without this, multi-turn agent runs against the Anthropic backend send
+    malformed messages on the second turn onward and the API rejects them.
+    """
     system: str | None = None
     turns: list[dict] = []
     for msg in messages:
@@ -50,6 +62,36 @@ def _messages_to_anthropic(messages: list[dict]) -> tuple[str | None, list[dict]
         images = msg.get("images")
         if role == "system":
             system = content
+            continue
+        if role == "tool":
+            turns.append({
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": msg.get("tool_call_id", ""),
+                    "content": str(content),
+                }],
+            })
+            continue
+        if role == "assistant" and msg.get("tool_calls"):
+            parts: list[dict] = []
+            if content:
+                parts.append({"type": "text", "text": content})
+            for tc in msg["tool_calls"]:
+                fn = tc.get("function", {})
+                raw_args = fn.get("arguments", "{}")
+                if isinstance(raw_args, str):
+                    try:
+                        raw_args = json.loads(raw_args) if raw_args else {}
+                    except json.JSONDecodeError:
+                        raw_args = {}
+                parts.append({
+                    "type": "tool_use",
+                    "id": tc.get("id", ""),
+                    "name": fn.get("name", ""),
+                    "input": raw_args,
+                })
+            turns.append({"role": "assistant", "content": parts})
             continue
         if images:
             parts: list[dict] = []
@@ -135,6 +177,7 @@ class AnthropicBackend:
         current_tool: dict = {}
         finish_reason = "end_turn"
 
+        r = None
         try:
             r = requests.post(
                 f"{self.base}/messages",
@@ -217,6 +260,9 @@ class AnthropicBackend:
             return ChatTurnResult(
                 error=str(e), latency_s=round(time.time() - t0, 3),
             )
+        finally:
+            if r is not None:
+                r.close()
 
     def generate(self, model: str, prompt: str, **opts) -> GenResult:
         images = opts.pop("images", None)

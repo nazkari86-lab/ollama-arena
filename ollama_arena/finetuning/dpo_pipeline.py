@@ -79,9 +79,14 @@ class DatasetStorage:
         category: str,
     ) -> DatasetVersion:
         """Store a DPO dataset with versioning."""
-        # Generate version ID based on content
+        # Generate version ID based on content. category/target_model can
+        # originate from arena data or caller input — strip path separators
+        # and traversal sequences so the resulting filename can't escape
+        # base_dir.
+        safe_category = self._sanitize_path_component(category)
+        safe_target_model = self._sanitize_path_component(target_model.replace(':', '_'))
         content_hash = self._compute_hash(pairs)
-        version_id = f"{category}_{target_model.replace(':', '_')}_{content_hash[:8]}"
+        version_id = f"{safe_category}_{safe_target_model}_{content_hash[:8]}"
 
         # Create file path
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -206,6 +211,14 @@ class DatasetStorage:
         for pair in sorted(pairs, key=lambda p: (p.task_id, p.match_id)):
             content += f"{pair.task_id}|{pair.match_id}|{pair.prompt[:100]}|{pair.chosen[:100]}|{pair.rejected[:100]}"
         return hashlib.sha256(content.encode()).hexdigest()
+
+    @staticmethod
+    def _sanitize_path_component(value: str) -> str:
+        """Strip path separators and traversal sequences from a value that
+        will be embedded in a filename, so it can't escape base_dir."""
+        value = str(value).replace("/", "_").replace("\\", "_")
+        value = value.replace("..", "_")
+        return value or "unknown"
 
 
 def extract_dpo_pairs(

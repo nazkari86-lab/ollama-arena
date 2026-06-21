@@ -41,3 +41,28 @@ def test_graph_subtree():
         ids = {n["id"] for n in sub["nodes"]}
         assert "meta/llama-3.1-8b" in ids
         assert "NousResearch/hermes-3-llama-3.1-8b" in ids
+
+
+def test_to_d3_does_not_duplicate_edges():
+    """Regression test: get_lineage(id) matches rows where id is either the
+    child or the parent, so to_d3() previously iterated every canonical
+    model and re-appended the same edge once while visiting the child's row
+    and again while visiting the parent's row, doubling every link.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        store = _seeded_store(tmp)
+        g = GraphEngine(store)
+        data = g.to_d3()
+        # exactly 2 edges were seeded: instruct->base and hermes->instruct
+        assert len(data["links"]) == 2
+        edge_keys = [(l["source"], l["target"], l["relation"]) for l in data["links"]]
+        assert len(edge_keys) == len(set(edge_keys))
+
+
+def test_subtree_does_not_duplicate_edges():
+    with tempfile.TemporaryDirectory() as tmp:
+        store = _seeded_store(tmp)
+        g = GraphEngine(store)
+        sub = g.subtree("meta/llama-3.1-8b")
+        edge_keys = [(l["source"], l["target"], l["relation"]) for l in sub["links"]]
+        assert len(edge_keys) == len(set(edge_keys))

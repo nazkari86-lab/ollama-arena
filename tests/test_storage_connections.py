@@ -193,6 +193,122 @@ class TestPerformanceOptimizations:
         conn.close()
 
 
+class TestThreadSafety:
+    """Regression tests for the per-thread pool keying fix.
+
+    Previously the pool was keyed only by db_path, so concurrent threads
+    shared a single sqlite3.Connection object for reads on the same
+    database. That corrupts cursor state across threads (one thread's
+    fetchone() can observe another thread's interleaved result, or None)
+    even with check_same_thread=False, because sqlite3 connections aren't
+    safe for concurrent use from multiple threads without serialization.
+    """
+
+    def test_concurrent_reads_do_not_corrupt_results(self, temp_db):
+        import threading
+
+        close_all_connections()
+        cx = sqlite3.connect(temp_db)
+        cx.execute("CREATE TABLE t (id INTEGER)")
+        for i in range(50):
+            cx.execute("INSERT INTO t VALUES (?)", (i,))
+        cx.commit()
+        cx.close()
+
+        errors = []
+
+        def worker():
+            try:
+                for _ in range(100):
+                    c = read_conn(temp_db)
+                    row = c.execute("SELECT COUNT(*) FROM t").fetchone()
+                    if row is None or row[0] != 50:
+                        raise AssertionError(f"corrupted read: {row}")
+            except Exception as e:  # noqa: BLE001 - capturing for assertion below
+                errors.append(repr(e))
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == [], f"concurrent reads corrupted: {errors[:3]} (total {len(errors)})"
+        close_all_connections()
+
+    def test_different_threads_get_different_pooled_connections(self, temp_db):
+        import threading
+
+        close_all_connections()
+        conns = {}
+        barrier = threading.Barrier(2)
+
+        def worker(name):
+            conns[name] = read_conn(temp_db)
+            # Hold both threads alive simultaneously so neither's OS thread
+            # id can be recycled before the comparison below runs.
+            barrier.wait()
+
+        t1 = threading.Thread(target=worker, args=("t1",))
+        t2 = threading.Thread(target=worker, args=("t2",))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        # Each thread's connection wraps a distinct underlying sqlite3.Connection.
+        assert conns["t1"]._conn is not conns["t2"]._conn
+        close_all_connections()
+
+
+class TestReadConnOverflowCloses:
+    """Regression tests for the read-connection-overflow leak fix.
+
+    Before the fix, `with read_conn(db) as cx:` never closed cx when the
+    pool was at capacity (overflow connections), because bare
+    sqlite3.Connection.__exit__ only commits/rolls back. Under sustained
+    concurrency (more callers than _pool_max_size) that leaked one
+    unclosed connection (and its WAL-related fds) per overflow call until
+    the garbage collector happened to run.
+    """
+
+    def test_pooled_connection_stays_open_after_with_block(self, temp_db):
+        close_all_connections()
+        with read_conn(temp_db) as cx:
+            cx.execute("SELECT 1")
+        # Still pooled — same underlying connection still usable, not closed.
+        stats = get_pool_stats()
+        assert stats["total_connections"] >= 1
+        with read_conn(temp_db) as cx2:
+            cx2.execute("SELECT 1")  # would raise ProgrammingError if closed
+        close_all_connections()
+
+    def test_overflow_connection_is_closed_after_with_block(self, temp_db):
+        from ollama_arena.storage.sqlite._conn import _pool_max_size
+
+        close_all_connections()
+        # Fill the pool to capacity with held-open `with` blocks so the next
+        # read_conn() call is forced to create an overflow (unpooled) connection.
+        import contextlib
+
+        with contextlib.ExitStack() as stack:
+            held = []
+            for _ in range(_pool_max_size):
+                cx = stack.enter_context(read_conn(temp_db + str(_)))
+                held.append(cx)
+
+            # This db_path is new -> still goes through the same thread's pool
+            # key space; pool is at capacity so this call must overflow.
+            overflow_wrapper = read_conn(temp_db + "_overflow")
+            with overflow_wrapper as cx:
+                cx.execute("SELECT 1")
+            # After the with-block exits, the overflow connection must be
+            # closed — further use should raise.
+            with pytest.raises(sqlite3.ProgrammingError):
+                overflow_wrapper._conn.execute("SELECT 1")
+        close_all_connections()
+
+
 class TestPoolStats:
     """Test pool statistics functionality."""
 

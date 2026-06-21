@@ -14,6 +14,8 @@ def analyze_weaknesses(db_path: str = "arena.db",
 
     stats: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0])  # [wins, total]
     for ma, mb, cat, sa, sb in rows:
+        if sa is None or sb is None:
+            continue  # incomplete/errored match — no scores to compare
         if sa > sb:
             stats[(ma, cat)][0] += 1
         elif sb > sa:

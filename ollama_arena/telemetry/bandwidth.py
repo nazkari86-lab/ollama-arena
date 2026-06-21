@@ -467,17 +467,17 @@ class GPUBandwidthMonitor:
 class BandwidthProfiler:
     """Unified memory bandwidth profiler."""
     
-    def __init__(self, platform: Optional[HardwarePlatform] = None,
+    def __init__(self, hw_platform: Optional[HardwarePlatform] = None,
                  device_index: int = 0):
         """Initialize bandwidth profiler.
-        
+
         Args:
-            platform: Hardware platform. If None, auto-detected.
+            hw_platform: Hardware platform. If None, auto-detected.
             device_index: GPU device index.
         """
-        self.platform = platform or HardwareDetector.detect_platform()
+        self.platform = hw_platform or HardwareDetector.detect_platform()
         self.device_index = device_index
-        
+
         # Initialize available monitors
         self.ebpf_monitor = EBPFBandwidthMonitor() if platform.system() == "Linux" else None
         self.proc_monitor = ProcMeminfoMonitor() if platform.system() == "Linux" else None

@@ -143,3 +143,97 @@ async function pollScanProgress() {
     await new Promise(r => setTimeout(r, 500));
   }
 }
+
+async function scanModels() {
+  document.getElementById('status').textContent = 'Scanning...';
+  await fetch('/api/genome/scan', {method: 'POST'});
+  pollScanProgress();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GENOME TAB — lazy init (dashboard tab dispatch calls this every
+// click; the d3 graph can't size itself correctly while its
+// tab-content is display:none, so loadTree() must only run once the
+// tab is actually visible, not on page load).
+// ═══════════════════════════════════════════════════════════════
+let _genomeTabWired = false;
+function initGenomeTab() {
+  if (!_genomeTabWired) {
+    _genomeTabWired = true;
+    document.getElementById('genome-scan-btn')?.addEventListener('click', scanModels);
+    document.getElementById('genome-show-all-btn')?.addEventListener('click', () => loadTree(null));
+    document.getElementById('hw-scan-btn')?.addEventListener('click', scanHardware);
+    document.getElementById('search')?.addEventListener('input', e => {
+      const q = e.target.value.trim();
+      if (q.length >= 2) loadTree(q);
+      else if (q.length === 0) loadTree(null);
+    });
+  }
+  loadTree(null);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HARDWARE FIT SCANNER — scores every installed (non-embedding) model
+// by how well it fits in usable RAM (0-100%) plus an estimated
+// tokens/sec, via GET /api/hardware/scan (ollama_arena/hardware_fit.py).
+// ═══════════════════════════════════════════════════════════════
+function _hasOption(sel, value) {
+  return !!sel && [...sel.options].some(o => o.value === value);
+}
+
+function applyBestTwoModels(bestTwo, { silent = false } = {}) {
+  if (!bestTwo || bestTwo.length < 2) return false;
+  const a = document.getElementById('model-a');
+  const b = document.getElementById('model-b');
+  if (!_hasOption(a, bestTwo[0]) || !_hasOption(b, bestTwo[1])) return false;
+  a.value = bestTwo[0];
+  b.value = bestTwo[1];
+  if (typeof schedulePreviewStrategy === 'function') schedulePreviewStrategy();
+  if (!silent) {
+    toast(`Auto-selected best hardware fit: <b>${escText(bestTwo[0])}</b> vs <b>${escText(bestTwo[1])}</b>`, 'success', 4000);
+  }
+  return true;
+}
+
+async function scanHardware() {
+  const btn = document.getElementById('hw-scan-btn');
+  const summaryEl = document.getElementById('hw-summary');
+  const tableEl = document.getElementById('hw-fit-table');
+  btn.disabled = true; btn.textContent = 'Scanning…';
+  tableEl.innerHTML = '<div style="color:var(--text-muted); padding:20px; text-align:center;">Scanning hardware and scoring models…</div>';
+  try {
+    const data = await api('/api/hardware/scan');
+    const hw = data.hardware;
+    summaryEl.style.display = 'flex';
+    summaryEl.innerHTML = `
+      <span class="badge badge-blue">🖥️ ${escText(hw.platform)} (${escText(hw.machine)})</span>
+      <span class="badge badge-blue">${hw.cpu_count} CPU cores</span>
+      <span class="badge badge-green">${hw.usable_ram_gb} GB usable / ${hw.total_ram_gb} GB total RAM</span>
+    `;
+    if (!data.models.length) {
+      tableEl.innerHTML = '<div style="color:var(--text-muted); padding:20px; text-align:center;">No local generative models found.</div>';
+      return;
+    }
+    const rows = data.models.map((m, i) => {
+      const barColor = m.fit_pct >= 75 ? 'var(--accent-green)' : m.fit_pct >= 40 ? '#f59e0b' : 'var(--accent-red)';
+      const tps = m.tps != null ? `${m.tps} t/s${m.tps_kind === 'estimated' ? ' (est.)' : ''}` : 'unknown';
+      const pick = i < 2 ? '<span class="badge badge-green" style="margin-left:8px; font-size:10px;">★ Auto-pick</span>' : '';
+      return `<tr>
+        <td><strong>${escText(m.model)}</strong>${pick}</td>
+        <td>${m.effective_size_gb} GB</td>
+        <td style="min-width:140px;">
+          <div class="tps-gauge" style="margin-top:0;"><div class="fill" style="width:${m.fit_pct}%; background:${barColor};"></div></div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${m.fit_pct}%</div>
+        </td>
+        <td>${escText(tps)}</td>
+      </tr>`;
+    }).join('');
+    tableEl.innerHTML = `<table><thead><tr><th>Model</th><th>Effective Size</th><th>Fit Score</th><th>Est. Speed</th></tr></thead><tbody>${rows}</tbody></table>`;
+    applyBestTwoModels(data.best_two);
+  } catch(e) {
+    tableEl.innerHTML = `<div style="color:var(--accent-red); padding:20px;">Error: ${escText(e.message)}</div>`;
+    toast(`Hardware scan failed: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Scan My Hardware';
+  }
+}

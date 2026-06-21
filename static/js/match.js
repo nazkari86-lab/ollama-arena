@@ -62,8 +62,12 @@ function _showOllamaWarning(show) {
       banner = document.createElement('div');
       banner.id = 'ollama-offline-banner';
       banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#f85149;color:#fff;padding:10px 20px;text-align:center;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:12px;';
-      banner.innerHTML = '⚠️ Ollama is offline — run <code style="background:rgba(0,0,0,0.25);padding:2px 6px;border-radius:4px;">ollama serve</code> in terminal, then click &nbsp;<button onclick="loadModels(true)" style="background:#fff;color:#c0392b;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-weight:700;">🔄 Refresh Models</button>';
+      banner.innerHTML = '⚠️ Ollama is offline — run <code style="background:rgba(0,0,0,0.25);padding:2px 6px;border-radius:4px;">ollama serve</code> in terminal, then click &nbsp;<button id="ollama-refresh-models-btn" style="background:#fff;color:#c0392b;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-weight:700;">🔄 Refresh Models</button>';
       document.body.prepend(banner);
+      // CSP's script-src has no 'unsafe-inline', which blocks onclick="..."
+      // attributes entirely (nonces/hashes never apply to event-handler
+      // attributes) -- wire this button via addEventListener instead.
+      banner.querySelector('#ollama-refresh-models-btn').addEventListener('click', () => loadModels(true));
     }
     banner.style.display = 'flex';
   } else if (banner) {
@@ -132,7 +136,22 @@ async function loadModels(manual = false) {
       for(let i=0; i<Math.min(models.length, 3); i++) rModels.options[i].selected = true;
     }
     schedulePreviewStrategy();
+    // Upgrade the naive "first two models" default above to a
+    // hardware-aware pick, once per page load. Best-effort and silent:
+    // if it fails or the API is slow, the naive default above already
+    // stands, so there's no broken/empty state either way.
+    autoPickBestModelsOnce();
   }
+}
+
+let _autoPickDone = false;
+async function autoPickBestModelsOnce() {
+  if (_autoPickDone) return;
+  _autoPickDone = true;
+  try {
+    const data = await api('/api/hardware/scan');
+    applyBestTwoModels(data.best_two, { silent: true });
+  } catch(e) { /* naive default from loadModels() above already applied */ }
 }
 
 async function loadLeaderboard() {
@@ -302,7 +321,7 @@ function renderAgentTrace(trace, containerId) {
   const hasErrors = trace.some(s => s.error);
 
   let h = `<div class="agent-trace" id="${containerId}-trace">
-    <div class="agent-trace-header" onclick="this.parentElement.classList.toggle('expanded')">
+    <div class="agent-trace-header">
       <div class="trace-title">
         🔗 Agent Trace
         <span class="badge badge-blue" style="font-size:10px; padding:2px 8px;">${trace.length} step${trace.length > 1 ? 's' : ''}</span>
@@ -363,6 +382,8 @@ function renderAgentTrace(trace, containerId) {
 
   h += `</div></div></div>`;
   el.innerHTML = h;
+  const header = el.querySelector('.agent-trace-header');
+  if (header) header.addEventListener('click', () => header.parentElement.classList.toggle('expanded'));
 }
 
 // Convert ```fenced``` blocks to <pre><code> but escape every other character.
@@ -521,6 +542,12 @@ async function loadCharts() {
       el.innerHTML = h;
       el.querySelectorAll('script').forEach(s => {
         const ns = document.createElement('script');
+        // innerHTML-inserted <script> tags never execute on their own, so
+        // they're recreated here — but a freshly created element has no
+        // nonce, and CSP's script-src requires one for inline scripts.
+        // window.__CSP_NONCE__ is set by the page's own nonce'd bootstrap
+        // script (see templates/base.html) for exactly this purpose.
+        if (window.__CSP_NONCE__) ns.nonce = window.__CSP_NONCE__;
         if (s.src) ns.src = s.src; else ns.textContent = s.textContent;
         s.parentNode.replaceChild(ns, s);
       });
@@ -545,12 +572,20 @@ async function loadHistory() {
       <td><span class="badge badge-blue">${m.category}</span></td>
       <td><b>${m.score_a}</b> - <b>${m.score_b}</b></td>
       <td style="font-size:11px; color:var(--text-muted)">${date}</td>
-      <td><button class="btn" style="width:auto; padding:4px 12px; font-size:10px;" onclick="exportMatch(${m.id}, this)">Export</button></td>
+      <td><button class="btn export-match-btn" data-match-id="${m.id}" style="width:auto; padding:4px 12px; font-size:10px;">Export</button></td>
     </tr>`;
   });
   h += '</tbody></table>';
   el.innerHTML = h;
 }
+
+// Delegated once on the static #history-table container -- survives every
+// loadHistory() re-render since only its children (not the container
+// itself) get replaced via innerHTML.
+document.getElementById('history-table')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.export-match-btn');
+  if (btn) exportMatch(Number(btn.dataset.matchId), btn);
+});
 
 async function exportMatch(id, btn) {
   if (btn) { btn.disabled = true; btn.textContent = '...'; }
@@ -586,7 +621,8 @@ async function loadHallucinations() {
 
 async function loadPerf() {
   document.getElementById('chart-perf').innerHTML = await html('/charts/perf');
-  const stats = await api('/api/perf');
+  const data = await api('/api/perf');
+  const stats = data.models || [];
   const rows = stats.map(s => `<tr><td><b>${s.model}</b></td><td>${s.n_samples}</td><td>${s.tps_mean.toFixed(1)}</td><td>${s.latency_mean_s.toFixed(2)}s</td><td>${s.ttft_mean_s.toFixed(2)}s</td></tr>`).join('');
   document.getElementById('perf-table').innerHTML = `<table><thead><tr><th>Model</th><th>Samples</th><th>TPS</th><th>Latency</th><th>TTFT</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
@@ -609,10 +645,15 @@ async function loadDatasets() {
     <div style="display:flex; gap:12px; align-items:center; margin-top:auto; padding-top:16px; border-top:1px solid rgba(255,255,255,0.05);">
       <span class="badge badge-blue">${d.category}</span>
       <span class="badge ${d.cached?'badge-green':'badge-blue'}">${d.cached?'CACHED':'REMOTE'}</span>
-      <button class="btn" style="width:auto; padding:6px 20px; font-size:11px; margin-left:auto;" onclick="pullDataset('${d.name}')">PULL</button>
+      <button class="btn pull-dataset-btn" data-dataset-name="${escText(d.name)}" style="width:auto; padding:6px 20px; font-size:11px; margin-left:auto;">PULL</button>
     </div>
   </div>`).join('');
 }
+
+document.getElementById('datasets-list')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.pull-dataset-btn');
+  if (btn) pullDataset(btn.dataset.datasetName);
+});
 
 async function pullDataset(n) {
   await api('/api/pull_dataset', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: n, limit: 50}) });
@@ -643,6 +684,14 @@ function _renderDiff(a, b) {
   }
   return out;
 }
+
+document.getElementById('inspect-results')?.addEventListener('click', (e) => {
+  const diffBtn = e.target.closest('[data-action="toggle-diff"]');
+  if (diffBtn) { toggleDiff(diffBtn, Number(diffBtn.dataset.idx)); return; }
+  const retryBtn = e.target.closest('[data-action="retry-task"]');
+  if (retryBtn) retryTask(retryBtn.dataset.taskId, retryBtn);
+});
+
 function toggleDiff(btn, runIdx) {
   const card = btn.closest('[data-task-id]');
   if (!card) return;
@@ -723,8 +772,8 @@ async function loadInspect() {
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom: 1px solid var(--border-color); padding-bottom: 16px; gap:12px; flex-wrap:wrap;">
           <h3 style="font-weight:800; color:var(--text-main); font-size:15px; text-transform:uppercase; letter-spacing:1px;">Simulation Run #${i+1}</h3>
           <div style="display:flex; gap:8px; align-items:center;">
-            <button class="btn" data-tip="Toggle line-level diff between the two responses" style="width:auto; padding:5px 12px; font-size:11px; background:rgba(88,166,255,0.12); border-color:rgba(88,166,255,0.3); color:var(--accent-blue);" onclick="toggleDiff(this, ${i})">↔ Diff</button>
-            <button class="btn" data-tip="Re-run this single task — useful after a Docker/network blip" style="width:auto; padding:5px 12px; font-size:11px; background:rgba(245,158,11,0.12); border-color:rgba(245,158,11,0.3); color:#f59e0b;" onclick="retryTask('${escText(info.task_id)}', this)">↻ Retry</button>
+            <button class="btn" data-action="toggle-diff" data-idx="${i}" data-tip="Toggle line-level diff between the two responses" style="width:auto; padding:5px 12px; font-size:11px; background:rgba(88,166,255,0.12); border-color:rgba(88,166,255,0.3); color:var(--accent-blue);">↔ Diff</button>
+            <button class="btn" data-action="retry-task" data-task-id="${escText(info.task_id)}" data-tip="Re-run this single task — useful after a Docker/network blip" style="width:auto; padding:5px 12px; font-size:11px; background:rgba(245,158,11,0.12); border-color:rgba(245,158,11,0.3); color:#f59e0b;">↻ Retry</button>
             <span class="badge ${r.outcome === 'draw' ? 'badge-blue' : 'badge-green'}" style="font-size:12px; padding:6px 16px;">${r.outcome.replace('_', ' ').toUpperCase()}</span>
           </div>
         </div>

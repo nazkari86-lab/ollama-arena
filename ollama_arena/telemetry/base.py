@@ -5,6 +5,7 @@ and telemetry storage/aggregation capabilities.
 """
 from __future__ import annotations
 
+import contextlib
 import platform
 import sqlite3
 import time
@@ -13,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, Dict, Iterator, List, Optional, Protocol, runtime_checkable
 
 
 class HardwarePlatform(Enum):
@@ -138,9 +139,20 @@ class SQLiteTelemetryStorage:
         self.db_path = db_path
         self._init_db()
     
-    def _conn(self) -> sqlite3.Connection:
-        """Get database connection."""
-        return sqlite3.connect(self.db_path)
+    @contextlib.contextmanager
+    def _conn(self) -> Iterator[sqlite3.Connection]:
+        """Get a database connection as a context manager.
+
+        Opens a fresh connection, commits/rolls back on exit (matching
+        sqlite3.Connection's own context-manager semantics), and always
+        closes the connection afterward so callers don't leak file handles.
+        """
+        cx = sqlite3.connect(self.db_path)
+        try:
+            with cx:
+                yield cx
+        finally:
+            cx.close()
     
     def _init_db(self) -> None:
         """Initialize telemetry tables."""
