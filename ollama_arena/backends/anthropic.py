@@ -136,7 +136,7 @@ class AnthropicBackend:
         }
 
     def _build_body(self, model: str, messages: list[dict], tools: list[dict], **opts) -> dict:
-        system, turns = _messages_to_anthropic(inject_system(messages))
+        system, turns = _messages_to_anthropic(inject_system(messages, tools))
         body: dict = {
             "model": model,
             "messages": turns,

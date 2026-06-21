@@ -36,30 +36,40 @@ def strip_thinking(text: str) -> str:
 
 
 # ── Date-aware system prompt ──────────────────────────────────────────────────
+# Kept deliberately low-salience: small/reasoning models (e.g.
+# deepseek-r1:1.5b) treated the earlier "IMPORTANT: Today's date is X" +
+# "CRITICAL MANDATE...MUST USE THE AVAILABLE TOOLS" framing as an implicit
+# question to verify, and spent their whole output budget reasoning about
+# the date itself (e.g. computing day-of-week via Zeller's Congruence)
+# instead of answering the user. Stated as a plain background fact instead.
 _DATE_SYSTEM = (
-    "You are a helpful, accurate assistant.\n"
-    "IMPORTANT: Today's date is {date}.\n"
-    "When asked about the current date, time, or recent events, use {date} as the reference.\n"
-    "Your training data has a knowledge cutoff in the past.\n"
-    "CRITICAL MANDATE: If you are asked about events, facts, or data that occurred after your "
-    "knowledge cutoff or that you are not 100% sure about, you MUST USE THE AVAILABLE TOOLS "
-    "to find the information. Do NOT say you don't have access to real-time information; "
-    "instead, USE 'ddg_search' or 'google_web_search' to search the web, 'web_fetch' to read "
-    "pages, 'wikipedia_search' for encyclopedic facts, and 'get_datetime' for the current time.\n"
-    "Never substitute your cutoff date for today's actual date."
+    "You are a helpful, accurate assistant. For reference only, today's "
+    "date is {date} -- your own training data has an earlier knowledge "
+    "cutoff, so don't assume your cutoff date is today's date."
+)
+# Only relevant when tools are actually available for this call -- naming
+# tools (ddg_search, get_datetime, ...) that aren't registered for a given
+# request is itself misleading, so this suffix is appended conditionally
+# rather than always included.
+_TOOL_MANDATE = (
+    " If you're unsure about something time-sensitive (recent events, "
+    "current data), use an available tool instead of guessing."
 )
 
 
-def system_message_with_date() -> dict:
+def system_message_with_date(tools: list | None = None) -> dict:
     today = date.today().isoformat()
-    return {"role": "system", "content": _DATE_SYSTEM.format(date=today)}
+    content = _DATE_SYSTEM.format(date=today)
+    if tools:
+        content += _TOOL_MANDATE
+    return {"role": "system", "content": content}
 
 
-def inject_system(messages: list[dict]) -> list[dict]:
+def inject_system(messages: list[dict], tools: list | None = None) -> list[dict]:
     """Prepend date-aware system message unless the caller already supplied one."""
     if messages and messages[0].get("role") == "system":
         return messages
-    return [system_message_with_date()] + list(messages)
+    return [system_message_with_date(tools)] + list(messages)
 
 
 @dataclass

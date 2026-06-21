@@ -142,6 +142,37 @@ class TestInjectSystem:
         result = inject_system([{"role": "user", "content": "q"}])
         assert today in result[0]["content"]
 
+    def test_no_tool_mandate_without_tools(self):
+        # Regression: small/reasoning models (deepseek-r1:1.5b and others)
+        # fixated on "Today's date is X" + "CRITICAL MANDATE...USE THE
+        # AVAILABLE TOOLS" and answered every prompt with date trivia
+        # instead of the actual question -- even on calls with no tools
+        # available at all (plain generate()). The mandate text must only
+        # appear when a real tools list is passed.
+        from ollama_arena.backends.base import inject_system
+        result = inject_system([{"role": "user", "content": "hi how are you"}])
+        content = result[0]["content"]
+        assert "MUST USE" not in content
+        assert "tool" not in content.lower()
+
+    def test_tool_mandate_present_with_tools(self):
+        from ollama_arena.backends.base import inject_system
+        tools = [{"function": {"name": "get_datetime"}}]
+        result = inject_system([{"role": "user", "content": "q"}], tools=tools)
+        assert "tool" in result[0]["content"].lower()
+
+    def test_date_phrasing_is_low_salience(self):
+        # The original "IMPORTANT: Today's date is X" + "CRITICAL MANDATE"
+        # framing reads as an implicit question/directive to weak models,
+        # which then spend their whole output budget reasoning about the
+        # date itself (e.g. computing day-of-week via Zeller's Congruence)
+        # instead of answering the user. Assert the loud framing is gone.
+        from ollama_arena.backends.base import inject_system
+        result = inject_system([{"role": "user", "content": "q"}])
+        content = result[0]["content"]
+        assert "IMPORTANT:" not in content
+        assert "CRITICAL MANDATE" not in content
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # anthropic.py — _messages_to_anthropic

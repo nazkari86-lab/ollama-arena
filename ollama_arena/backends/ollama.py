@@ -24,14 +24,14 @@ class OllamaBackend:
         return self._chat(model, messages, tools=[], **opts)
 
     def generate_with_tools(self, model: str, messages: list[dict], tools: list[dict], **opts) -> GenResult:
-        return self._chat(model, inject_system(messages), tools=tools, **opts)
+        return self._chat(model, inject_system(messages, tools), tools=tools, **opts)
 
     def chat_turn(self, model: str, messages: list[dict], tools: list[dict], **opts) -> ChatTurnResult:
         """One /api/chat turn — used by the agent loop for multi-step tool use."""
         call_timeout = opts.pop("_timeout", None) or self.timeout
         body: dict = {
             "model": model,
-            "messages": inject_system(messages),
+            "messages": inject_system(messages, tools),
             "stream": True,
             "options": {
                 "temperature": opts.get("temperature", 0.0),

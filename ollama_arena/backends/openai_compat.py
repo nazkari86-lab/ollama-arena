@@ -129,7 +129,7 @@ class OpenAICompatBackend:
         """One chat completion turn; returns content and/or tool_calls separately."""
         body = {
             "model":       model,
-            "messages":    prepare_messages_for_api(inject_system(messages)),
+            "messages":    prepare_messages_for_api(inject_system(messages, tools)),
             "temperature": opts.get("temperature", 0.0),
             "max_tokens":  opts.get("num_predict", opts.get("max_tokens", 16384)),
             "stream":      True,

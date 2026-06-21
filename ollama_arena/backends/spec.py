@@ -85,7 +85,7 @@ class SpeculativeBackend:
         max_tokens = opts.get("num_predict", opts.get("max_tokens", 2048))
         body = {
             "model": server_model,
-            "messages": inject_system(messages),
+            "messages": inject_system(messages, tools),
             "temperature": opts.get("temperature", 0.0),
             "max_tokens": max_tokens,
             "stream": True,
