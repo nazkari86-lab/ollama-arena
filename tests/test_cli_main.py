@@ -105,6 +105,35 @@ class TestMain:
             main()
         mock_cmd.assert_called_once()
 
+    def test_sim_list_subcommand_calls_cmd_sim(self):
+        from ollama_arena.cli import main
+        with mock.patch("sys.argv", ["ollama-arena", "sim", "list"]), \
+             mock.patch("ollama_arena.cli.cmd_sim") as mock_cmd:
+            main()
+        mock_cmd.assert_called_once()
+        args = mock_cmd.call_args.args[0]
+        assert args.sim_cmd == "list"
+
+    def test_sim_run_subcommand_parses_agents_and_ticks(self):
+        from ollama_arena.cli import main
+        with mock.patch("sys.argv", [
+            "ollama-arena", "sim", "run", "rps", "--agents", "a,b", "--ticks", "5",
+        ]), mock.patch("ollama_arena.cli.cmd_sim") as mock_cmd:
+            main()
+        args = mock_cmd.call_args.args[0]
+        assert args.sim_cmd == "run"
+        assert args.scenario == "rps"
+        assert args.agents == "a,b"
+        assert args.ticks == 5
+
+    def test_sim_train_subcommand_requires_run_id(self):
+        from ollama_arena.cli import main
+        with mock.patch("sys.argv", ["ollama-arena", "sim", "train", "--run-id", "abc123"]), \
+             mock.patch("ollama_arena.cli.cmd_sim") as mock_cmd:
+            main()
+        args = mock_cmd.call_args.args[0]
+        assert args.run_id == "abc123"
+
     def test_sandbox_subcommand_calls_cmd_sandbox(self):
         from ollama_arena.cli import main
         with mock.patch("sys.argv", ["ollama-arena", "sandbox", "list"]), \

@@ -26,6 +26,7 @@ from .finetune_cmd import cmd_finetune
 from .genome_cmd import cmd_genome
 from .match import cmd_benchmark, cmd_match, cmd_royale, cmd_tournament
 from .p2p_cmd import cmd_node, cmd_p2p
+from .sim_cmd import cmd_sim
 from .web_cmd import cmd_web
 
 
@@ -343,6 +344,41 @@ def main():
     pp2p.add_argument("--result", default=None, metavar="JSON",
                       help="Result data as a JSON string (with --generate-proof)")
     pp2p.set_defaults(func=cmd_p2p)
+
+    psim = sub.add_parser("sim", help="Run/inspect agent-driven simulations (Mafia, Sims-world, ...)")
+    psim.add_argument("--sim-db", dest="sim_db", default="sim.db", metavar="PATH")
+    sim_sub = psim.add_subparsers(dest="sim_cmd", metavar="SIM_CMD")
+
+    sim_sub.add_parser("list", help="List available simulation scenarios")
+
+    psim_run = sim_sub.add_parser("run", help="Run a simulation scenario")
+    psim_run.add_argument("scenario", help="Scenario name (see 'sim list')")
+    psim_run.add_argument("--agents", required=True, metavar="MODEL[,MODEL2,...]",
+                          help="Comma-separated model names, one per agent")
+    psim_run.add_argument("--config", default=None, metavar="PATH",
+                          help="Path to a JSON or YAML scenario config file")
+    psim_run.add_argument("--seed", type=int, default=None)
+    psim_run.add_argument("--ticks", type=int, default=1000, help="Max ticks before truncation")
+
+    psim_bench = sim_sub.add_parser("benchmark", help="Run N episodes and compare metrics")
+    psim_bench.add_argument("scenario", help="Scenario name (see 'sim list')")
+    psim_bench.add_argument("--agents", required=True, metavar="MODEL[,MODEL2,...]")
+    psim_bench.add_argument("--config", default=None, metavar="PATH")
+    psim_bench.add_argument("--episodes", type=int, default=5)
+    psim_bench.add_argument("--ticks", type=int, default=1000)
+
+    psim_train = sim_sub.add_parser("train", help="Imitation-learn from a stored run's transitions")
+    psim_train.add_argument("--run-id", dest="run_id", required=True)
+    psim_train.add_argument("--epochs", type=int, default=10)
+
+    psim_replay = sim_sub.add_parser("replay", help="Print a stored run's event log")
+    psim_replay.add_argument("run_id")
+    psim_replay.add_argument("--tick", type=int, default=None, help="Only events up to this tick")
+
+    psim_inspect = sim_sub.add_parser("inspect", help="Show status/outcome/metrics for a run")
+    psim_inspect.add_argument("run_id")
+
+    psim.set_defaults(func=cmd_sim)
 
     pw = sub.add_parser("web", help="Launch web dashboard")
     pw.add_argument("--host", default="0.0.0.0")

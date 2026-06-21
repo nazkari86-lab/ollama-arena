@@ -3,6 +3,14 @@ function connectWS() {
   socket = new WebSocket(wsUrl);
   socket.onmessage = (e) => {
     const d = JSON.parse(e.data);
+    // Sim events are keyed by run_id, not job_id -- multiple sim runs can
+    // be in flight at once (an active-runs table, not a single current
+    // job), so they bypass the single-job currentJobId gate below and are
+    // routed unconditionally to sim.js's own dispatcher.
+    if (typeof d.type === 'string' && d.type.startsWith('sim_') && typeof handleSimWSEvent === 'function') {
+      handleSimWSEvent(d);
+      return;
+    }
     if (d.job_id === currentJobId) handleWSEvent(d);
   };
   socket.onclose = () => setTimeout(connectWS, 2000);
@@ -198,7 +206,7 @@ document.querySelectorAll('.tab').forEach(el => {
     document.getElementById('tab-' + el.dataset.tab).classList.add('active');
     
     savePref('lastTab', el.dataset.tab);
-    const m = { dashboard: loadCharts, datasets: loadDatasets, performance: loadPerf, hallucinations: loadHallucinations, spec: loadSpec, genome: initGenomeTab, tournament: () => {}, royale: () => {}, history: loadHistory };
+    const m = { dashboard: loadCharts, datasets: loadDatasets, performance: loadPerf, hallucinations: loadHallucinations, spec: loadSpec, genome: initGenomeTab, sim: initSimTab, tournament: () => {}, royale: () => {}, history: loadHistory };
     if (m[el.dataset.tab]) m[el.dataset.tab]();
   });
   

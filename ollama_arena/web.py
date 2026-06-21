@@ -1377,6 +1377,250 @@ def run_web(
         import logging as _logging
         _logging.getLogger("arena.web").warning(f"Genome API unavailable: {_e}")
 
+    # ── Simulations API ────────────────────────────────────────────────────────
+    try:
+        from .simulations.core.runner import SimulationManager
+        from .simulations.core.scenario import list_scenarios
+        from .simulations.core.types import AgentSpec
+        from .simulations.replay.player import ReplayPlayer
+
+        _sim_db_path = db_path.replace("arena.db", "sim.db")
+        _sim_manager = SimulationManager(db_path=_sim_db_path)
+        # Tracks the specific SimulationManager instance executing each
+        # in-flight run, so a later POST .../pause request (a different HTTP
+        # request, but the same process) flips the _paused flag on the same
+        # instance the background thread's start_run() loop is checking --
+        # not some other instance's separate flag.
+        _sim_active_managers: dict[str, SimulationManager] = {}
+
+        def _agent_specs_from_models(models: list[str]) -> list[AgentSpec]:
+            counts: dict[str, int] = {}
+            specs = []
+            for m in models:
+                counts[m] = counts.get(m, 0) + 1
+                suffix = f"_{counts[m]}" if counts[m] > 1 else ""
+                specs.append(AgentSpec(agent_id=f"{m}{suffix}", model=m))
+            return specs
+
+        @app.get("/api/sim/scenarios")
+        async def sim_scenarios():
+            return JSONResponse([
+                {"name": s.name, "description": s.description, "default_config": s.default_config}
+                for s in sorted(list_scenarios(), key=lambda s: s.name)
+            ])
+
+        @app.get("/api/sim/runs")
+        async def sim_runs_list(scenario: str | None = None):
+            return JSONResponse(_sim_manager.store.list_runs(scenario))
+
+        @app.get("/api/sim/compare")
+        async def sim_compare(run_ids: str):
+            from .simulations.eval.compare import compare_runs
+            ids = [r.strip() for r in run_ids.split(",") if r.strip()]
+            if len(ids) < 1:
+                raise HTTPException(400, "run_ids must be a comma-separated list of at least 1 run id")
+            report = compare_runs(ids, db_path=_sim_db_path)
+            return JSONResponse({
+                "run_ids": report.run_ids, "scenario": report.scenario,
+                "metric_names": report.metric_names, "metrics_by_run": report.metrics_by_run,
+                "best_run_by_metric": {
+                    name: report.best_run(name) for name in report.metric_names
+                },
+            })
+
+        @app.post("/api/sim/run")
+        async def sim_run_start(body: dict, background_tasks: BackgroundTasks):
+            scenario = body.get("scenario")
+            models = body.get("agents") or []
+            if not scenario or not isinstance(models, list) or not models:
+                raise HTTPException(400, "scenario and a non-empty agents list are required")
+            config = body.get("config") or {}
+            max_ticks = _body_num(body, "ticks", 1000)
+
+            mgr = SimulationManager(db_path=_sim_db_path)
+            try:
+                run_id = mgr.create_run(scenario, _agent_specs_from_models(models),
+                                         config=config, seed=body.get("seed"))
+            except KeyError as e:
+                raise HTTPException(404, str(e))
+            _sim_active_managers[run_id] = mgr
+
+            import asyncio
+            _loop = asyncio.get_running_loop()
+
+            def _emit(event: dict):
+                try:
+                    asyncio.run_coroutine_threadsafe(manager.broadcast(event), _loop)
+                except Exception:
+                    pass
+
+            def _do_run():
+                try:
+                    result = mgr.start_run(
+                        run_id,
+                        on_tick=lambda d: _emit({"type": "sim_tick", **d}),
+                        max_ticks=max_ticks,
+                    )
+                    _emit({
+                        "type": "sim_run_done", "run_id": run_id,
+                        "terminated": result.terminated, "truncated": result.truncated,
+                        "outcome": result.outcome, "metrics": result.metrics,
+                    })
+                except Exception as e:
+                    _emit({"type": "sim_run_done", "run_id": run_id, "error": str(e)})
+                finally:
+                    _sim_active_managers.pop(run_id, None)
+
+            background_tasks.add_task(_do_run)
+            return JSONResponse({"run_id": run_id})
+
+        @app.get("/api/sim/run/{run_id}")
+        async def sim_run_get(run_id: str):
+            run = _sim_manager.store.get_run(run_id)
+            if run is None:
+                raise HTTPException(404, f"no run found with id {run_id}")
+            metrics = {m["metric_name"]: m["value"] for m in _sim_manager.store.get_metrics(run_id)}
+            return JSONResponse({**run, "metrics": metrics})
+
+        @app.post("/api/sim/run/{run_id}/pause")
+        async def sim_run_pause(run_id: str):
+            mgr = _sim_active_managers.get(run_id, _sim_manager)
+            try:
+                mgr.pause_run(run_id)
+            except KeyError as e:
+                raise HTTPException(404, str(e))
+            await manager.broadcast({"type": "sim_phase_change", "run_id": run_id, "status": "paused"})
+            return JSONResponse({"run_id": run_id, "status": "paused"})
+
+        @app.post("/api/sim/run/{run_id}/resume")
+        async def sim_run_resume(run_id: str, body: dict, background_tasks: BackgroundTasks):
+            if _sim_manager.store.get_run(run_id) is None:
+                raise HTTPException(404, f"no run found with id {run_id}")
+            max_ticks = _body_num(body, "ticks", 1000)
+
+            mgr = SimulationManager(db_path=_sim_db_path)
+            _sim_active_managers[run_id] = mgr
+
+            import asyncio
+            _loop = asyncio.get_running_loop()
+
+            def _emit(event: dict):
+                try:
+                    asyncio.run_coroutine_threadsafe(manager.broadcast(event), _loop)
+                except Exception:
+                    pass
+
+            def _do_resume():
+                try:
+                    result = mgr.resume_run(
+                        run_id,
+                        on_tick=lambda d: _emit({"type": "sim_tick", **d}),
+                        max_ticks=max_ticks,
+                    )
+                    _emit({
+                        "type": "sim_run_done", "run_id": run_id,
+                        "terminated": result.terminated, "truncated": result.truncated,
+                        "outcome": result.outcome, "metrics": result.metrics,
+                    })
+                except Exception as e:
+                    _emit({"type": "sim_run_done", "run_id": run_id, "error": str(e)})
+                finally:
+                    _sim_active_managers.pop(run_id, None)
+
+            background_tasks.add_task(_do_resume)
+            return JSONResponse({"run_id": run_id, "status": "resuming"})
+
+        @app.get("/api/sim/run/{run_id}/replay")
+        async def sim_run_replay(run_id: str, tick: int | None = None):
+            player = ReplayPlayer(run_id, db_path=_sim_db_path)
+            events = player.seek(tick) if tick is not None else player.all_events()
+            return JSONResponse([
+                {"id": e.id, "tick": e.tick, "kind": e.kind, "payload": e.payload, "actor_id": e.actor_id}
+                for e in events
+            ])
+
+        @app.get("/api/sim/run/{run_id}/trace")
+        async def sim_run_trace(run_id: str, limit: int = 300):
+            run = _sim_manager.store.get_run(run_id)
+            if run is None:
+                raise HTTPException(404, f"no run found with id {run_id}")
+            bounded_limit = max(1, min(limit, 1000))
+            transitions = _sim_manager.store.get_transitions(run_id)[-bounded_limit:]
+            events = _sim_manager.store.get_events(run_id)[-bounded_limit:]
+            return JSONResponse({
+                "run": run,
+                "transitions": transitions,
+                "events": [
+                    {
+                        "id": event.id,
+                        "tick": event.tick,
+                        "kind": event.kind,
+                        "payload": event.payload,
+                        "actor_id": event.actor_id,
+                        "visibility": (
+                            "public" if event.witness_ids == frozenset({"*"}) else "private"
+                        ),
+                    }
+                    for event in events
+                ],
+            })
+
+        @app.post("/api/sim/train")
+        async def sim_train(body: dict, background_tasks: BackgroundTasks):
+            from .simulations.training.dataset import export_run_to_jsonl, load_jsonl
+            from .simulations.training.imitation import ImitationConfig, train_imitation
+
+            run_id = body.get("run_id")
+            if not run_id:
+                raise HTTPException(400, "run_id required")
+            epochs = _body_num(body, "epochs", 5)
+
+            jid = _new_job_id()
+            jobs[jid] = {"status": "running", "run_id": run_id, "created_at": time.time()}
+
+            import asyncio
+            _loop = asyncio.get_running_loop()
+
+            def _emit(event: dict):
+                try:
+                    asyncio.run_coroutine_threadsafe(manager.broadcast(event), _loop)
+                except Exception:
+                    pass
+
+            def _do_train():
+                _emit({"type": "sim_training_progress", "job_id": jid, "run_id": run_id, "status": "started"})
+                tmp_path = f"/tmp/sim_train_{run_id}.jsonl"
+                n = export_run_to_jsonl(run_id, tmp_path, db_path=_sim_db_path)
+                if n == 0:
+                    jobs[jid]["status"] = "error"
+                    jobs[jid]["error"] = "no transitions found for this run"
+                    _emit({"type": "sim_training_progress", "job_id": jid, "run_id": run_id,
+                           "status": "error", "error": jobs[jid]["error"]})
+                    return
+                rows = load_jsonl(tmp_path)
+                try:
+                    result = train_imitation(rows, config=ImitationConfig(epochs=epochs))
+                except (ValueError, RuntimeError) as e:
+                    jobs[jid]["status"] = "error"
+                    jobs[jid]["error"] = str(e)
+                    _emit({"type": "sim_training_progress", "job_id": jid, "run_id": run_id,
+                           "status": "error", "error": str(e)})
+                    return
+                jobs[jid]["status"] = "done"
+                jobs[jid]["result"] = {
+                    "kind_vocab": result.kind_vocab, "final_loss": result.final_loss,
+                    "losses_by_epoch": result.losses_by_epoch,
+                }
+                _emit({"type": "sim_training_progress", "job_id": jid, "run_id": run_id,
+                       "status": "done", **jobs[jid]["result"]})
+
+            background_tasks.add_task(_do_train)
+            return JSONResponse({"job_id": jid})
+
+    except ImportError as _e:
+        import logging as _logging
+        _logging.getLogger("arena.web").warning(f"Simulations API unavailable: {_e}")
+
     from ._banner import print_banner
     print_banner(__version__)
     print(f"  backend: {arena.client.name}")

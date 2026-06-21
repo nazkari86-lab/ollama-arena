@@ -40,6 +40,7 @@
   <div class="tab" role="tab" tabindex="-1" data-tab="hallucinations">🍄 Hallucinations</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="spec">🚀 Spec Decode</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="genome">🧬 Genome</div>
+  <div class="tab" role="tab" tabindex="-1" data-tab="sim">🎭 Simulations</div>
 
 </div>
 
@@ -460,6 +461,127 @@
       <div id="hw-summary" style="display:none; gap:8px; flex-wrap:wrap; margin-bottom:20px;"></div>
       <div id="hw-fit-table">
         <div style="color:var(--text-muted); font-size:13px;">Click <b>Scan My Hardware</b> to score your installed models.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIMULATIONS -->
+  <div class="tab-content" id="tab-sim" role="tabpanel">
+    <div class="sim-overview">
+      <div>
+        <h2>Simulation Observatory</h2>
+        <p>Watch local models perceive a world, choose structured actions, and change its state tick by tick.</p>
+      </div>
+      <div class="sim-overview-stats" aria-label="Simulation statistics">
+        <div><strong id="sim-stat-scenarios">0</strong><span>Scenarios</span></div>
+        <div><strong id="sim-stat-runs">0</strong><span>Runs</span></div>
+        <div><strong id="sim-stat-active">0</strong><span>Active</span></div>
+      </div>
+    </div>
+
+    <div class="sim-section-label">Available worlds</div>
+    <div class="sim-scenario-grid" id="sim-scenario-grid" aria-label="Available simulation scenarios"></div>
+
+    <div class="sim-workbench">
+      <div class="card sim-control-panel">
+        <h2>Run configuration</h2>
+        <div class="form-group">
+          <label for="sim-scenario">Scenario</label>
+          <select id="sim-scenario"></select>
+          <p id="sim-scenario-desc" style="color:var(--text-muted); font-size:12px; margin-top:6px;"></p>
+        </div>
+        <div class="form-group">
+          <label for="sim-agents">Local models</label>
+          <select id="sim-agents" multiple size="6" aria-describedby="sim-agent-help"></select>
+          <p id="sim-agent-help" class="sim-field-help">Select every model that should act in this world.</p>
+        </div>
+        <div class="sim-inline-fields">
+          <div class="form-group">
+            <label for="sim-seed">Seed (optional)</label>
+            <input type="number" id="sim-seed" placeholder="1">
+          </div>
+          <div class="form-group">
+            <label for="sim-ticks">Max ticks</label>
+            <input type="number" id="sim-ticks" value="200">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="sim-config">Config (JSON, optional)</label>
+          <textarea id="sim-config" rows="3" placeholder='{"rounds": 5}'></textarea>
+        </div>
+        <button class="btn primary" id="sim-run-btn">Start Run</button>
+        <div id="sim-run-status" class="status"></div>
+      </div>
+
+      <div class="card sim-live-card">
+        <div class="sim-live-header">
+          <div>
+            <h2>Live world</h2>
+            <div id="sim-live-summary">Select a run to inspect model actions.</div>
+          </div>
+          <div class="sim-live-meta">
+            <span id="sim-live-phase">Idle</span>
+            <strong id="sim-live-tick">Tick 0</strong>
+          </div>
+        </div>
+        <div class="sim-progress" aria-hidden="true"><div id="sim-progress-fill"></div></div>
+        <div class="sim-stage" id="sim-stage" data-scenario="idle">
+          <div class="sim-world-viz" id="sim-world-viz">
+            <div class="sim-empty-state">
+              <span>◎</span>
+              <strong>No active world</strong>
+              <p>Start a simulation or watch a stored run.</p>
+            </div>
+          </div>
+          <div class="sim-agent-grid" id="sim-agent-grid"></div>
+        </div>
+        <div class="sim-stream-header">
+          <span>Action stream</span>
+          <span id="sim-action-count">0 actions</span>
+        </div>
+        <div class="sim-action-stream" id="sim-live-log" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Run history
+        <button class="btn" id="sim-refresh-runs-btn" style="width:auto; margin-left:auto; padding:6px 14px; font-size:11px; background:transparent; border-color:var(--border-color);">Refresh</button>
+      </h2>
+      <div id="sim-runs-table">
+        <div style="color:var(--text-muted); font-size:13px;">No runs yet — start one above.</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2>Replay events</h2>
+        <div class="sim-tool-row">
+          <input type="text" id="sim-replay-run-id" placeholder="run id" style="flex:1;">
+          <input type="number" id="sim-replay-tick" placeholder="tick (optional)" style="width:140px;">
+          <button class="btn" id="sim-replay-btn" style="width:auto; padding:10px 16px; font-size:12px;">Load</button>
+        </div>
+        <div class="log" id="sim-replay-log"></div>
+      </div>
+
+      <div class="card">
+        <h2>Train from actions</h2>
+        <div class="sim-tool-row">
+          <input type="text" id="sim-train-run-id" placeholder="run id" style="flex:1;">
+          <input type="number" id="sim-train-epochs" value="5" style="width:100px;">
+          <button class="btn" id="sim-train-btn" style="width:auto; padding:10px 16px; font-size:12px;">Train</button>
+        </div>
+        <div id="sim-train-status" style="color:var(--text-muted); font-size:13px;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Compare runs</h2>
+      <div class="sim-tool-row">
+        <input type="text" id="sim-compare-run-ids" placeholder="run_id_1, run_id_2, ..." style="flex:1;">
+        <button class="btn" id="sim-compare-btn" style="width:auto; padding:10px 16px; font-size:12px;">Compare</button>
+      </div>
+      <div id="sim-compare-table">
+        <div style="color:var(--text-muted); font-size:13px;">Enter two or more run ids to compare their metrics.</div>
       </div>
     </div>
   </div>
