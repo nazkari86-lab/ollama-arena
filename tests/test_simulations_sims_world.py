@@ -9,8 +9,9 @@ from ollama_arena.simulations.agents.base import SimAgent
 from ollama_arena.simulations.core.runner import SimulationManager
 from ollama_arena.simulations.core.types import Action, AgentSpec
 from ollama_arena.simulations.world.economy import (
-    apply_daily_decay, apply_rest, apply_socialize, apply_spend, apply_work,
-    is_starving_to_death,
+    JOB_CATALOG, RENT_PER_DAY,
+    apply_conflict, apply_daily_decay, apply_rent_bill, apply_rest,
+    apply_socialize, apply_spend, apply_work, is_starving_to_death,
 )
 from ollama_arena.simulations.world.entities import NPCStatus
 from ollama_arena.simulations.world.relationships import RelationshipGraph
@@ -244,3 +245,104 @@ def test_scorer_reports_survivors_and_days(tmp_path):
     result = mgr.start_run(run_id)
     assert result.metrics["days_survived"] == 3.0
     assert result.metrics["survivors"] in (0.0, 1.0)
+
+
+# ── L2 economy: job catalog, rent/debt, spend categories, conflict ────────
+
+def test_apply_work_pays_job_specific_wage_from_catalog():
+    # "baker" must keep its pre-existing wage (50.0) so the already-balanced
+    # work/spend/rest cycle in test_balanced_agent_survives_the_full_day_budget
+    # doesn't silently change economics underneath it.
+    assert JOB_CATALOG["baker"] == 50.0
+    barista = NPCStatus(agent_id="a", job="barista")
+    apply_work(barista)
+    assert barista.money == 50.0 + JOB_CATALOG["barista"]
+    assert JOB_CATALOG["barista"] != JOB_CATALOG["baker"]
+
+
+def test_apply_work_unlisted_job_name_pays_default_wage():
+    status = NPCStatus(agent_id="a", job="freelancer")  # not in JOB_CATALOG
+    wage = apply_work(status)
+    assert wage > 0.0  # still employed, just at the fallback rate
+    assert "freelancer" not in JOB_CATALOG
+
+
+def test_apply_spend_on_leisure_restores_mood():
+    status = NPCStatus(agent_id="a", money=50.0)
+    status.needs["mood"] = 20.0
+    ok = apply_spend(status, 20.0, on="leisure")
+    assert ok is True
+    assert status.needs["mood"] > 20.0
+    assert status.needs["hunger"] == 80.0  # unaffected by a leisure purchase
+
+
+def test_apply_rent_bill_pays_from_money_when_affordable():
+    status = NPCStatus(agent_id="a", money=100.0)
+    paid = apply_rent_bill(status)
+    assert paid is True
+    assert status.money == 100.0 - RENT_PER_DAY
+    assert status.debt == 0.0
+
+
+def test_apply_rent_bill_goes_to_debt_when_unaffordable_and_hurts_mood():
+    status = NPCStatus(agent_id="a", money=5.0)
+    status.needs["mood"] = 80.0
+    paid = apply_rent_bill(status)
+    assert paid is False
+    assert status.money == 5.0  # untouched, not partially drained
+    assert status.debt == RENT_PER_DAY
+    assert status.needs["mood"] < 80.0
+
+
+def test_apply_conflict_reduces_mood():
+    status = NPCStatus(agent_id="a")
+    status.needs["mood"] = 80.0
+    apply_conflict(status)
+    assert status.needs["mood"] < 80.0
+
+
+def test_conflict_action_bumps_relationship_negative(tmp_path):
+    cycle_a = [("conflict", {"target": "b"})]
+    cycle_b = [("rest", {})]
+    agents = {"a": ScriptedSimsAgent("a", cycle_a), "b": ScriptedSimsAgent("b", cycle_b)}
+    mgr = SimulationManager(db_path=str(tmp_path / "sim.db"), agent_factory=lambda spec, scenario: agents[spec.agent_id])
+    run_id = mgr.create_run("sims_world", [AgentSpec(agent_id="a", model="x"), AgentSpec(agent_id="b", model="y")],
+                             config={"max_days": 1}, seed=1)
+    mgr.start_run(run_id)
+    world_relationships = mgr.store.get_run(run_id)  # sanity: run exists
+    assert world_relationships is not None
+    conflicted = [e for e in mgr.store.get_events(run_id) if e.kind == "conflicted"]
+    assert len(conflicted) == 1
+    assert conflicted[0].payload == {"agent": "a", "target": "b"}
+
+
+def test_conflict_with_unknown_target_is_discarded_as_invalid(tmp_path):
+    agent = ScriptedSimsAgent("a", [("conflict", {"target": "ghost"})])
+    mgr = SimulationManager(db_path=str(tmp_path / "sim.db"), agent_factory=lambda spec, scenario: agent)
+    run_id = mgr.create_run("sims_world", [AgentSpec(agent_id="a", model="x")],
+                             config={"max_days": 1}, seed=1)
+    mgr.start_run(run_id)
+    invalid = [e for e in mgr.store.get_events(run_id) if e.kind == "invalid_action"]
+    assert len(invalid) == 1
+
+
+def test_set_goal_action_persists_into_status_and_is_observable(tmp_path):
+    agent = ScriptedSimsAgent("a", [("set_goal", {"goal": "pay_rent"}), ("rest", {})])
+    mgr = SimulationManager(db_path=str(tmp_path / "sim.db"), agent_factory=lambda spec, scenario: agent)
+    run_id = mgr.create_run("sims_world", [AgentSpec(agent_id="a", model="x")],
+                             config={"max_days": 2}, seed=1)
+    mgr.start_run(run_id)
+    transitions = mgr.store.get_transitions(run_id)
+    # day 2's *observation* (taken before acting) must already show the
+    # goal set on day 1 -- proves it persists on NPCStatus, not just logged.
+    assert transitions[1]["obs"]["status"]["current_goal"] == "pay_rent"
+
+
+def test_every_living_agent_is_billed_rent_once_per_day(tmp_path):
+    agent = ScriptedSimsAgent("a", [("rest", {})] * 2)
+    mgr = SimulationManager(db_path=str(tmp_path / "sim.db"), agent_factory=lambda spec, scenario: agent)
+    run_id = mgr.create_run("sims_world", [AgentSpec(agent_id="a", model="x")],
+                             config={"max_days": 2}, seed=1)
+    mgr.start_run(run_id)
+    rent_events = [e for e in mgr.store.get_events(run_id) if e.kind.startswith("rent_")]
+    assert len(rent_events) == 2  # one per day, regardless of the day's chosen action

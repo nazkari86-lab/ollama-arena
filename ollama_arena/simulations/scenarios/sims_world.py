@@ -24,7 +24,10 @@ from ..core.types import (
 )
 from ..core.world import World
 from ..eval.scoring import ScenarioScorer
-from ..world.economy import apply_daily_decay, apply_rest, apply_socialize, apply_spend, apply_work, is_starving_to_death
+from ..world.economy import (
+    RENT_PER_DAY, apply_conflict, apply_daily_decay, apply_rent_bill,
+    apply_rest, apply_socialize, apply_spend, apply_work, is_starving_to_death,
+)
 from ..world.entities import NPCStatus
 from ..world.relationships import RelationshipGraph
 
@@ -50,6 +53,16 @@ class SocializeAction(ActionSchema):
 class SpendAction(ActionSchema):
     amount: float
     on: str = "food"
+
+
+@dataclass
+class ConflictAction(ActionSchema):
+    target: str
+
+
+@dataclass
+class GoalAction(ActionSchema):
+    goal: str
 
 
 class SimsWorldWorld(World):
@@ -87,7 +100,8 @@ class SimsWorldWorld(World):
         self.day = 0
         self.living = set(self.agent_ids)
         self.statuses = {
-            aid: NPCStatus(agent_id=aid, job=self._jobs.get(aid)) for aid in self.agent_ids
+            aid: NPCStatus(agent_id=aid, job=self._jobs.get(aid), home_id=f"home_{aid}")
+            for aid in self.agent_ids
         }
         self.relationships = RelationshipGraph()
         self._all_events = []
@@ -185,9 +199,32 @@ class SimsWorldWorld(World):
                 else:
                     self._emit("invalid_action", {"agent": aid, "kind": kind},
                                 witness_ids=frozenset(), actor_id=aid)
+            elif kind == "conflict":
+                target = action.payload.get("target")
+                if target and target in self.living and target != aid:
+                    apply_conflict(status)
+                    self.relationships.bump(aid, target, -10.0)
+                    self._emit("conflicted", {"agent": aid, "target": target}, actor_id=aid)
+                else:
+                    self._emit("invalid_action", {"agent": aid, "kind": kind},
+                                witness_ids=frozenset(), actor_id=aid)
+            elif kind == "set_goal":
+                status.current_goal = action.payload.get("goal") or None
+                self._emit("goal_set", {"agent": aid, "goal": status.current_goal}, actor_id=aid)
             else:
                 self._emit("invalid_action", {"agent": aid, "kind": kind},
                             witness_ids=frozenset(), actor_id=aid)
+
+        # Rent is a daily bill, not an action -- every living agent with a
+        # home pays it (or goes into debt) regardless of what they chose to
+        # do today, the same way real rent doesn't wait for you to pick
+        # "pay rent" as your one action of the day.
+        for aid in list(self.living):
+            status = self.statuses[aid]
+            if status.home_id is not None:
+                paid = apply_rent_bill(status)
+                self._emit("rent_paid" if paid else "rent_debt",
+                           {"agent": aid, "amount": RENT_PER_DAY}, actor_id=aid)
 
         died_this_tick = []
         for aid in list(self.living):
@@ -228,12 +265,13 @@ class SimsWorldScorer(ScenarioScorer):
 
 register_scenario(ScenarioSpec(
     name="sims_world",
-    description="Life simulation: NPCs manage needs, money, jobs, and "
-                 "relationships across daily ticks.",
+    description="Life simulation: NPCs manage needs, money, jobs, rent, "
+                 "and relationships (including conflict) across daily "
+                 "ticks, optionally pursuing a self-chosen goal.",
     world_factory=SimsWorldWorld,
     action_schema_by_kind={
         "work": WorkAction, "rest": RestAction, "socialize": SocializeAction,
-        "spend": SpendAction,
+        "spend": SpendAction, "conflict": ConflictAction, "set_goal": GoalAction,
     },
     step_mode_by_phase={PHASE_DAILY_TICK: StepMode.SIMULTANEOUS},
     default_config={"max_days": 30},
