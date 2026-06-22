@@ -1795,6 +1795,22 @@ def run_web(
         import logging as _logging
         _logging.getLogger("arena.web").warning(f"Simulations API unavailable: {_e}")
 
+    # ── Agentic API (sandboxes + swarm battles) ─────────────────────────────
+    try:
+        from .web_routes.agentic_routes import build_agentic_router
+        app.include_router(build_agentic_router(arena, jobs, manager, _new_job_id, _body_num))
+    except ImportError as _e:
+        import logging as _logging
+        _logging.getLogger("arena.web").warning(f"Agentic API unavailable: {_e}")
+
+    # ── P2P API (read-only status/leaderboard/reputation) ───────────────────
+    try:
+        from .web_routes.p2p_routes import build_p2p_router
+        app.include_router(build_p2p_router())
+    except ImportError as _e:
+        import logging as _logging
+        _logging.getLogger("arena.web").warning(f"P2P API unavailable: {_e}")
+
     from ._banner import print_banner
     print_banner(__version__)
     print(f"  backend: {arena.client.name}")
