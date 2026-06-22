@@ -41,6 +41,7 @@
   <div class="tab" role="tab" tabindex="-1" data-tab="spec">🚀 Spec Decode</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="genome">🧬 Genome</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="sim">🎭 Simulations</div>
+  <div class="tab" role="tab" tabindex="-1" data-tab="world">🎮 World</div>
 
 </div>
 
@@ -582,6 +583,20 @@
       </div>
       <div id="sim-compare-table">
         <div style="color:var(--text-muted); font-size:13px;">Enter two or more run ids to compare their metrics.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- L3 GODOT WORLD VIEWER -->
+  <div class="tab-content" id="tab-world" role="tabpanel">
+    <div class="card">
+      <h2>🎮 World</h2>
+      <p class="sim-field-help" id="world-empty-state">
+        Open a finished run from the Simulations tab's "Run history" table
+        and click "▶ View in 3D world" to load it here.
+      </p>
+      <div id="world-iframe-wrap" style="display:none;">
+        <iframe id="world-iframe" style="width:100%; height:640px; border:1px solid var(--border-color); border-radius:8px; background:#000;" allow="autoplay"></iframe>
       </div>
     </div>
   </div>

@@ -204,6 +204,7 @@ async function loadSimRuns() {
           <button class="btn" data-act="watch" data-run="${escText(run.run_id)}">Watch</button>
           ${run.status === 'in_progress' ? `<button class="btn" data-act="pause" data-run="${escText(run.run_id)}">Pause</button>` : ''}
           ${run.status === 'paused' ? `<button class="btn" data-act="resume" data-run="${escText(run.run_id)}">Resume</button>` : ''}
+          ${run.status === 'completed' && (run.scenario === 'sims_world' || run.scenario === 'mafia') ? `<button class="btn" data-act="world" data-run="${escText(run.run_id)}">▶ View in 3D world</button>` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -214,6 +215,7 @@ async function loadSimRuns() {
         if (button.dataset.act === 'watch') watchSimRun(runId);
         else if (button.dataset.act === 'pause') pauseSimRun(runId);
         else if (button.dataset.act === 'resume') resumeSimRun(runId);
+        else if (button.dataset.act === 'world') viewSimRunInWorld(runId);
       });
     });
   } catch (error) {

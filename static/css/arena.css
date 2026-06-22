@@ -1120,3 +1120,11 @@
     transition: transform 200ms ease;
   }
   .agent-trace.expanded .trace-expand-btn { transform: rotate(180deg); }
+
+  /* ── World tab (Godot L3 viewer) ───────────────────────────── */
+  #world-iframe-wrap {
+    margin-top: 12px;
+  }
+  #world-iframe {
+    display: block;
+  }
