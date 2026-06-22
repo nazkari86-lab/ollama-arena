@@ -2,6 +2,7 @@ extends Node2D
 
 const SimsWorldHandler = preload("res://scripts/scenario_handlers/sims_world_handler.gd")
 const MafiaHandler = preload("res://scripts/scenario_handlers/mafia_handler.gd")
+const ActionBubbleScene = preload("res://scenes/action_bubble.tscn")
 
 @export var tick_interval_sec: float = 0.6
 
@@ -38,11 +39,12 @@ func _process(delta: float) -> void:
 		playback_finished.emit()
 		return
 	var event: Dictionary = events[_event_index]
-	_event_index += 1
 	if handler:
 		handler.on_event(event, self)
 	if _camera and agent_sprites.has(event.get("actor_id")):
 		_camera.focus_on(agent_sprites[event.get("actor_id")].position)
+	_apply_atmosphere_tint()
+	_event_index += 1
 
 func _read_run_id_from_url() -> String:
 	if not OS.has_feature("web"):
@@ -101,3 +103,32 @@ func _spawn_agents(agent_ids: Array, layout: Dictionary) -> void:
 
 func set_playing(value: bool) -> void:
 	_playing = value
+
+func show_action_bubble(anchor: Node2D, text: String) -> void:
+	if anchor == null:
+		return
+	var bubble = ActionBubbleScene.instantiate()
+	add_child(bubble)
+	bubble.show_text(text, anchor)
+
+func play_sfx(path: String) -> void:
+	if not ResourceLoader.exists(path):
+		return
+	var player := AudioStreamPlayer.new()
+	add_child(player)
+	player.stream = load(path)
+	player.finished.connect(player.queue_free)
+	player.play()
+
+func _apply_atmosphere_tint() -> void:
+	var tint := get_node_or_null("AtmosphereTint")
+	if tint == null:
+		tint = CanvasModulate.new()
+		tint.name = "AtmosphereTint"
+		add_child(tint)
+	if run.get("scenario") == "mafia":
+		var statuses: Array = run.get("run", {}).get("agents", [])
+		var is_night: bool = _event_index % 2 == 1  # alternates with mafia's day/night phase cadence
+		tint.color = Color(0.55, 0.55, 0.85) if is_night else Color(1, 1, 1)
+	elif run.get("scenario") == "sims_world":
+		tint.color = Color(1, 0.97, 0.9)

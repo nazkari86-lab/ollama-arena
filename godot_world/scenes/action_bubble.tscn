@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3 uid="uid://c4yqxo02cvcad"]
+
+[ext_resource type="Script" path="res://scripts/action_bubble.gd" id="1_oxdua"]
+
+[node name="ActionBubble" type="Node2D"]
+script = ExtResource("1_oxdua")
+
+[node name="Label" type="Label" parent="."]
+horizontal_alignment = 1
