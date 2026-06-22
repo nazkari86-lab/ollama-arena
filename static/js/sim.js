@@ -209,6 +209,7 @@ async function loadSimRuns() {
     const rows = _simRuns.map(run => {
       const agents = (run.agents || []).map(agent => agent.model).join(', ');
       return `<tr class="${run.run_id === _simWatchedRunId ? 'sim-run-selected' : ''}">
+        <td><input type="checkbox" class="sim-diff-checkbox" value="${escText(run.run_id)}"></td>
         <td title="${escText(run.run_id)}"><code>${escText(run.run_id)}</code></td>
         <td>${escText(simMeta(run.scenario).label)}</td>
         <td>${simStatusBadge(run.status)}</td>
@@ -221,7 +222,12 @@ async function loadSimRuns() {
         </td>
       </tr>`;
     }).join('');
-    container.innerHTML = `<div class="sim-table-wrap"><table><thead><tr><th>Run ID</th><th>World</th><th>Status</th><th>Models</th><th>Controls</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    container.innerHTML = `<div class="sim-table-wrap"><table><thead><tr><th></th><th>Run ID</th><th>World</th><th>Status</th><th>Models</th><th>Controls</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div style="margin-top:12px; display:flex; align-items:center; gap:12px;">
+        <button class="btn" id="sim-compare-btn" style="width:auto; padding:6px 14px; font-size:11px;">Compare selected runs</button>
+        <span class="sim-field-help" style="margin:0;">Select 1+ runs above, then compare their recorded metrics.</span>
+      </div>
+      <div id="sim-diff-panel" style="margin-top:12px;"></div>`;
     container.querySelectorAll('button[data-act]').forEach(button => {
       button.addEventListener('click', () => {
         const runId = button.dataset.run;
@@ -231,6 +237,7 @@ async function loadSimRuns() {
         else if (button.dataset.act === 'world') viewSimRunInWorld(runId);
       });
     });
+    document.getElementById('sim-compare-btn')?.addEventListener('click', compareSelectedSimRuns);
   } catch (error) {
     container.innerHTML = `<div class="sim-field-help" style="color:var(--accent-red)">${escText(error.message)}</div>`;
   }

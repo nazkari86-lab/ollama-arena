@@ -485,6 +485,7 @@
     border-left: 2px solid var(--accent-blue);
     font-size: 12px; line-height: 1.6;
   }
+  .diff-best { color: var(--accent-green); font-weight: 800; background: rgba(63, 185, 80, 0.08); }
 
   /* ── Spec server card upgrade ──────────────────────────────── */
   .spec-card {
