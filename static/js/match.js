@@ -556,28 +556,18 @@ async function loadCharts() {
 }
 
 async function loadHistory() {
-  const history = await api('/api/history?limit=100');
-  const el = document.getElementById('history-table');
-  if (!history || history.length === 0) {
-    el.innerHTML = '<div style="color:var(--text-muted); padding:20px; text-align:center">No matches recorded yet.</div>';
-    return;
-  }
-  
-  let h = `<table><thead><tr><th>ID</th><th>Contenders</th><th>Category</th><th>Score</th><th>Date</th><th>Action</th></tr></thead><tbody>`;
-  history.forEach(m => {
-    const date = new Date(m.ts * 1000).toLocaleString();
-    h += `<tr>
-      <td style="color:var(--accent-blue); font-weight:700">#${m.id}</td>
-      <td><strong>${m.model_a}</strong> <span style="color:var(--text-muted)">vs</span> <strong>${m.model_b}</strong></td>
-      <td><span class="badge badge-blue">${m.category}</span></td>
-      <td><b>${m.score_a}</b> - <b>${m.score_b}</b></td>
-      <td style="font-size:11px; color:var(--text-muted)">${date}</td>
-      <td><button class="btn export-match-btn" data-match-id="${m.id}" style="width:auto; padding:4px 12px; font-size:10px;">Export</button></td>
-    </tr>`;
-  });
-  h += '</tbody></table>';
-  el.innerHTML = h;
+  const q = document.getElementById('history-search')?.value || '';
+  const history = q.trim()
+    ? await api(`/api/history/search?q=${encodeURIComponent(q)}&limit=100`)
+    : await api('/api/history?limit=100');
+  renderEvalsTable('history-table', history || []);
 }
+
+let _historySearchDebounce = null;
+document.getElementById('history-search')?.addEventListener('input', () => {
+  clearTimeout(_historySearchDebounce);
+  _historySearchDebounce = setTimeout(loadHistory, 250);
+});
 
 // Delegated once on the static #history-table container -- survives every
 // loadHistory() re-render since only its children (not the container

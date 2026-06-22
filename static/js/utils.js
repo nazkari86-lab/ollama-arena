@@ -143,22 +143,49 @@ async function pollSystem() {
 // COMMAND PALETTE (Cmd+K / Ctrl+K)
 // ═══════════════════════════════════════════════════════════════
 const PALETTE_COMMANDS = [
-  { icon: '📊', label: 'Go to Dashboard',       sub: 'Overview & charts',         action: () => goTab('dashboard') },
-  { icon: '⚔️', label: 'Go to Arena Match',      sub: 'Pairwise model battle',     action: () => goTab('battle') },
-  { icon: '🏆', label: 'Go to Tournament',       sub: 'Round-robin between N models', action: () => goTab('tournament') },
-  { icon: '🎮', label: 'Go to Playground',       sub: 'A/B test prompts manually', action: () => goTab('playground') },
-  { icon: '🔍', label: 'Go to Inspect',          sub: 'Drill into a task ID',      action: () => goTab('inspect') },
-  { icon: '📈', label: 'Go to Report',           sub: 'Per-model category stats',  action: () => goTab('report') },
-  { icon: '📚', label: 'Go to Datasets',         sub: 'Import HuggingFace tasks',  action: () => goTab('datasets') },
-  { icon: '⚡', label: 'Go to Performance',      sub: 'TPS / latency / TTFT',      action: () => goTab('performance') },
-  { icon: '🚀', label: 'Go to Spec Decode',      sub: 'Speculative decoding servers', action: () => goTab('spec') },
-  { icon: '🎨', label: 'Cycle theme',            sub: 'default ↔ cyber ↔ forest',  action: cycleTheme,            kbd: 'T' },
-  { icon: '↻',  label: 'Refresh leaderboard',    sub: 'Reload ELO & history',      action: () => { loadAll(); toast('Refreshed', 'success', 1500); } },
-  { icon: '🚀', label: 'Start ALL spec servers', sub: 'llama-server × 10',         action: () => specStartAll() },
-  { icon: '🛑', label: 'Stop ALL spec servers',  sub: 'kill all spec processes',   action: () => specStopAll() },
-  { icon: '🏁', label: 'Bench ALL running spec', sub: 'Parallel TPS bench',        action: () => { goTab('spec'); setTimeout(() => specBenchAll(), 200); } },
+  { icon: '📊', label: 'Go to Dashboard',       sub: 'Overview & charts',         group: 'Navigation', action: () => goTab('dashboard') },
+  { icon: '⚔️', label: 'Go to Arena Match',      sub: 'Pairwise model battle',     group: 'Navigation', action: () => goTab('battle') },
+  { icon: '🏆', label: 'Go to Tournament',       sub: 'Round-robin between N models', group: 'Navigation', action: () => goTab('tournament') },
+  { icon: '🎮', label: 'Go to Playground',       sub: 'A/B test prompts manually', group: 'Navigation', action: () => goTab('playground') },
+  { icon: '🔍', label: 'Go to Inspect',          sub: 'Drill into a task ID',      group: 'Navigation', action: () => goTab('inspect') },
+  { icon: '📈', label: 'Go to Report',           sub: 'Per-model category stats',  group: 'Navigation', action: () => goTab('report') },
+  { icon: '📚', label: 'Go to Datasets',         sub: 'Import HuggingFace tasks',  group: 'Navigation', action: () => goTab('datasets') },
+  { icon: '⚡', label: 'Go to Performance',      sub: 'TPS / latency / TTFT',      group: 'Navigation', action: () => goTab('performance') },
+  { icon: '🚀', label: 'Go to Spec Decode',      sub: 'Speculative decoding servers', group: 'Navigation', action: () => goTab('spec') },
+  { icon: '🎨', label: 'Cycle theme',            sub: 'default ↔ cyber ↔ forest',  group: 'Appearance', action: cycleTheme,            kbd: 'T' },
+  { icon: '↻',  label: 'Refresh leaderboard',    sub: 'Reload ELO & history',      group: 'Actions', action: () => { loadAll(); toast('Refreshed', 'success', 1500); } },
+  { icon: '🚀', label: 'Start ALL spec servers', sub: 'llama-server × 10',         group: 'Actions', action: () => specStartAll() },
+  { icon: '🛑', label: 'Stop ALL spec servers',  sub: 'kill all spec processes',   group: 'Actions', action: () => specStopAll() },
+  { icon: '🏁', label: 'Bench ALL running spec', sub: 'Parallel TPS bench',        group: 'Actions', action: () => { goTab('spec'); setTimeout(() => specBenchAll(), 200); } },
 ];
 function goTab(name) { const t = document.querySelector(`.tab[data-tab="${name}"]`); if (t) t.click(); closePalette(); }
+
+// Subsequence fuzzy match: every char of `q` must appear in order in `text`.
+// Score rewards consecutive runs and early matches so "spd" ranks
+// "Go to Spec Decode" above a weaker scattered match. Returns -1 for no match.
+function fuzzyScore(q, text) {
+  if (!q) return 0;
+  const t = text.toLowerCase();
+  let qi = 0, score = 0, run = 0;
+  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+    if (t[ti] === q[qi]) {
+      qi++;
+      run++;
+      score += run * 2 + (ti === 0 ? 3 : 0);
+    } else {
+      run = 0;
+    }
+  }
+  return qi === q.length ? score : -1;
+}
+function matchCommands(q) {
+  q = q.toLowerCase().trim();
+  if (!q) return PALETTE_COMMANDS.map(c => ({ cmd: c, score: 0 }));
+  return PALETTE_COMMANDS
+    .map(c => ({ cmd: c, score: Math.max(fuzzyScore(q, c.label), fuzzyScore(q, c.sub)) }))
+    .filter(m => m.score >= 0)
+    .sort((a, b) => b.score - a.score);
+}
 let paletteIndex = 0;
 function openPalette() {
   document.getElementById('palette-backdrop').classList.add('visible');
@@ -169,19 +196,29 @@ function openPalette() {
 }
 function closePalette() { document.getElementById('palette-backdrop').classList.remove('visible'); }
 function renderPalette(q) {
-  q = q.toLowerCase().trim();
-  const matches = q
-    ? PALETTE_COMMANDS.filter(c => c.label.toLowerCase().includes(q) || c.sub.toLowerCase().includes(q))
-    : PALETTE_COMMANDS;
+  const matches = matchCommands(q).map(m => m.cmd);
   const list = document.getElementById('palette-list');
   if (!matches.length) { list.innerHTML = '<div class="palette-empty">No commands match.</div>'; return; }
   paletteIndex = Math.min(paletteIndex, matches.length - 1);
-  list.innerHTML = matches.map((c, i) => `
-    <div class="palette-item ${i === paletteIndex ? 'active' : ''}" data-idx="${i}">
-      <span class="pal-icon">${c.icon}</span>
-      <div class="pal-label">${c.label}<div class="pal-sub">${c.sub}</div></div>
-      ${c.kbd ? `<span class="pal-kbd">${c.kbd}</span>` : ''}
-    </div>
+  const groups = [];
+  for (const c of matches) {
+    let g = groups.find(g => g.name === c.group);
+    if (!g) { g = { name: c.group, items: [] }; groups.push(g); }
+    g.items.push(c);
+  }
+  let flatIdx = 0;
+  list.innerHTML = groups.map(g => `
+    <div class="palette-group-label">${g.name}</div>
+    ${g.items.map(c => {
+      const i = flatIdx++;
+      return `
+        <div class="palette-item ${i === paletteIndex ? 'active' : ''}" data-idx="${i}">
+          <span class="pal-icon">${c.icon}</span>
+          <div class="pal-label">${c.label}<div class="pal-sub">${c.sub}</div></div>
+          ${c.kbd ? `<span class="pal-kbd">${c.kbd}</span>` : ''}
+        </div>
+      `;
+    }).join('')}
   `).join('');
   list.querySelectorAll('.palette-item').forEach((el, i) => {
     el.onclick = () => matches[i].action();
@@ -191,9 +228,7 @@ function renderPalette(q) {
 document.getElementById('palette-input').addEventListener('input', e => renderPalette(e.target.value));
 document.getElementById('palette-input').addEventListener('keydown', e => {
   const q = e.target.value;
-  const matches = q
-    ? PALETTE_COMMANDS.filter(c => c.label.toLowerCase().includes(q.toLowerCase()) || c.sub.toLowerCase().includes(q.toLowerCase()))
-    : PALETTE_COMMANDS;
+  const matches = matchCommands(q).map(m => m.cmd);
   if (e.key === 'ArrowDown') { paletteIndex = Math.min(matches.length - 1, paletteIndex + 1); renderPalette(q); e.preventDefault(); }
   else if (e.key === 'ArrowUp') { paletteIndex = Math.max(0, paletteIndex - 1); renderPalette(q); e.preventDefault(); }
   else if (e.key === 'Enter') { if (matches[paletteIndex]) matches[paletteIndex].action(); }
