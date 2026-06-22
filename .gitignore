@@ -28,3 +28,8 @@ dist/
 __pycache__/
 .playwright-mcp/
 .superpowers/
+
+# Godot L3 world — build output and vendored test framework, not source
+godot_world/export/
+godot_world/addons/gut/
+static/godot/
