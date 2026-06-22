@@ -13,11 +13,13 @@ var agent_sprites: Dictionary = {}   # agent_id -> Node2D
 var _event_index: int = 0
 var _tick_timer: float = 0.0
 var _playing: bool = true
+var _camera: Camera2D = null
 
 signal trace_loaded(run: Dictionary)
 signal playback_finished()
 
 func _ready() -> void:
+	_camera = get_node_or_null("CameraRig")
 	run_id = _read_run_id_from_url()
 	if run_id == "":
 		push_warning("world_renderer: no run_id in URL query string, nothing to load")
@@ -39,9 +41,8 @@ func _process(delta: float) -> void:
 	_event_index += 1
 	if handler:
 		handler.on_event(event, self)
-	var camera := get_node_or_null("CameraRig")
-	if camera and agent_sprites.has(event.get("actor_id")):
-		camera.focus_on(agent_sprites[event.get("actor_id")].position)
+	if _camera and agent_sprites.has(event.get("actor_id")):
+		_camera.focus_on(agent_sprites[event.get("actor_id")].position)
 
 func _read_run_id_from_url() -> String:
 	if not OS.has_feature("web"):
