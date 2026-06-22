@@ -39,6 +39,9 @@ func _process(delta: float) -> void:
 	_event_index += 1
 	if handler:
 		handler.on_event(event, self)
+	var camera := get_node_or_null("CameraRig")
+	if camera and agent_sprites.has(event.get("actor_id")):
+		camera.focus_on(agent_sprites[event.get("actor_id")].position)
 
 func _read_run_id_from_url() -> String:
 	if not OS.has_feature("web"):
