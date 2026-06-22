@@ -84,6 +84,7 @@ class Arena:
         api_key: str | None = None,
         from_datasets: list[str] | None = None,
         judge_model: str | None = None,
+        judge_router=None,
     ):
         if backend is None:
             self.client = auto_backend(ollama_url)
@@ -117,8 +118,17 @@ class Arena:
         }
         self._mcp: object | None = None
 
+        # judge_router is opt-in: when given, it resolves the "judge" sim
+        # role to its own (backend, model) pair via RoleRouter instead of
+        # reusing self.client + the legacy judge_model string. Default
+        # (no router) behavior is unchanged.
         self.judge = None
-        if judge_model:
+        if judge_router is not None:
+            from .judge import LLMJudge
+            from .model_router import route_backend
+            judge_backend, resolved_model = route_backend(judge_router, "judge", ollama_url=ollama_url)
+            self.judge = LLMJudge(judge_backend, resolved_model)
+        elif judge_model:
             from .judge import LLMJudge
             self.judge = LLMJudge(self.client, judge_model)
 

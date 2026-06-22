@@ -29,6 +29,22 @@ def test_get_run_unknown_id_returns_none(store):
     assert store.get_run("does_not_exist") is None
 
 
+def test_create_and_get_run_round_trips_router_role(store):
+    """router_role is new and optional -- agents with it unset keep the
+    exact same persisted shape (test above), agents that set it get it
+    back on resume so a paused/resumed run keeps using the same router
+    role consistently."""
+    run_id = store.create_run(
+        "rps",
+        [AgentSpec(agent_id="a", model="qwen3:8b", router_role="npc_dialogue")],
+        config={"rounds": 3}, seed=42,
+    )
+    run = store.get_run(run_id)
+    assert run["agents"] == [
+        {"agent_id": "a", "model": "qwen3:8b", "config": {}, "router_role": "npc_dialogue"},
+    ]
+
+
 def test_update_run_status_sets_status_and_timestamp(store):
     run_id = store.create_run("rps", [], {})
     store.update_run_status(run_id, "in_progress", started_at=123.0)

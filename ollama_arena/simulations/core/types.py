@@ -121,7 +121,15 @@ class EpisodeResult:
 @dataclass
 class AgentSpec:
     """What a caller supplies to spin up one agent in a run -- a model name
-    plus scenario-specific config (role hints, persona overrides, ...)."""
+    plus scenario-specific config (role hints, persona overrides, ...).
+
+    `router_role` is unrelated to scenario role hints in `config` (e.g.
+    Mafia's villager/mafia) -- it's one of `model_registry.SIM_ROLES`,
+    used only when a `RoleRouter` is passed to `SimulationManager`. When
+    set and a router is present, `model` is ignored and the router
+    resolves the actual model for this agent instead; default (no
+    router, or `router_role=None`) behaves exactly as before."""
     agent_id: AgentId
     model: str
     config: dict[str, Any] = field(default_factory=dict)
+    router_role: str | None = None

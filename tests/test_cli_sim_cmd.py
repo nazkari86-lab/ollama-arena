@@ -56,6 +56,76 @@ def test_load_config_reads_json(tmp_path):
     assert _load_config(str(path)) == {"rounds": 5}
 
 
+def test_agent_specs_from_models_default_no_router_role():
+    """Default behavior (no router configured) -- router_role stays None,
+    identical to before this feature existed."""
+    from ollama_arena.cli.sim_cmd import _agent_specs_from_models
+    specs = _agent_specs_from_models(["llama3.2:3b"])
+    assert specs[0].router_role is None
+
+
+def test_agent_specs_from_models_tags_router_role_when_given():
+    from ollama_arena.cli.sim_cmd import _agent_specs_from_models
+    specs = _agent_specs_from_models(["llama3.2:3b", "qwen2.5:7b"], router_role="npc_dialogue")
+    assert all(s.router_role == "npc_dialogue" for s in specs)
+
+
+def test_router_from_config_returns_none_when_no_role_models():
+    from ollama_arena.cli.sim_cmd import _router_from_config
+    config = {"rounds": 3}
+    router, agent_role = _router_from_config(config)
+    assert router is None
+    assert agent_role is None
+    # role_models/agent_router_role weren't present -- the rest of the
+    # scenario config must be left completely untouched.
+    assert config == {"rounds": 3}
+
+
+def test_router_from_config_builds_router_and_pops_routing_keys():
+    from ollama_arena.cli.sim_cmd import _router_from_config
+    from ollama_arena.model_router import RoleRouter
+
+    config = {"rounds": 3, "role_models": {"npc_dialogue": "qwen3:8b"}}
+    router, agent_role = _router_from_config(config)
+    assert isinstance(router, RoleRouter)
+    assert agent_role == "npc_dialogue"  # default agent role when unset
+    # Routing keys are config metadata, not scenario/world config -- they
+    # must not leak into what gets persisted as the run's world config.
+    assert config == {"rounds": 3}
+
+
+def test_router_from_config_respects_explicit_agent_router_role():
+    from ollama_arena.cli.sim_cmd import _router_from_config
+
+    config = {"role_models": {"judge": "qwen3:8b"}, "agent_router_role": "judge"}
+    router, agent_role = _router_from_config(config)
+    assert agent_role == "judge"
+
+
+def test_cmd_sim_run_with_role_models_tags_persisted_agents(tmp_path):
+    """End-to-end through cmd_sim's real run path (no mocked
+    _make_manager) -- role_models in the config file must result in each
+    persisted agent carrying the resolved router_role."""
+    import json as _json
+    from ollama_arena.cli.sim_cmd import cmd_sim
+
+    cfg_path = tmp_path / "cfg.json"
+    cfg_path.write_text(_json.dumps({
+        "rounds": 3, "role_models": {"npc_dialogue": "qwen3:8b"},
+    }))
+    mock_console = mock.MagicMock()
+    args = _make_args(sim_cmd="run", scenario="rps", agents="a,b", ticks=10,
+                       sim_db=str(tmp_path / "sim.db"), config=str(cfg_path))
+    mgr = _scripted_manager(args.sim_db)
+    with mock.patch("ollama_arena.cli.sim_cmd._console", return_value=mock_console), \
+         mock.patch("ollama_arena.cli.sim_cmd._make_manager", return_value=mgr):
+        cmd_sim(args)
+    runs = mgr.list_runs()
+    assert len(runs) == 1
+    persisted = mgr.store.get_run(runs[0]["run_id"])
+    assert all(a["router_role"] == "npc_dialogue" for a in persisted["agents"])
+
+
 def test_cmd_sim_list_prints_table():
     from ollama_arena.cli.sim_cmd import cmd_sim
     mock_console = mock.MagicMock()

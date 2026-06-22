@@ -48,6 +48,13 @@ _RL_SPEC_STREAM = os.getenv("ARENA_RL_SPEC_STREAM", "20/minute")
 _RL_DEFAULT     = os.getenv("ARENA_RL_DEFAULT",     "120/minute")
 # Ephemeral in-memory job TTL (seconds). Read at cleanup time via ARENA_JOB_TTL env.
 
+# Role -> model overrides set via the "Providers" tab UI (/api/role-routing).
+# A plain JSON file, not sim.db -- this is process-wide routing config, not
+# a particular run's data, and editing it by hand is meant to work too.
+# Default location; run_web(role_models_path=...) overrides it (tests use
+# this to avoid touching the real ~/.config during a test run).
+_DEFAULT_ROLE_MODELS_PATH = os.path.expanduser("~/.config/ollama-arena/role_models.json")
+
 
 def run_web(
     host: str = "0.0.0.0",
@@ -56,10 +63,32 @@ def run_web(
     db_path: str = "arena.db",
     backend: str | None = None,
     api_key: str | None = None,
+    role_models_path: str | None = None,
+    secrets_key_path: str | None = None,
+    secrets_store_path: str | None = None,
 ):
     if FastAPI is None:
         raise RuntimeError("Install: pip install 'ollama-arena[web]'")
     import uvicorn
+
+    _role_models_path = role_models_path or _DEFAULT_ROLE_MODELS_PATH
+
+    def _load_role_models() -> dict:
+        if not os.path.exists(_role_models_path):
+            return {}
+        try:
+            with open(_role_models_path) as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_role_models(mapping: dict) -> None:
+        os.makedirs(os.path.dirname(_role_models_path), exist_ok=True)
+        with open(_role_models_path, "w") as f:
+            json.dump(mapping, f, indent=2)
+
+    from .secrets_store import SecretsStore
+    _secrets = SecretsStore(key_path=secrets_key_path, store_path=secrets_store_path)
 
     # SlowAPI rate limiting — optional but strongly recommended in prod.
     try:
@@ -429,6 +458,92 @@ def run_web(
         except Exception:
             pass
         return models
+
+    @app.get("/api/providers", summary="List backend providers/presets",
+             description="Every OpenAICompatBackend preset plus local Ollama, "
+                         "classified local/free/paid, with only a boolean "
+                         "key-configured flag -- never the key value itself.")
+    def api_providers():
+        from .backends.openai_compat import OpenAICompatBackend
+        local_presets = {"vllm", "lmstudio", "llamacpp"}
+        free_capable = {"openrouter", "opencode"}
+        out = [{
+            "name": "ollama", "base_url": ollama_url, "env_key": None,
+            "key_configured": True, "kind": "local",
+        }]
+        for name, url in OpenAICompatBackend.PRESETS.items():
+            env_key = OpenAICompatBackend._ENV_KEY_MAP.get(name, "OPENAI_API_KEY")
+            out.append({
+                "name": name, "base_url": url, "env_key": env_key,
+                "key_configured": bool(os.environ.get(env_key)) or _secrets.has_key(name),
+                "kind": "local" if name in local_presets
+                        else "free" if name in free_capable else "paid",
+            })
+        return JSONResponse(sorted(out, key=lambda p: (p["kind"], p["name"])))
+
+    @app.post("/api/providers/{name}/key", summary="Store an API key for a provider",
+              description="Body: {api_key}. Encrypted at rest (secrets_store.py), "
+                          "never echoed back in this or any other response. "
+                          "Local runtimes (ollama/vllm/lmstudio/llamacpp) don't take a key.")
+    def api_provider_set_key(name: str, body: dict):
+        from .backends.openai_compat import OpenAICompatBackend
+        local_presets = {"vllm", "lmstudio", "llamacpp"}
+        if name == "ollama" or name in local_presets:
+            raise HTTPException(400, f"{name!r} is a local runtime and doesn't take an API key")
+        if name not in OpenAICompatBackend.PRESETS:
+            raise HTTPException(400, f"unknown provider {name!r}")
+        value = (body.get("api_key") or "").strip()
+        if not value:
+            raise HTTPException(400, "api_key must be a non-empty string")
+        try:
+            _secrets.set_key(name, value)
+        except Exception as e:
+            raise HTTPException(500, f"could not store key: {e}")
+        return JSONResponse({"key_configured": True})
+
+    @app.delete("/api/providers/{name}/key", summary="Clear a stored API key")
+    def api_provider_clear_key(name: str):
+        _secrets.clear_key(name)
+        return JSONResponse({"key_configured": False})
+
+    @app.get("/api/model-registry", summary="Free-model registry",
+             description="Provider-agnostic catalog of known free models "
+                         "(model_registry.py), with tool/JSON-mode/context "
+                         "badges -- the same table model_router.py routes against.")
+    def api_model_registry():
+        from .model_registry import load_registry
+        return JSONResponse([
+            {
+                "id": e.id, "provider": e.provider, "source": e.source,
+                "free": e.free, "supports_tools": e.supports_tools,
+                "supports_json": e.supports_json, "max_context": e.max_context,
+                "cost_tier": e.cost_tier, "role_tags": list(e.role_tags),
+                "fallback_chain": list(e.fallback_chain),
+            }
+            for e in load_registry()
+        ])
+
+    @app.get("/api/role-routing", summary="Get role -> model routing config")
+    def api_role_routing_get():
+        from .model_registry import SIM_ROLES
+        return JSONResponse({"roles": list(SIM_ROLES), "role_models": _load_role_models()})
+
+    @app.post("/api/role-routing", summary="Set or clear one role's model",
+              description="Body: {role, model}. Omitting model clears that "
+                          "role back to default (no router override).")
+    def api_role_routing_set(body: dict):
+        from .model_registry import SIM_ROLES
+        role = body.get("role")
+        if role not in SIM_ROLES:
+            raise HTTPException(400, f"unknown role {role!r}, must be one of {list(SIM_ROLES)}")
+        mapping = _load_role_models()
+        model = body.get("model")
+        if model:
+            mapping[role] = model
+        else:
+            mapping.pop(role, None)
+        _save_role_models(mapping)
+        return JSONResponse({"role_models": mapping})
 
     @app.get("/api/models/{model:path}/caps",
              summary="Model capability detection",
@@ -1424,13 +1539,13 @@ def run_web(
         # not some other instance's separate flag.
         _sim_active_managers: dict[str, SimulationManager] = {}
 
-        def _agent_specs_from_models(models: list[str]) -> list[AgentSpec]:
+        def _agent_specs_from_models(models: list[str], router_role: str | None = None) -> list[AgentSpec]:
             counts: dict[str, int] = {}
             specs = []
             for m in models:
                 counts[m] = counts.get(m, 0) + 1
                 suffix = f"_{counts[m]}" if counts[m] > 1 else ""
-                specs.append(AgentSpec(agent_id=f"{m}{suffix}", model=m))
+                specs.append(AgentSpec(agent_id=f"{m}{suffix}", model=m, router_role=router_role))
             return specs
 
         @app.get("/api/sim/scenarios")
@@ -1468,10 +1583,24 @@ def run_web(
             config = body.get("config") or {}
             max_ticks = _body_num(body, "ticks", 1000)
 
-            mgr = SimulationManager(db_path=_sim_db_path)
+            # router_role is opt-in (set from the sim tab's "Use role
+            # routing" picker) -- only then do agents resolve their model
+            # via the saved /api/role-routing config instead of the
+            # literal --agents-equivalent model strings above.
+            router_role = body.get("router_role")
+            router = None
+            if router_role:
+                role_models = _load_role_models()
+                if role_models:
+                    from .model_router import RoleRouter
+                    router = RoleRouter(role_models=role_models)
+
+            mgr = SimulationManager(db_path=_sim_db_path, router=router)
             try:
-                run_id = mgr.create_run(scenario, _agent_specs_from_models(models),
-                                         config=config, seed=body.get("seed"))
+                run_id = mgr.create_run(
+                    scenario, _agent_specs_from_models(models, router_role=router_role),
+                    config=config, seed=body.get("seed"),
+                )
             except KeyError as e:
                 raise HTTPException(404, str(e))
             _sim_active_managers[run_id] = mgr

@@ -29,7 +29,18 @@ function initSimTab() {
       selectSimScenario(event.target.value, false);
     });
   }
-  Promise.all([loadSimScenarios(), loadSimModels(), loadSimRuns()]);
+  Promise.all([loadSimScenarios(), loadSimModels(), loadSimRuns(), populateSimRouterRoles()]);
+}
+
+async function populateSimRouterRoles() {
+  const select = document.getElementById('sim-router-role');
+  if (!select) return;
+  try {
+    const data = await api('/api/role-routing');
+    const configured = new Set(Object.keys(data.role_models || {}));
+    select.innerHTML = '<option value="">Off — use the literal models selected above</option>' +
+      data.roles.map(r => `<option value="${escText(r)}">${escText(r)}${configured.has(r) ? ' ✓ configured' : ''}</option>`).join('');
+  } catch (e) { /* role routing is optional -- a fetch failure here shouldn't block the sim form */ }
 }
 
 function simMeta(name) {
@@ -151,6 +162,8 @@ async function startSimRun() {
 
   const body = { scenario, agents, config, ticks: ticksRaw ? parseInt(ticksRaw, 10) : 200 };
   if (seedRaw !== '') body.seed = parseInt(seedRaw, 10);
+  const routerRole = document.getElementById('sim-router-role')?.value;
+  if (routerRole) body.router_role = routerRole;
   const status = document.getElementById('sim-run-status');
   const button = document.getElementById('sim-run-btn');
   button.disabled = true;

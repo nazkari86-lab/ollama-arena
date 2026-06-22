@@ -42,6 +42,7 @@
   <div class="tab" role="tab" tabindex="-1" data-tab="genome">🧬 Genome</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="sim">🎭 Simulations</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="world">🎮 World</div>
+  <div class="tab" role="tab" tabindex="-1" data-tab="providers">🔌 Providers</div>
 
 </div>
 
@@ -510,6 +511,13 @@
           <label for="sim-config">Config (JSON, optional)</label>
           <textarea id="sim-config" rows="3" placeholder='{"rounds": 5}'></textarea>
         </div>
+        <div class="form-group">
+          <label for="sim-router-role">Use role routing (optional)</label>
+          <select id="sim-router-role">
+            <option value="">Off — use the literal models selected above</option>
+          </select>
+          <p class="sim-field-help">Configure which model handles each role in the <a href="#" onclick="goTab('providers'); return false;">Providers</a> tab.</p>
+        </div>
         <button class="btn primary" id="sim-run-btn">Start Run</button>
         <div id="sim-run-status" class="status"></div>
       </div>
@@ -598,6 +606,55 @@
       <div id="world-iframe-wrap" style="display:none;">
         <iframe id="world-iframe" style="width:100%; height:640px; border:1px solid var(--border-color); border-radius:8px; background:#000;" allow="autoplay"></iframe>
       </div>
+    </div>
+  </div>
+
+  <!-- PROVIDERS / MODEL REGISTRY / ROLE ROUTING -->
+  <div class="tab-content" id="tab-providers" role="tabpanel">
+    <div class="sim-overview">
+      <div>
+        <h2>Providers &amp; Model Registry</h2>
+        <p>Every backend preset (local, free, paid), the free-model catalog simulations route against, and which model handles each simulation role.</p>
+      </div>
+      <div class="sim-overview-stats" aria-label="Provider statistics">
+        <div><strong id="prov-stat-total">0</strong><span>Providers</span></div>
+        <div><strong id="prov-stat-free">0</strong><span>Free models</span></div>
+        <div><strong id="prov-stat-configured">0</strong><span>Keys set</span></div>
+      </div>
+    </div>
+
+    <div class="sim-section-label">Backend providers</div>
+    <div class="provider-filter-row" role="tablist" aria-label="Filter providers">
+      <button type="button" class="provider-filter active" data-kind="all">All</button>
+      <button type="button" class="provider-filter" data-kind="local">Local</button>
+      <button type="button" class="provider-filter" data-kind="free">Free</button>
+      <button type="button" class="provider-filter" data-kind="paid">Paid</button>
+    </div>
+    <div class="provider-grid" id="provider-grid" aria-label="Backend providers"></div>
+
+    <div class="card">
+      <h2>Free model registry
+        <button class="btn" id="registry-refresh-btn" style="width:auto; margin-left:auto; padding:6px 14px; font-size:11px; background:transparent; border-color:var(--border-color);">Refresh</button>
+      </h2>
+      <div style="overflow-x:auto;">
+        <table id="registry-table">
+          <thead>
+            <tr><th>Model</th><th>Source</th><th>Tools</th><th>JSON</th><th>Context</th><th>Cost</th></tr>
+          </thead>
+          <tbody id="registry-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Role routing
+        <button class="btn primary" id="role-routing-save-btn" style="width:auto; margin-left:auto; padding:6px 14px; font-size:11px;">Save</button>
+      </h2>
+      <p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">
+        Pick which model handles each simulation role. Leave a role on "Default" to keep using the literal model picked in the Simulations tab. Saved instantly — no restart needed, takes effect on the next sim run.
+      </p>
+      <div id="role-routing-rows" class="role-routing-rows"></div>
+      <div id="role-routing-status" class="status"></div>
     </div>
   </div>
 </div>

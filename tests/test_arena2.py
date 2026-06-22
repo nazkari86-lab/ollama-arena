@@ -159,6 +159,32 @@ class TestArenaInit:
             a = Arena(db_path=db, judge_model="judge:7b")
         assert a.judge is not None
 
+    def test_judge_router_resolves_judge_role_instead_of_judge_model(self, tmp_path, mock_backend):
+        """judge_router is opt-in -- when given, it picks the judge's
+        (backend, model) via RoleRouter instead of the legacy
+        (self.client, judge_model) pair. Default (no router) behavior is
+        covered by test_with_judge_model above, unchanged."""
+        from ollama_arena.arena import Arena
+        from ollama_arena.model_router import RoleRouter
+
+        router = RoleRouter(registry=[], role_models={"judge": "qwen3:8b"}, local_models=lambda: [])
+        db = str(tmp_path / "arena.db")
+        with mock.patch("ollama_arena.arena.auto_backend", return_value=mock_backend), \
+             mock.patch("ollama_arena.arena.MemoryScheduler"), \
+             mock.patch("ollama_arena.judge.LLMJudge") as mock_judge:
+            a = Arena(db_path=db, judge_router=router)
+        assert a.judge is not None
+        args = mock_judge.call_args[0]
+        assert args[1] == "qwen3:8b"
+
+    def test_no_judge_router_and_no_judge_model_leaves_judge_none(self, tmp_path, mock_backend):
+        from ollama_arena.arena import Arena
+        db = str(tmp_path / "arena.db")
+        with mock.patch("ollama_arena.arena.auto_backend", return_value=mock_backend), \
+             mock.patch("ollama_arena.arena.MemoryScheduler"):
+            a = Arena(db_path=db)
+        assert a.judge is None
+
     def test_with_on_task_done(self, tmp_path, mock_backend):
         from ollama_arena.arena import Arena
         db = str(tmp_path / "arena.db")

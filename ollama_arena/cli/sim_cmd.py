@@ -6,20 +6,38 @@ import json
 from .common import _console
 
 
-def _make_manager(args):
+def _make_manager(args, router=None):
     from ..simulations.core.runner import SimulationManager
-    return SimulationManager(db_path=getattr(args, "sim_db", "sim.db"))
+    return SimulationManager(db_path=getattr(args, "sim_db", "sim.db"), router=router)
 
 
-def _agent_specs_from_models(models: list[str]):
+def _agent_specs_from_models(models: list[str], router_role: str | None = None):
     from ..simulations.core.types import AgentSpec
     counts: dict[str, int] = {}
     specs = []
     for m in models:
         counts[m] = counts.get(m, 0) + 1
         suffix = f"_{counts[m]}" if counts[m] > 1 else ""
-        specs.append(AgentSpec(agent_id=f"{m}{suffix}", model=m))
+        specs.append(AgentSpec(agent_id=f"{m}{suffix}", model=m, router_role=router_role))
     return specs
+
+
+def _router_from_config(config: dict):
+    """Pop routing config (role_models / agent_router_role) out of the
+    scenario config dict and build a RoleRouter from it, switching which
+    models a sim uses without touching any code -- just the config file.
+
+    Returns (router_or_None, agent_router_role_or_None). Absent
+    "role_models" means no router at all: every CLI-specified agent keeps
+    using its literal --agents model string, identical to before this
+    feature existed.
+    """
+    role_models = config.pop("role_models", None)
+    agent_router_role = config.pop("agent_router_role", "npc_dialogue")
+    if not role_models:
+        return None, None
+    from ..model_router import RoleRouter
+    return RoleRouter(role_models=role_models), agent_router_role
 
 
 def _load_config(path: str | None) -> dict:
@@ -54,10 +72,11 @@ def cmd_sim(args):
         console.print(table)
 
     elif sim_cmd == "run":
-        mgr = _make_manager(args)
-        models = [m.strip() for m in args.agents.split(",") if m.strip()]
-        specs = _agent_specs_from_models(models)
         config = _load_config(args.config)
+        router, agent_role = _router_from_config(config)
+        mgr = _make_manager(args, router=router)
+        models = [m.strip() for m in args.agents.split(",") if m.strip()]
+        specs = _agent_specs_from_models(models, router_role=agent_role)
         run_id = mgr.create_run(args.scenario, specs, config=config, seed=args.seed)
         console.print(f"[cyan]Run created:[/cyan] {run_id}")
         result = mgr.start_run(run_id, max_ticks=args.ticks)
@@ -70,12 +89,13 @@ def cmd_sim(args):
         console.print(f"\n[dim]Replay with:[/dim] ollama-arena sim replay {run_id}")
 
     elif sim_cmd == "benchmark":
-        mgr = _make_manager(args)
-        models = [m.strip() for m in args.agents.split(",") if m.strip()]
         config = _load_config(args.config)
+        router, agent_role = _router_from_config(config)
+        mgr = _make_manager(args, router=router)
+        models = [m.strip() for m in args.agents.split(",") if m.strip()]
         run_ids = []
         for i in range(args.episodes):
-            specs = _agent_specs_from_models(models)
+            specs = _agent_specs_from_models(models, router_role=agent_role)
             run_id = mgr.create_run(args.scenario, specs, config=config, seed=i)
             mgr.start_run(run_id, max_ticks=args.ticks)
             run_ids.append(run_id)

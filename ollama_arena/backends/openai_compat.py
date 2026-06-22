@@ -13,6 +13,15 @@ from .base import GenResult, ChatTurnResult, strip_thinking, inject_system
 log = logging.getLogger("arena.backend.openai")
 
 
+def _secrets_store():
+    """Lazily imported so importing this module never requires the
+    `cryptography` package -- only actually reading/writing a stored key
+    does. Indirected through a function (not imported at module scope)
+    so tests can monkeypatch it to a tmp-path store."""
+    from .. import secrets_store
+    return secrets_store
+
+
 def _image_url(image_data: str) -> str:
     """Normalize base64 or data-URL image payloads for OpenAI vision APIs."""
     if image_data.startswith("data:"):
@@ -72,6 +81,32 @@ class OpenAICompatBackend:
         "perplexity": "https://api.perplexity.ai",           # PERPLEXITY_API_KEY
         "sambanova":  "https://api.sambanova.ai/v1",         # SAMBANOVA_API_KEY
         "novita":     "https://api.novita.ai/v3/openai",     # NOVITA_API_KEY
+        # ── Additional named sources for the simulation model registry ──
+        # Each base URL was verified live against the provider's own docs
+        # (not guessed) -- see tests/test_openai_compat_presets.py.
+        "google-gemini": "https://generativelanguage.googleapis.com/v1beta/openai",  # GEMINI_API_KEY
+        "github-models": "https://models.github.ai/inference",                      # GITHUB_TOKEN (PAT)
+        "nvidia-nim":    "https://integrate.api.nvidia.com/v1",                     # NVIDIA_API_KEY
+        "huggingface-inference-providers": "https://router.huggingface.co/v1",      # HF_TOKEN
+        "cohere":        "https://api.cohere.ai/compatibility/v1",                  # COHERE_API_KEY
+        "opencode":      "https://opencode.ai/zen/v1",                              # OPENCODE_API_KEY
+        # Cloudflare's URL embeds the account id -- {account_id} is filled in
+        # from CLOUDFLARE_ACCOUNT_ID at construction time (see __init__).
+        "cloudflare-workers-ai": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
+        # ── Second wave: paid/niche sources, also live-verified ──
+        "moonshot":    "https://api.moonshot.ai/v1",                  # MOONSHOT_API_KEY (Kimi)
+        "zhipu":       "https://open.bigmodel.cn/api/paas/v4",        # ZHIPU_API_KEY (GLM)
+        "dashscope":   "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",  # DASHSCOPE_API_KEY (Qwen)
+        "baseten":     "https://inference.baseten.co/v1",             # BASETEN_API_KEY
+        "hyperbolic":  "https://api.hyperbolic.xyz/v1",                # HYPERBOLIC_API_KEY
+        "friendli":    "https://api.friendli.ai/serverless/v1",        # FRIENDLI_TOKEN
+        "lambda":      "https://api.lambda.ai/v1",                    # LAMBDA_API_KEY
+        "siliconflow": "https://api.siliconflow.cn/v1",                # SILICONFLOW_API_KEY
+        "upstage":     "https://api.upstage.ai/v1",                   # UPSTAGE_API_KEY
+        "vercel-ai-gateway": "https://ai-gateway.vercel.sh/v1",        # AI_GATEWAY_API_KEY
+        # Databricks' URL is per-workspace -- {workspace_url} is filled in
+        # from DATABRICKS_WORKSPACE_URL at construction time (see __init__).
+        "databricks":  "{workspace_url}/serving-endpoints",
     }
 
     # Per-preset env-var override (if the standard `<KEY>_API_KEY` doesn't fit)
@@ -91,6 +126,24 @@ class OpenAICompatBackend:
         "perplexity": "PERPLEXITY_API_KEY",
         "sambanova":  "SAMBANOVA_API_KEY",
         "novita":     "NOVITA_API_KEY",
+        "google-gemini": "GEMINI_API_KEY",
+        "github-models": "GITHUB_TOKEN",
+        "nvidia-nim":    "NVIDIA_API_KEY",
+        "huggingface-inference-providers": "HF_TOKEN",
+        "cohere":        "COHERE_API_KEY",
+        "opencode":      "OPENCODE_API_KEY",
+        "cloudflare-workers-ai": "CLOUDFLARE_API_TOKEN",
+        "moonshot":    "MOONSHOT_API_KEY",
+        "zhipu":       "ZHIPU_API_KEY",
+        "dashscope":   "DASHSCOPE_API_KEY",
+        "baseten":     "BASETEN_API_KEY",
+        "hyperbolic":  "HYPERBOLIC_API_KEY",
+        "friendli":    "FRIENDLI_TOKEN",
+        "lambda":      "LAMBDA_API_KEY",
+        "siliconflow": "SILICONFLOW_API_KEY",
+        "upstage":     "UPSTAGE_API_KEY",
+        "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
+        "databricks":  "DATABRICKS_TOKEN",
     }
 
     def __init__(self, base_url: str = "http://localhost:8000/v1",
@@ -99,14 +152,29 @@ class OpenAICompatBackend:
         preset = base_url if base_url in self.PRESETS else None
         if preset:
             base_url = self.PRESETS[preset]
+            if preset == "cloudflare-workers-ai":
+                account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+                if account_id:
+                    base_url = base_url.format(account_id=account_id)
+            elif preset == "databricks":
+                workspace_url = os.environ.get("DATABRICKS_WORKSPACE_URL")
+                if workspace_url:
+                    base_url = base_url.format(workspace_url=workspace_url.rstrip("/"))
         self.base = base_url.rstrip("/")
         # If the caller didn't pass an API key, look in the preset-specific
         # env var first, then fall back to OPENAI_API_KEY for backward compat.
         env_key = self._ENV_KEY_MAP.get(preset or "", "OPENAI_API_KEY")
+        stored_key = None
+        if preset:
+            try:
+                stored_key = _secrets_store().get_key(preset)
+            except Exception:
+                stored_key = None
         self.api_key = (
             api_key
             or os.environ.get(env_key)
             or os.environ.get("OPENAI_API_KEY")
+            or stored_key
             or "EMPTY"
         )
         self.timeout = timeout

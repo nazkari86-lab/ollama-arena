@@ -142,10 +142,14 @@ class SimStore:
         seed: int | None = None,
     ) -> str:
         run_id = uuid.uuid4().hex[:12]
-        agents_json = json.dumps([
-            {"agent_id": a.agent_id, "model": a.model, "config": a.config}
-            for a in agents
-        ])
+
+        def _agent_dict(a: AgentSpec) -> dict:
+            d = {"agent_id": a.agent_id, "model": a.model, "config": a.config}
+            if a.router_role is not None:
+                d["router_role"] = a.router_role
+            return d
+
+        agents_json = json.dumps([_agent_dict(a) for a in agents])
         with self._write() as cx:
             cx.execute(
                 "INSERT INTO sim_runs (run_id, scenario, agents_json, config_json, "

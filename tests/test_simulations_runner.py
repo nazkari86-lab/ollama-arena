@@ -109,3 +109,48 @@ def test_default_agent_factory_builds_llm_sim_agent(tmp_path):
     assert isinstance(agent, LLMSimAgent)
     assert agent.model == "llama3.2:3b"
     assert "choose" in agent.action_schema_by_kind
+
+
+def test_default_agent_factory_without_router_ignores_router_role(tmp_path):
+    """No router passed to the manager -- router_role is set on the spec
+    but must be a no-op, model resolution stays exactly as before."""
+    from ollama_arena.simulations.agents.llm_agent import LLMSimAgent
+
+    mgr = SimulationManager(db_path=str(tmp_path / "sim.db"))
+    agent = mgr._default_agent_factory(
+        AgentSpec(agent_id="a", model="llama3.2:3b", router_role="npc_dialogue"),
+        get_scenario("rps"),
+    )
+    assert isinstance(agent, LLMSimAgent)
+    assert agent.model == "llama3.2:3b"
+
+
+def test_default_agent_factory_with_router_resolves_model_for_role(tmp_path):
+    from ollama_arena.model_router import RoleRouter
+    from ollama_arena.simulations.agents.llm_agent import LLMSimAgent
+
+    router = RoleRouter(registry=[], role_models={"npc_dialogue": "qwen3:8b"},
+                         local_models=lambda: [])
+    mgr = SimulationManager(db_path=str(tmp_path / "sim.db"), router=router)
+    agent = mgr._default_agent_factory(
+        AgentSpec(agent_id="a", model="ignored-when-router-role-set", router_role="npc_dialogue"),
+        get_scenario("rps"),
+    )
+    assert isinstance(agent, LLMSimAgent)
+    assert agent.model == "qwen3:8b"
+
+
+def test_default_agent_factory_with_router_but_no_role_keeps_explicit_model(tmp_path):
+    """A router is configured, but this particular agent has no
+    router_role -- it keeps using its own explicit model, same as the
+    no-router case. Mixing routed and pinned agents in one run must work."""
+    from ollama_arena.model_router import RoleRouter
+    from ollama_arena.simulations.agents.llm_agent import LLMSimAgent
+
+    router = RoleRouter(registry=[], role_models={"npc_dialogue": "qwen3:8b"},
+                         local_models=lambda: [])
+    mgr = SimulationManager(db_path=str(tmp_path / "sim.db"), router=router)
+    agent = mgr._default_agent_factory(
+        AgentSpec(agent_id="a", model="llama3.2:3b"), get_scenario("rps"),
+    )
+    assert agent.model == "llama3.2:3b"

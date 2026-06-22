@@ -42,19 +42,32 @@ class SimulationManager:
         self,
         db_path: str = "sim.db",
         agent_factory: Callable[[AgentSpec, ScenarioSpec], SimAgent] | None = None,
+        router=None,
     ):
         self.store = SimStore(db_path)
+        self._router = router
         self._agent_factory = agent_factory or self._default_agent_factory
         self._paused = False
 
-    @staticmethod
-    def _default_agent_factory(agent_spec: AgentSpec, scenario: ScenarioSpec) -> SimAgent:
-        return LLMSimAgent(
+    def _default_agent_factory(self, agent_spec: AgentSpec, scenario: ScenarioSpec) -> SimAgent:
+        backend = None
+        model = agent_spec.model
+        # router_role opts a single agent into RoleRouter resolution --
+        # agents with no router_role (or when no router is configured at
+        # all) keep using their own pinned `model` exactly as before, so
+        # routed and pinned agents can coexist in the same run.
+        if self._router is not None and agent_spec.router_role:
+            from ...model_router import route_backend
+            backend, model = route_backend(self._router, agent_spec.router_role)
+        kwargs: dict = dict(
             agent_id=agent_spec.agent_id,
-            model=agent_spec.model,
+            model=model,
             action_schema_by_kind=scenario.action_schema_by_kind,
             config=agent_spec.config,
         )
+        if backend is not None:
+            kwargs["backend"] = backend
+        return LLMSimAgent(**kwargs)
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -88,7 +101,8 @@ class SimulationManager:
             raise KeyError(f"unknown run {run_id!r}")
         spec = get_scenario(run["scenario"])
         agent_specs = [
-            AgentSpec(agent_id=a["agent_id"], model=a["model"], config=a.get("config", {}))
+            AgentSpec(agent_id=a["agent_id"], model=a["model"], config=a.get("config", {}),
+                      router_role=a.get("router_role"))
             for a in run["agents"]
         ]
         agents = {a.agent_id: self._agent_factory(a, spec) for a in agent_specs}
