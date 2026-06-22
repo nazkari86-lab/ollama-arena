@@ -333,7 +333,8 @@ function renderAgentTrace(trace, containerId) {
       </div>
     </div>
     <div class="agent-trace-body">
-      <div class="agent-trace-body-inner">`;
+      <div class="agent-trace-body-inner">
+        ${renderTraceTimeline(trace)}`;
 
   trace.forEach((step, idx) => {
     const hasError = !!step.error;

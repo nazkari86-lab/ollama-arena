@@ -1186,6 +1186,32 @@
     max-height: 120px; overflow-y: auto;
     white-space: pre-wrap; word-break: break-all;
   }
+
+  /* ── Trace waterfall timeline (Langfuse-inspired) ─────────────── */
+  .trace-timeline {
+    background: rgba(1, 4, 9, 0.5);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+  }
+  .timeline-header {
+    font-size: 11px; font-weight: 800; color: var(--accent-blue);
+    margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .timeline-total { color: var(--text-muted); font-weight: 600; }
+  .timeline-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 6px; font-size: 11px;
+  }
+  .timeline-row-label { width: 160px; flex-shrink: 0; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .timeline-track { flex: 1; position: relative; height: 10px; background: rgba(255,255,255,0.04); border-radius: 5px; }
+  .timeline-bar {
+    position: absolute; top: 0; height: 100%;
+    background: linear-gradient(90deg, var(--accent-blue), #22d3ee);
+    border-radius: 5px; min-width: 3px;
+  }
+  .timeline-row-dur { width: 56px; flex-shrink: 0; text-align: right; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
   .trace-error {
     background: rgba(248, 81, 73, 0.08);
     border: 1px solid rgba(248, 81, 73, 0.2);
