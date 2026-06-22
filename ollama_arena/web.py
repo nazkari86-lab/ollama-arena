@@ -4,8 +4,22 @@
 # MODULE globals and fail to see `Request` / `BackgroundTasks` (they're
 # imported inside `run_web`'s try/except). The visible effect was every
 # route's `request: Request` being misclassified as a query parameter.
-import json, logging, os, sqlite3, time, uuid
+import json, logging, os, socket, sqlite3, time, uuid
 from pathlib import Path
+
+
+def _detect_lan_ip() -> str:
+    """Best-effort outbound-interface IP, so the startup banner shows a URL
+    other devices on the LAN can actually reach when bound to 0.0.0.0 --
+    not just a 'localhost' link that only works on this machine. Doesn't
+    send any real traffic: UDP connect() on a socket only resolves a route,
+    it never transmits a packet."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    finally:
+        s.close()
 
 # Imported at module scope so annotation resolution in run_web() succeeds.
 # These are no-cost imports; FastAPI is already required for this module.
@@ -1784,5 +1798,12 @@ def run_web(
     from ._banner import print_banner
     print_banner(__version__)
     print(f"  backend: {arena.client.name}")
-    print(f"  url:     http://{host if host != '0.0.0.0' else 'localhost'}:{port}\n")
+    if host == "0.0.0.0":
+        try:
+            display_host = _detect_lan_ip()
+        except OSError:
+            display_host = "localhost"
+    else:
+        display_host = host
+    print(f"  url:     http://{display_host}:{port}\n")
     uvicorn.run(app, host=host, port=port, log_level="warning")
