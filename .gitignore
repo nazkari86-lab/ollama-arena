@@ -27,3 +27,4 @@ htmlcov/
 dist/
 __pycache__/
 .playwright-mcp/
+.superpowers/
