@@ -33,3 +33,5 @@ __pycache__/
 godot_world/export/
 godot_world/addons/gut/
 static/godot/
+godot_world/.godot/
+godot_world/**/*.import
