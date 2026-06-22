@@ -52,6 +52,68 @@ def test_csp_blocks_inline_script_sources(client):
     assert "object-src 'none'" in csp
 
 
+def test_godot_export_path_allows_same_origin_framing(client):
+    # The World tab's <iframe src="/static/godot/index.html?run_id=..."> is
+    # same-origin, so it needs an exception from the otherwise-blanket
+    # frame-ancestors 'none' / X-Frame-Options: DENY -- but only 'self', never
+    # a wildcard or third-party origin.
+    r = client.get("/static/godot/index.html")
+    csp = r.headers["content-security-policy"]
+    assert "frame-ancestors 'self'" in csp
+    assert "frame-ancestors 'none'" not in csp
+    assert r.headers.get("x-frame-options") == "SAMEORIGIN"
+
+
+def test_godot_export_path_allows_its_inline_bootstrap_script(client):
+    # Godot's HTML5 export template bakes engine-bootstrap config into a
+    # static inline <script> with no way to carry our per-request nonce.
+    # Per the CSP spec, 'unsafe-inline' is ignored outright if a nonce is
+    # ALSO present in script-src -- so this path's script-src must have no
+    # nonce token at all, not just an added 'unsafe-inline'.
+    r = client.get("/static/godot/index.html")
+    csp = r.headers["content-security-policy"]
+    script_src = csp.split("script-src", 1)[1].split(";", 1)[0]
+    assert "'unsafe-inline'" in script_src
+    assert "nonce-" not in script_src
+
+
+def test_godot_export_path_allows_wasm_instantiation(client):
+    # Godot's Emscripten WASM loader needs 'wasm-unsafe-eval' to call
+    # WebAssembly.instantiateStreaming() -- the narrow, WASM-only CSP token.
+    r = client.get("/static/godot/index.html")
+    csp = r.headers["content-security-policy"]
+    script_src = csp.split("script-src", 1)[1].split(";", 1)[0]
+    assert "'wasm-unsafe-eval'" in script_src
+
+
+def test_godot_export_path_allows_real_eval_for_run_id_bridge(client):
+    # world_renderer.gd reads its run_id query param via
+    # JavaScriptBridge.eval(), which invokes the browser's real eval() --
+    # distinct from 'wasm-unsafe-eval' (WASM compilation only). Scoped to
+    # this one vendored export path only.
+    r = client.get("/static/godot/index.html")
+    csp = r.headers["content-security-policy"]
+    script_src = csp.split("script-src", 1)[1].split(";", 1)[0]
+    assert "'unsafe-eval'" in script_src
+
+
+def test_non_godot_paths_keep_strict_nonce_only_script_src(client):
+    r = client.get("/api/version")
+    csp = r.headers["content-security-policy"]
+    script_src = csp.split("script-src", 1)[1].split(";", 1)[0]
+    assert "nonce-" in script_src
+    assert "'unsafe-inline'" not in script_src
+    assert "'wasm-unsafe-eval'" not in script_src
+    assert "'unsafe-eval'" not in script_src
+
+
+def test_non_godot_static_paths_keep_strict_framing_policy(client):
+    r = client.get("/static/js/world.js")
+    csp = r.headers["content-security-policy"]
+    assert "frame-ancestors 'none'" in csp
+    assert r.headers.get("x-frame-options") == "DENY"
+
+
 # ── CORS ─────────────────────────────────────────────────────────────────────
 
 def test_cors_allows_listed_origin(client):

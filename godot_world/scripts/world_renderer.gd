@@ -3,6 +3,12 @@ extends Node2D
 const SimsWorldHandler = preload("res://scripts/scenario_handlers/sims_world_handler.gd")
 const MafiaHandler = preload("res://scripts/scenario_handlers/mafia_handler.gd")
 const ActionBubbleScene = preload("res://scenes/action_bubble.tscn")
+const CharacterSheet = preload("res://assets/kenney_characters/Spritesheet/roguelikeChar_transparent.png")
+# Roguelike Characters pack: 16x16 tiles, 1px margin -> 17px grid stride.
+# Cell (0,0) is a humanoid icon; per the plan's "static directional icon"
+# design (no CC0 walk-cycle frames exist for this art style), every agent
+# uses this one icon rather than per-agent sprites.
+const AGENT_ICON_REGION := Rect2(0, 0, 16, 16)
 
 @export var tick_interval_sec: float = 0.6
 
@@ -59,9 +65,18 @@ func _fetch_trace(id: String) -> void:
 	var http := HTTPRequest.new()
 	add_child(http)
 	http.request_completed.connect(_on_trace_response)
-	var err := http.request("/api/sim/run/%s/trace" % id)
+	# HTTPRequest.request() requires an absolute URL even for a same-origin
+	# call; the page origin is only knowable at runtime in the Web export.
+	var origin: String = _read_origin_from_url()
+	var err := http.request(origin + "/api/sim/run/%s/trace" % id)
 	if err != OK:
 		push_error("world_renderer: failed to start HTTPRequest for run %s (err %d)" % [id, err])
+
+func _read_origin_from_url() -> String:
+	if not OS.has_feature("web"):
+		return ""
+	var origin: String = JavaScriptBridge.eval("window.location.origin", true)
+	return String(origin)
 
 func _on_trace_response(_result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	if response_code != 200:
@@ -73,13 +88,14 @@ func _on_trace_response(_result: int, response_code: int, _headers: PackedString
 		return
 	run = parsed
 	events = run.get("events", [])
-	handler = _handler_for_scenario(run.get("scenario", ""))
+	var scenario: String = _scenario_name()
+	handler = _handler_for_scenario(scenario)
 	if handler == null:
-		push_error("world_renderer: no handler for scenario '%s'" % run.get("scenario", ""))
+		push_error("world_renderer: no handler for scenario '%s'" % scenario)
 		return
 	var agent_ids: Array = []
 	var statuses: Dictionary = {}
-	for agent in run.get("run", {}).get("agents", run.get("agents", [])):
+	for agent in run.get("run", {}).get("agents", []):
 		agent_ids.append(agent.get("agent_id"))
 	var layout: Dictionary = handler.layout_for(agent_ids, statuses)
 	_spawn_agents(agent_ids, layout)
@@ -100,6 +116,10 @@ func _spawn_agents(agent_ids: Array, layout: Dictionary) -> void:
 		var sprite := Sprite2D.new()
 		sprite.name = "agent_%s" % str(agent_id).replace(":", "_")
 		sprite.position = layout.get(agent_id, Vector2.ZERO)
+		sprite.texture = AtlasTexture.new()
+		sprite.texture.atlas = CharacterSheet
+		sprite.texture.region = AGENT_ICON_REGION
+		sprite.scale = Vector2(2, 2)
 		add_child(sprite)
 		agent_sprites[agent_id] = sprite
 
@@ -128,9 +148,12 @@ func _apply_atmosphere_tint() -> void:
 		tint = CanvasModulate.new()
 		tint.name = "AtmosphereTint"
 		add_child(tint)
-	if run.get("scenario") == "mafia":
-		var statuses: Array = run.get("run", {}).get("agents", [])
+	var scenario: String = _scenario_name()
+	if scenario == "mafia":
 		var is_night: bool = _event_index % 2 == 1  # alternates with mafia's day/night phase cadence
 		tint.color = Color(0.55, 0.55, 0.85) if is_night else Color(1, 1, 1)
-	elif run.get("scenario") == "sims_world":
+	elif scenario == "sims_world":
 		tint.color = Color(1, 0.97, 0.9)
+
+func _scenario_name() -> String:
+	return run.get("run", {}).get("scenario", "")
