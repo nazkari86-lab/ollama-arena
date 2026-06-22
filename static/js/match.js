@@ -716,7 +716,14 @@ async function retryTask(taskId, btn) {
     const winner = d.outcome === 'a_wins' ? d.model_a
                  : d.outcome === 'b_wins' ? d.model_b
                  : 'Tie';
-    toast(`Retry done — Winner: <b>${escText(winner)}</b> (A: ${(d.score_a*100).toFixed(0)}% vs B: ${(d.score_b*100).toFixed(0)}%)`, 'success', 4500);
+    let msg = `Retry done — Winner: <b>${escText(winner)}</b> (A: ${(d.score_a*100).toFixed(0)}% vs B: ${(d.score_b*100).toFixed(0)}%)`;
+    if (d.explanation_a || d.explanation_b) {
+      msg += `<div style="margin-top:6px; font-size:11px; color:var(--text-muted)">`
+           + (d.explanation_a ? `A: ${escText(d.explanation_a)}<br>` : '')
+           + (d.explanation_b ? `B: ${escText(d.explanation_b)}` : '')
+           + `</div>`;
+    }
+    toast(msg, 'success', 7000);
     // Refresh the inspect view so the new run shows up at the top
     document.getElementById('inspect-task-id').value = taskId;
     await loadInspect();

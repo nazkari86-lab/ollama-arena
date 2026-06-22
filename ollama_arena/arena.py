@@ -521,10 +521,12 @@ class Arena:
         res_a = _retry_gen(client_a, model_a)
         res_b = _retry_gen(client_b, model_b)
 
+        explanation_a = explanation_b = ""
         if self.judge and task.get("use_judge"):
             jr = self.judge.grade_pair(instruction, res_a.text, res_b.text,
-                                       reference=expected)
+                                       reference=expected, explain=True)
             score_a, score_b = jr.score_a, jr.score_b
+            explanation_a, explanation_b = jr.explanation_a, jr.explanation_b
         else:
             trace_a = getattr(res_a, "agent_trace", None) if res_a.ok else None
             trace_b = getattr(res_b, "agent_trace", None) if res_b.ok else None
@@ -573,6 +575,8 @@ class Arena:
             "latency_a": res_a.latency_s, "latency_b": res_b.latency_s,
             "elo_a_after": self.elo.get(model_a),
             "elo_b_after": self.elo.get(model_b),
+            "explanation_a": explanation_a,
+            "explanation_b": explanation_b,
         }
 
     def leaderboard(self) -> list[dict]:
