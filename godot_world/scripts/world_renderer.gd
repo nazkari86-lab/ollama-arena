@@ -87,7 +87,11 @@ func _on_trace_response(_result: int, response_code: int, _headers: PackedString
 		push_error("world_renderer: /trace response was not a JSON object")
 		return
 	run = parsed
-	events = run.get("events", [])
+	var parsed_events: Variant = run.get("events", [])
+	if typeof(parsed_events) != TYPE_ARRAY:
+		push_error("world_renderer: /trace response 'events' was not an array")
+		return
+	events = parsed_events
 	var scenario: String = _scenario_name()
 	handler = _handler_for_scenario(scenario)
 	if handler == null:
@@ -95,8 +99,11 @@ func _on_trace_response(_result: int, response_code: int, _headers: PackedString
 		return
 	var agent_ids: Array = []
 	var statuses: Dictionary = {}
-	for agent in run.get("run", {}).get("agents", []):
-		agent_ids.append(agent.get("agent_id"))
+	var agents_list: Variant = _run_meta().get("agents", [])
+	if typeof(agents_list) == TYPE_ARRAY:
+		for agent in agents_list:
+			if typeof(agent) == TYPE_DICTIONARY:
+				agent_ids.append(agent.get("agent_id"))
 	var layout: Dictionary = handler.layout_for(agent_ids, statuses)
 	_spawn_agents(agent_ids, layout)
 	trace_loaded.emit(run)
@@ -156,4 +163,15 @@ func _apply_atmosphere_tint() -> void:
 		tint.color = Color(1, 0.97, 0.9)
 
 func _scenario_name() -> String:
-	return run.get("run", {}).get("scenario", "")
+	return _run_meta().get("scenario", "")
+
+# run["run"] holds the SimulationManager's run-metadata dict (scenario,
+# agents, status, ...); the key is always present in real /trace responses,
+# but Dictionary.get()'s default only covers a *missing* key, not a
+# present-but-wrong-typed value, so callers route through here instead of
+# `run.get("run", {})` directly to stay safe against a malformed payload.
+func _run_meta() -> Dictionary:
+	var meta: Variant = run.get("run", {})
+	if typeof(meta) != TYPE_DICTIONARY:
+		return {}
+	return meta
