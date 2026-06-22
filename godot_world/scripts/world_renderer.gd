@@ -36,6 +36,7 @@ func _process(delta: float) -> void:
 	_tick_timer = 0.0
 	if _event_index >= events.size():
 		_playing = false
+		play_sfx("res://assets/kenney_audio/jingles/Audio/8-Bit jingles/jingles_NES01.ogg")
 		playback_finished.emit()
 		return
 	var event: Dictionary = events[_event_index]
@@ -83,6 +84,7 @@ func _on_trace_response(_result: int, response_code: int, _headers: PackedString
 	var layout: Dictionary = handler.layout_for(agent_ids, statuses)
 	_spawn_agents(agent_ids, layout)
 	trace_loaded.emit(run)
+	play_sfx("res://assets/kenney_audio/jingles/Audio/8-Bit jingles/jingles_NES00.ogg")
 
 func _handler_for_scenario(scenario: String) -> ScenarioHandler:
 	match scenario:
