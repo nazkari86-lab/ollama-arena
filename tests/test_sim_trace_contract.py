@@ -76,7 +76,7 @@ def _start_rps_run(client, agents=("a:1b", "b:1b"), ticks=10):
         r = client.post("/api/sim/run", json={
             "scenario": "rps", "agents": list(agents), "ticks": ticks,
         })
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     return r.json()["run_id"]
 
 
