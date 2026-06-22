@@ -6,6 +6,12 @@ from .utils import extract_code
 
 log = logging.getLogger("arena.eval")
 
+# Cascade evaluator (OpenCompass-inspired): try the cheap rule-based check
+# first and only escalate to the LLM judge when it can't confirm a confident
+# pass. Opt-in and default OFF so existing judge-call behavior (and its
+# cost/latency profile) is unchanged unless explicitly enabled.
+_CASCADE_EVAL_ENABLED = os.getenv("ARENA_CASCADE_EVAL", "0") == "1"
+
 
 # Coding (executable)
 def eval_coding(task: dict, response: str) -> float:
@@ -48,14 +54,30 @@ def eval_text_answer(task: dict, response: str, judge: Any | None = None) -> flo
     if not expected:
         return 0.5
 
-    # 1. Semantic Check (Fallback if judge available)
-    if (check == "semantic" or task.get("use_judge")) and judge:
+    wants_judge = bool((check == "semantic" or task.get("use_judge")) and judge)
+
+    # Cascade (opt-in via ARENA_CASCADE_EVAL=1): when a real rule-based
+    # check is configured (not an explicit "semantic" request), try it
+    # first. A confident pass skips the judge call entirely -- only
+    # ambiguous (non-matching) cases escalate.
+    if wants_judge and _CASCADE_EVAL_ENABLED and check != "semantic":
+        cheap_score = _rule_based_text_score(resp, expected, check, task)
+        if cheap_score >= 1.0:
+            return cheap_score
+
+    # Semantic check (judge) — unchanged default path.
+    if wants_judge:
         try:
             return judge.evaluate_single(task["instruction"], response, reference=expected)
         except Exception as e:
             log.warning(f"[eval] semantic check failed for {tid}: {e}")
 
-    # 2. String Matching Logic
+    return _rule_based_text_score(resp, expected, check, task)
+
+
+def _rule_based_text_score(resp: str, expected: str, check: str, task: dict) -> float:
+    """Pure string-matching scorer, no judge involved. `resp`/`expected`
+    are already lower-cased/stripped by the caller."""
     if check == "exact":
         return 1.0 if expected == resp else 0.0
 
@@ -68,10 +90,10 @@ def eval_text_answer(task: dict, response: str, judge: Any | None = None) -> flo
         # Use word boundaries to avoid partial matches
         pattern = rf"\b{re.escape(expected)}\b"
         matches = list(re.finditer(pattern, resp))
-        
+
         if not matches:
             return 0.0
-            
+
         # Check for simple negative context: "not [expected]", "instead of [expected]"
         negatives = ["not ", "instead of ", "rather than ", "never ", "doesn't ", "don't "]
         for match in matches:
@@ -79,7 +101,7 @@ def eval_text_answer(task: dict, response: str, judge: Any | None = None) -> flo
             context = resp[start:match.start()]
             if not any(neg in context for neg in negatives):
                 return 1.0 # Found at least one positive mention
-        
+
         return 0.0
 
     if check == "numeric_approx":

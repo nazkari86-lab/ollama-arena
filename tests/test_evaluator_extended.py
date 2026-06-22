@@ -117,6 +117,81 @@ class TestEvalTextAnswer:
         assert result == pytest.approx(0.9)
 
 
+class TestCascadeEvaluator:
+    """ARENA_CASCADE_EVAL opt-in: cheap rule-based check first, judge only
+    on ambiguous (non-matching) cases. Default (flag off) must be
+    byte-for-byte identical to always calling the judge."""
+
+    def test_flag_off_always_calls_judge_even_on_confident_match(self):
+        from ollama_arena import evaluator
+        import unittest.mock as mock
+        judge = mock.MagicMock()
+        judge.evaluate_single.return_value = 0.9
+        evaluator.eval_text_answer(
+            {"expected_answer": "paris", "check": "contains", "use_judge": True,
+             "instruction": "What is the capital?"},
+            "The answer is paris", judge=judge,
+        )
+        assert judge.evaluate_single.call_count == 1
+
+    def test_flag_on_skips_judge_on_confident_rule_match(self, monkeypatch):
+        from ollama_arena import evaluator
+        import unittest.mock as mock
+        monkeypatch.setattr(evaluator, "_CASCADE_EVAL_ENABLED", True)
+        judge = mock.MagicMock()
+        judge.evaluate_single.return_value = 0.1  # would disagree, but must not be called
+        result = evaluator.eval_text_answer(
+            {"expected_answer": "paris", "check": "contains", "use_judge": True,
+             "instruction": "What is the capital?"},
+            "The answer is paris", judge=judge,
+        )
+        assert judge.evaluate_single.call_count == 0
+        assert result == pytest.approx(1.0)
+
+    def test_flag_on_escalates_to_judge_on_ambiguous_rule_miss(self, monkeypatch):
+        from ollama_arena import evaluator
+        import unittest.mock as mock
+        monkeypatch.setattr(evaluator, "_CASCADE_EVAL_ENABLED", True)
+        judge = mock.MagicMock()
+        judge.evaluate_single.return_value = 0.85
+        result = evaluator.eval_text_answer(
+            {"expected_answer": "paris", "check": "contains", "use_judge": True,
+             "instruction": "What is the capital?"},
+            "It's the City of Light", judge=judge,  # paraphrase, no literal "paris"
+        )
+        assert judge.evaluate_single.call_count == 1
+        assert result == pytest.approx(0.85)
+
+    def test_flag_on_explicit_semantic_check_still_always_calls_judge(self, monkeypatch):
+        """An explicit check='semantic' request is not "ambiguous, maybe
+        skip" -- it's an explicit ask for judge grading, so cascade must
+        not intercept it even when enabled."""
+        from ollama_arena import evaluator
+        import unittest.mock as mock
+        monkeypatch.setattr(evaluator, "_CASCADE_EVAL_ENABLED", True)
+        judge = mock.MagicMock()
+        judge.evaluate_single.return_value = 0.9
+        evaluator.eval_text_answer(
+            {"expected_answer": "paris", "check": "semantic",
+             "instruction": "What is the capital?"},
+            "The answer is paris", judge=judge,
+        )
+        assert judge.evaluate_single.call_count == 1
+
+    def test_flag_on_judge_failure_falls_back_to_cheap_score(self, monkeypatch):
+        from ollama_arena import evaluator
+        import unittest.mock as mock
+        monkeypatch.setattr(evaluator, "_CASCADE_EVAL_ENABLED", True)
+        judge = mock.MagicMock()
+        judge.evaluate_single.side_effect = RuntimeError("backend down")
+        result = evaluator.eval_text_answer(
+            {"expected_answer": "paris", "check": "contains", "use_judge": True,
+             "instruction": "What is the capital?"},
+            "It's the City of Light", judge=judge,
+        )
+        assert result == pytest.approx(0.0)  # cheap rule-based score, no crash
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # eval_security
 # ──────────────────────────────────────────────────────────────────────────────
