@@ -1,6 +1,8 @@
 """Canonical LLM registry loaded from bundled seed_registry.json."""
 from __future__ import annotations
-import json, logging, re
+import json
+import logging
+import re
 from pathlib import Path
 
 log = logging.getLogger("arena.genome.registry")

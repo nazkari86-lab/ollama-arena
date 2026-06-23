@@ -1,6 +1,8 @@
 """Per-task scorers and a router from task id/category to the right one."""
 from __future__ import annotations
-import logging, re, os
+import logging
+import re
+import os
 from typing import Any
 from .utils import extract_code
 
@@ -202,7 +204,7 @@ def _tools_from_trace(trace: list | None) -> list[dict]:
                 import json
                 try:
                     args = json.loads(fn.get("arguments", "{}"))
-                except:
+                except Exception:
                     args = {}
                 if name:
                     tools.append({"name": name, "arguments": args})
@@ -309,8 +311,10 @@ def eval_tool_use(task: dict, response: str, trace: list | None = None) -> float
                 if name == expected_tool:
                     args = func.get("arguments")
                     if isinstance(args, str):
-                        try: args = json.loads(args)
-                        except: args = {}
+                        try:
+                            args = json.loads(args)
+                        except Exception:
+                            args = {}
                     if _validate_args(args, expected_args or {}):
                         return 1.0
                     return 0.8 # Correct tool, wrong args

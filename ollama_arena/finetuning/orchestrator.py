@@ -9,11 +9,12 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
-from typing import Optional, List, Dict, Callable, Any
+from typing import Optional, List, Dict, Callable
 from queue import Queue, Empty
 import hashlib
 import uuid
+
+from .unsloth_integration import FinetuneTrigger, TriggerType
 
 log = logging.getLogger("arena.finetuning.orchestrator")
 
@@ -211,7 +212,7 @@ class JobQueue:
                 job.status = JobStatus.QUEUED
                 log.info(f"[queue] Enqueued job {job.job_id}")
                 return True
-            except:
+            except Exception:
                 log.error("[queue] Queue is full")
                 return False
 
@@ -453,7 +454,7 @@ class FinetuningOrchestrator:
 
         # Import integrations
         from .dpo_pipeline import DPOPipeline
-        from .unsloth_integration import AutoUnslothIntegrator, FinetuneTrigger, TriggerType
+        from .unsloth_integration import AutoUnslothIntegrator
 
         self.dpo_pipeline = DPOPipeline(db_path=db_path)
         self.unsloth_integrator = AutoUnslothIntegrator(db_path=db_path)

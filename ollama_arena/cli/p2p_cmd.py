@@ -3,9 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
 from pathlib import Path
-from typing import Optional
 
 try:
     from rich.console import Console
@@ -15,9 +13,8 @@ except ImportError:
     RICH_AVAILABLE = False
 
 from ..p2p.node import P2PNode, NodeDiscovery
-from ..p2p.distribution import TaskGossipProtocol, TaskDistributor, ReputationDatabase
-from ..p2p.crypto_proof import CryptoProofGenerator, BlockchainAnchorer
-from ..p2p.leaderboard import GlobalLeaderboard, VerifiedEntry
+from ..p2p.crypto_proof import CryptoProofGenerator
+from ..p2p.leaderboard import GlobalLeaderboard
 
 
 def print_success(message: str) -> None:

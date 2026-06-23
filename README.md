@@ -106,7 +106,6 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list.
 - **Enhanced Dashboard**: Multi-agent collaboration visualization
 
 ### v2.5.0 Features (Still Available)
-- **React Frontend**: Modern React + Vite + TypeScript frontend
 - **Distributed Architecture**: Multi-node execution with load balancing
 - **Enterprise SSO**: OAuth2, SAML, OIDC, LDAP integration
 - **CSP Security**: Nonce-based Content Security Policy
@@ -122,21 +121,6 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list.
 - **Advanced Security**: Configurable CSP, rate limiting, and authentication
 - **Security UI**: Easy-to-use settings page for security configuration
 - **CORS Management**: Simple CORS configuration interface
-
-### Quick Start with React Frontend
-
-```bash
-# Build the React frontend
-cd frontend
-npm install
-npm run build
-
-# Run with React frontend
-cd ..
-ollama-arena web --react
-```
-
-For detailed migration instructions, see [FRONTEND_MIGRATION_GUIDE.md](FRONTEND_MIGRATION_GUIDE.md)
 
 ## Why
 

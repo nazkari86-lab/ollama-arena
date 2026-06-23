@@ -13,9 +13,9 @@ Security:
   - Output is constrained: temperature=0, hard max_tokens, regex-validated.
 """
 from __future__ import annotations
-import logging, random, re
+import logging
+import re
 from dataclasses import dataclass
-from typing import Optional
 
 from .backends.base import Backend
 

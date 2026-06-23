@@ -1,6 +1,7 @@
 """Wrap a GGUF as an Ollama Modelfile and register it."""
 from __future__ import annotations
-import logging, subprocess
+import logging
+import subprocess
 from pathlib import Path
 
 log = logging.getLogger("arena.finetune.ollama")

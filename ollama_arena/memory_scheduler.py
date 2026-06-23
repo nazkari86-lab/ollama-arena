@@ -30,7 +30,6 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
-import time
 from enum import Enum
 from typing import Optional
 
@@ -272,8 +271,8 @@ class MemoryScheduler:
     def prefetch(self, model: str) -> None:
         """Best-effort warm-up of the GGUF blob in the OS page cache so the
         next ``ollama run`` mmaps it without going to disk."""
-        from pathlib import Path
-        import subprocess, threading
+        import subprocess
+        import threading
         # Resolve the blob path (Ollama stores manifests + blobs under ~/.ollama)
         blob = self._find_blob(model)
         if not blob or not blob.exists():

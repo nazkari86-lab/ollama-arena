@@ -1,7 +1,7 @@
 """MCP diagnostics and management commands."""
 from __future__ import annotations
 
-from .common import _console, print_success, print_error, print_warning
+from .common import _console, print_success, print_error
 
 
 def cmd_mcp_diagnose(args):
@@ -66,7 +66,7 @@ def cmd_mcp_list(args):
 
 def cmd_mcp_enable(args):
     """Enable a specific MCP server."""
-    from ..mcp_config import load_mcp_config, save_default_config, _CONFIG_PATH
+    from ..mcp_config import load_mcp_config, _CONFIG_PATH
 
     config = load_mcp_config(args.config)
 
@@ -101,7 +101,7 @@ def cmd_mcp_enable(args):
 
 def cmd_mcp_disable(args):
     """Disable a specific MCP server."""
-    from ..mcp_config import load_mcp_config, save_default_config, _CONFIG_PATH
+    from ..mcp_config import load_mcp_config, _CONFIG_PATH
 
     config = load_mcp_config(args.config)
 
@@ -153,7 +153,7 @@ def cmd_mcp_install(args):
         command, server_args = server_templates[args.server]
         try:
             c.print(f"Installing MCP server: {args.server}")
-            result = subprocess.run(
+            subprocess.run(
                 [command] + server_args, capture_output=True, text=True, check=True, timeout=120,
             )
             print_success(f"✓ Successfully installed {args.server}")

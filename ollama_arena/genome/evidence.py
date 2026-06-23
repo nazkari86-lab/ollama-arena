@@ -1,6 +1,5 @@
 """Score evidence for a local model matching a canonical genome entry."""
 from __future__ import annotations
-from .scanner import LocalModelInfo
 
 
 def score_name_match(local_name: str, candidate_id: str,

@@ -7,8 +7,7 @@ from itertools import combinations
 from .data import cmd_leaderboard
 
 from .common import (
-    _console, _make_arena, _outcome_icon, _trunc, _wrap,
-    _print_task_detail,
+    _console, _make_arena, _outcome_icon, _trunc, _print_task_detail,
 )
 
 
@@ -24,18 +23,19 @@ def cmd_match(args):
     verbose = getattr(args, "verbose", False)
     models = [m.strip() for m in args.models.split(",")]
     if len(models) < 2:
-        console.print("[red]--models needs at least 2 entries[/red]"); sys.exit(1)
+        console.print("[red]--models needs at least 2 entries[/red]")
+        sys.exit(1)
 
     arena = _make_arena(args)
     if not arena.client.is_alive():
-        console.print("[red]✗ Backend not reachable.[/red]"); sys.exit(1)
+        console.print("[red]✗ Backend not reachable.[/red]")
+        sys.exit(1)
 
     if args.dataset:
         for d in args.dataset.split(","):
             n = arena.load_hf_dataset(d.strip(), limit=args.dataset_limit)
             console.print(f"  loaded [cyan]{d}[/cyan]: {n} tasks")
 
-    from itertools import combinations
     pairs = list(combinations(models, 2))
     n = args.n
     category = args.category
@@ -71,7 +71,7 @@ def cmd_match(args):
         task_log.clear()
         with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                       console=console, transient=True) as prog:
-            tid = prog.add_task(f"Generating…", total=None)
+            tid = prog.add_task("Generating…", total=None)
             r = arena.run_match(ma, mb, category=category, n=n,
                                 difficulty=args.difficulty,
                                 use_tools=getattr(args, "tools", False))
@@ -81,7 +81,8 @@ def cmd_match(args):
         da = r.elo_a_after - r.elo_a_before
         db_ = r.elo_b_after - r.elo_b_before
         s = Table(show_header=False, box=None, padding=(0, 2))
-        s.add_column("", style="dim"); s.add_column("A", style="cyan", justify="right")
+        s.add_column("", style="dim")
+        s.add_column("A", style="cyan", justify="right")
         s.add_column("B", style="magenta", justify="right")
         s.add_row("model",  ma, mb)
         s.add_row("wins",   str(r.a_wins), str(r.b_wins))
@@ -174,13 +175,13 @@ def cmd_benchmark(args):
     from rich.panel import Panel
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
     from rich.table import Table
-    from rich.rule import Rule
-    from ..tasks import get_tasks, list_categories
+    from ..tasks import get_tasks
 
     models = [m.strip() for m in args.models.split(",")]
     arena = _make_arena(args)
     if not arena.client.is_alive():
-        console.print("[red]✗ Backend not reachable.[/red]"); sys.exit(1)
+        console.print("[red]✗ Backend not reachable.[/red]")
+        sys.exit(1)
 
     categories = ["coding", "reasoning", "math", "knowledge", "security", "planning", "inspection"]
     n_per_cat = _BENCHMARK_TASKS_PER_CAT
@@ -284,7 +285,8 @@ def cmd_tournament(args):
     console = _console()
     models = [m.strip() for m in args.models.split(",")]
     if len(models) < 2:
-        console.print("[red]--models needs at least 2 entries[/red]"); sys.exit(1)
+        console.print("[red]--models needs at least 2 entries[/red]")
+        sys.exit(1)
     arena = _make_arena(args)
     if args.dataset:
         for d in args.dataset.split(","):
@@ -312,7 +314,8 @@ def cmd_royale(args):
 
     arena = _make_arena(args)
     if not arena.client.is_alive():
-        console.print("[red]✗ Backend not reachable.[/red]"); sys.exit(1)
+        console.print("[red]✗ Backend not reachable.[/red]")
+        sys.exit(1)
 
     n = args.n
     category = args.category

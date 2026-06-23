@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -12,7 +12,7 @@ from typing import Optional, Dict, List, Callable, Tuple
 
 from ..finetune.unsloth_runner import unsloth_train, UnslothConfig
 from ..finetune.ollama_export import build_modelfile, install_to_ollama
-from .dpo_pipeline import DPOPipeline, DatasetStorage, DPOPair
+from .dpo_pipeline import DPOPipeline
 
 log = logging.getLogger("arena.finetuning.unsloth")
 
@@ -551,7 +551,7 @@ class AutoUnslothIntegrator:
             # Cleanup temp file
             try:
                 Path(jsonl_path).unlink()
-            except:
+            except Exception:
                 pass
 
 

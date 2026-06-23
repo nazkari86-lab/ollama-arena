@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import List, Dict, Any, Optional, Callable, Tuple
-import json
+from typing import List, Dict, Any, Optional
 
-from .base import HardwareInfo, HardwarePlatform, HardwareDetector
+from .base import HardwareInfo, HardwareDetector
 
 
 class QuantizationFormat(Enum):
@@ -274,7 +273,7 @@ class QuantizationTester:
                         for fmt in QuantizationFormat:
                             if fmt.value in line:
                                 available.append(fmt)
-        except Exception as e:
+        except Exception:
             # Fallback: assume common formats are available
             available = [
                 QuantizationFormat.Q4_K_M,

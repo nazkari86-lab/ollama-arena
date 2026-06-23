@@ -6,17 +6,16 @@ within sandboxes, and lifecycle management with resource limits.
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 log = logging.getLogger("arena.agentic.sandbox")
 
@@ -419,7 +418,3 @@ class SandboxManager:
     def list_sandboxes(self) -> list[str]:
         """List all sandbox IDs."""
         return list(self.sandboxes.keys())
-
-
-# Import shutil at module level for availability
-import shutil

@@ -33,7 +33,7 @@ def cmd_genome(args):
         table.add_column("Canonical ID", style="green")
         table.add_column("Confidence", style="yellow")
         table.add_column("Size GB", justify="right")
-        local_map = {l.name: l for l in local}
+        local_map = {item.name: item for item in local}
         for r in results:
             linfo = local_map.get(r["name"])
             size = f"{linfo.size_gb:.1f}" if linfo else "?"
@@ -55,7 +55,7 @@ def cmd_genome(args):
             console.print(f"[yellow]No lineage data found{f' for {args.model}' if args.model else ''}.[/yellow]")
             return
 
-        targets = {l["target"] for l in data["links"]}
+        targets = {link["target"] for link in data["links"]}
         roots = [n for n in data["nodes"] if n["id"] not in targets]
         if not roots:
             roots = data["nodes"][:1]
@@ -63,7 +63,7 @@ def cmd_genome(args):
         def add_children(rich_node, parent_id: str, depth: int = 0):
             if depth > 6:
                 return
-            children = [l["source"] for l in data["links"] if l["target"] == parent_id]
+            children = [link["source"] for link in data["links"] if link["target"] == parent_id]
             for cid in children:
                 cnode = next((n for n in data["nodes"] if n["id"] == cid), None)
                 if cnode:

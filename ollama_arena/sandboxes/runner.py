@@ -6,7 +6,11 @@ use_docker=True; the container runs with --network=none --read-only
 --memory=512m --cpus=1.
 """
 from __future__ import annotations
-import os, re, shutil, subprocess, sys, tempfile, time
+import re
+import shutil
+import subprocess
+import tempfile
+import time
 from pathlib import Path
 
 from .base import Language, RunResult, normalize

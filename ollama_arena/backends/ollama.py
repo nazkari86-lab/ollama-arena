@@ -1,6 +1,8 @@
 """Ollama native /api/chat client (with tool support and date injection)."""
 from __future__ import annotations
-import json, logging, time
+import json
+import logging
+import time
 import requests
 
 from .base import GenResult, ChatTurnResult, strip_thinking, inject_system
@@ -194,9 +196,12 @@ class OllamaBackend:
         try:
             r = requests.post(f"{self.base}/api/generate", json=body, stream=True, timeout=call_timeout)
             for line in r.iter_lines():
-                if not line: continue
-                try: chunk = json.loads(line)
-                except json.JSONDecodeError: continue
+                if not line:
+                    continue
+                try:
+                    chunk = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
 
                 content = chunk.get("response", "")
                 if first and content:

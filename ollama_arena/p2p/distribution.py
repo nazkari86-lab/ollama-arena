@@ -6,13 +6,11 @@ propagating evaluation tasks across the P2P network and aggregating results.
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
-import hashlib
+from typing import Any, Dict, List, Optional, Set
 import random
 import statistics
 from collections import defaultdict

@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .common import (
-    _console, _make_arena, _outcome_icon, _show_match_detail, _trunc, _wrap,
+    _console, _show_match_detail,
 )
 
 
@@ -41,7 +41,8 @@ def cmd_leaderboard(args):
     from ..elo import EloStore
     board = EloStore(db_path=args.db).leaderboard()
     if not board:
-        console.print("[yellow]No matches yet.[/yellow]"); return
+        console.print("[yellow]No matches yet.[/yellow]")
+        return
     t = Table(title="ELO Leaderboard", show_lines=False)
     t.add_column("rank",    style="bold yellow", width=6)
     t.add_column("model",   style="bold cyan",   min_width=22)
@@ -64,7 +65,8 @@ def cmd_anti_leaderboard(args):
     from ..elo import EloStore
     board = EloStore(db_path=args.db).anti_leaderboard()
     if not board:
-        console.print("[yellow]No hallucination data yet (run matches with --judge).[/yellow]"); return
+        console.print("[yellow]No hallucination data yet (run matches with --judge).[/yellow]")
+        return
 
     t = Table(title="Anti-Leaderboard (Hallucination Rate)")
     t.add_column("Rank", justify="right", style="cyan")
@@ -194,8 +196,6 @@ def cmd_results(args):
     """Show recent matches with per-task breakdowns."""
     console = _console()
     from rich.table import Table
-    from rich.rule import Rule
-    from rich.panel import Panel
     from ..elo import EloStore
 
     store = EloStore(db_path=args.db)
@@ -220,7 +220,8 @@ def cmd_results(args):
     # List recent matches
     matches = store.recent_matches_summary(limit=args.last)
     if not matches:
-        console.print("[yellow]No matches recorded yet.[/yellow]"); return
+        console.print("[yellow]No matches recorded yet.[/yellow]")
+        return
 
     t = Table(title=f"Last {len(matches)} matches", show_lines=False)
     t.add_column("ID",       style="dim", width=5)
@@ -306,13 +307,15 @@ def cmd_report(args):
     store = EloStore(db_path=args.db)
     board = store.leaderboard()
     if not board:
-        console.print("[yellow]No data yet.[/yellow]"); return
+        console.print("[yellow]No data yet.[/yellow]")
+        return
 
     models = [e["model"] for e in board]
     if args.model:
         models = [m for m in models if args.model.lower() in m.lower()]
         if not models:
-            console.print(f"[red]No model matching '{args.model}'[/red]"); return
+            console.print(f"[red]No model matching '{args.model}'[/red]")
+            return
 
     for model in models:
         stats = store.category_stats(model)
@@ -391,7 +394,6 @@ def cmd_export(args):
 
 def cmd_publish(args):
     console = _console()
-    import os
     import requests
     from ..elo import EloStore
     from ..performance import PerfTracker
@@ -460,7 +462,6 @@ def cmd_publish(args):
     report_content = "\n".join(md)
 
     # Build JSON report
-    import json
     data = {
         "leaderboard": leaderboard,
         "recent_matches": matches,
@@ -512,7 +513,8 @@ def cmd_perf(args):
     from ..performance import PerfTracker
     stats = PerfTracker(args.db).stats()
     if not stats:
-        console.print("[yellow]No performance data yet.[/yellow]"); return
+        console.print("[yellow]No performance data yet.[/yellow]")
+        return
     t = Table(title="Performance (per model)", show_lines=False)
     t.add_column("Model",             style="bold cyan")
     t.add_column("Samples",           justify="right")

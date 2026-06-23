@@ -78,6 +78,6 @@ class GraphEngine:
                 break
 
         nodes = [n for n in all_data["nodes"] if n["id"] in reachable]
-        links = [l for l in all_data["links"]
-                 if l["source"] in reachable and l["target"] in reachable]
+        links = [link for link in all_data["links"]
+                 if link["source"] in reachable and link["target"] in reachable]
         return {"nodes": nodes, "links": links}

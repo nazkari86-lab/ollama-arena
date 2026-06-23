@@ -7,7 +7,8 @@ checkpoints that aren't packaged for Ollama yet.
 Requires the [hf] extra: transformers, torch, accelerate.
 """
 from __future__ import annotations
-import logging, time
+import logging
+import time
 from typing import Optional
 
 from .base import GenResult, ChatTurnResult, inject_system

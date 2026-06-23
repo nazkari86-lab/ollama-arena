@@ -4,6 +4,12 @@ on:
   release:
     types: [published]
 
+permissions:
+  id-token: write  # required for PyPI Trusted Publishing (OIDC) -- without
+                    # this, gh-action-pypi-publish fails at the OIDC token
+                    # exchange step on every single run (confirmed: every
+                    # publish run from v2.1.2 through v3.1.0 failed here).
+
 jobs:
   publish:
     runs-on: ubuntu-latest

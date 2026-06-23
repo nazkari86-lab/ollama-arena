@@ -5,10 +5,11 @@ alternative methods for other platforms, with correlation to TTFT metrics.
 """
 from __future__ import annotations
 
+import importlib.util
 import platform
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from threading import Thread
 from typing import List, Dict, Any, Optional, Callable
@@ -251,11 +252,7 @@ class PSUtilBandwidthMonitor:
     
     def _check_psutil(self) -> bool:
         """Check if psutil is available."""
-        try:
-            import psutil
-            return True
-        except ImportError:
-            return False
+        return importlib.util.find_spec("psutil") is not None
     
     def is_available(self) -> bool:
         """Check if psutil monitoring is available."""

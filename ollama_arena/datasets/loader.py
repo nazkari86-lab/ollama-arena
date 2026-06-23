@@ -5,8 +5,11 @@ Each loader maps an upstream row to the arena task schema:
      test_code | expected_answer, check, source}
 """
 from __future__ import annotations
-import hashlib, json, logging, os, time
-from dataclasses import dataclass, field
+import hashlib
+import json
+import logging
+import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -95,7 +98,7 @@ def _mmlu(row: dict, idx: int) -> dict:
     choices = row["choices"]
     answer_idx = int(row["answer"])
     answer_letter = ["A", "B", "C", "D"][answer_idx]
-    options = "\n".join(f"{l}. {c}" for l, c in zip(["A","B","C","D"], choices))
+    options = "\n".join(f"{letter}. {c}" for letter, c in zip(["A","B","C","D"], choices))
     return {
         "id":              f"mmlu_{row.get('subject','x')}_{idx}",
         "category":        "knowledge",
@@ -184,7 +187,7 @@ def _arc(row: dict, idx: int) -> dict:
     choices = row["choices"]["text"]
     labels  = row["choices"]["label"]
     answer_label = row["answerKey"]
-    options = "\n".join(f"{l}. {c}" for l, c in zip(labels, choices))
+    options = "\n".join(f"{letter}. {c}" for letter, c in zip(labels, choices))
     return {
         "id":              f"arc_{row.get('id', idx)}",
         "category":        "knowledge",

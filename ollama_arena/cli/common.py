@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import sys
 import textwrap
-import time
 from contextlib import contextmanager
 
 
@@ -124,7 +123,7 @@ def confirm(prompt: str, default: bool = False) -> bool:
     try:
         from rich.prompt import Confirm
 
-        console = _console()
+        _console()
         return Confirm.ask(prompt, default=default)
     except ImportError:
         # Fallback to simple input
@@ -149,7 +148,6 @@ def _print_task_detail(
     difficulty="", language="",
 ):
     from rich.panel import Panel
-    from rich.columns import Columns
 
     icon = _outcome_icon(outcome)
     header = f"{icon}  [bold]{task_id}[/bold]"
@@ -206,7 +204,6 @@ def _print_task_detail(
 
 def _show_match_detail(console, store, match_id: int, full: bool = False):
     from rich.rule import Rule
-    from rich.panel import Panel
 
     tasks = store.tasks_for_match(match_id)
     if not tasks:

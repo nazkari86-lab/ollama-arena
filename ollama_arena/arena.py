@@ -11,10 +11,8 @@ from typing import Callable, Optional
 
 from .agent_loop import run_agent_sync
 from .backends import auto_backend, Backend, GenResult
-from .backends.ollama import OllamaBackend
-from .backends.openai_compat import OpenAICompatBackend
 from .backends.auto import spec_backend_for_model
-from .memory_scheduler import MemoryScheduler, Strategy, StrategyDecision
+from .memory_scheduler import MemoryScheduler, Strategy
 from .elo import EloStore
 from .evaluator import evaluate
 from .performance import PerfTracker
@@ -241,9 +239,12 @@ class Arena:
                 log.warning(f"[arena] skipping task {task['id']}: needs judge.")
                 return None
 
-            if score_a > score_b:   outcome = "a_wins"
-            elif score_b > score_a: outcome = "b_wins"
-            else:                   outcome = "draw"
+            if score_a > score_b:
+                outcome = "a_wins"
+            elif score_b > score_a:
+                outcome = "b_wins"
+            else:
+                outcome = "draw"
             return {"task": task, "res_a": res_a, "res_b": res_b,
                     "cached_a": cached_a, "cached_b": cached_b,
                     "score_a": score_a, "score_b": score_b,
@@ -311,9 +312,11 @@ class Arena:
             # Phase 1 — model A
             self.scheduler.unload_all_except([model_a])
             if self._on_phase:
-                try: self._on_phase({"type":"phase_start","phase":1,
+                try:
+                    self._on_phase({"type":"phase_start","phase":1,
                                      "model":model_a,"total":len(tasks_list)})
-                except Exception: pass
+                except Exception:
+                    pass
             a_outs: list[tuple[GenResult, bool]] = []
             # Pre-warm B's blob into OS page cache while A is generating
             self.scheduler.prefetch(model_b)
@@ -321,26 +324,32 @@ class Arena:
                 res, c = _gen(model_a, client_a, task)
                 a_outs.append((res, c))
                 if self._on_phase:
-                    try: self._on_phase({"type":"phase_progress","phase":1,
+                    try:
+                        self._on_phase({"type":"phase_progress","phase":1,
                                          "i":i,"total":len(tasks_list),
                                          "task_id":task["id"]})
-                    except Exception: pass
+                    except Exception:
+                        pass
             # Phase 2 — unload A, run model B on every task
             self.scheduler.unload(model_a)
             self.scheduler.unload_all_except([model_b])
             if self._on_phase:
-                try: self._on_phase({"type":"phase_start","phase":2,
+                try:
+                    self._on_phase({"type":"phase_start","phase":2,
                                      "model":model_b,"total":len(tasks_list)})
-                except Exception: pass
+                except Exception:
+                    pass
             b_outs: list[tuple[GenResult, bool]] = []
             for i, task in enumerate(tasks_list, 1):
                 res, c = _gen(model_b, client_b, task)
                 b_outs.append((res, c))
                 if self._on_phase:
-                    try: self._on_phase({"type":"phase_progress","phase":2,
+                    try:
+                        self._on_phase({"type":"phase_progress","phase":2,
                                          "i":i,"total":len(tasks_list),
                                          "task_id":task["id"]})
-                    except Exception: pass
+                    except Exception:
+                        pass
             # Phase 3 — score every pair
             return [
                 _score_and_pack(tasks_list[i], a_outs[i][0], b_outs[i][0],
@@ -373,9 +382,12 @@ class Arena:
             if not cached_b:
                 self._log_perf(model_b, res_b, task.get("category"))
 
-            if outcome == "a_wins": a_wins += 1
-            elif outcome == "b_wins": b_wins += 1
-            else: draws += 1
+            if outcome == "a_wins":
+                a_wins += 1
+            elif outcome == "b_wins":
+                b_wins += 1
+            else:
+                draws += 1
 
             self.elo.record_match(model_a, model_b, category, score_a, score_b,
                                    duration_s=res_a.latency_s + res_b.latency_s)
@@ -536,9 +548,12 @@ class Arena:
         if score_a is None or score_b is None:
             return {"ok": False, "error": f"Task {task_id} requires a judge model."}
 
-        if score_a > score_b: outcome = "a_wins"
-        elif score_b > score_a: outcome = "b_wins"
-        else: outcome = "draw"
+        if score_a > score_b:
+            outcome = "a_wins"
+        elif score_b > score_a:
+            outcome = "b_wins"
+        else:
+            outcome = "draw"
 
         # ELO + persistence (a single-sample update)
         self.elo.record_match(model_a, model_b, category, score_a, score_b,

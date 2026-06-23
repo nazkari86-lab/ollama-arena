@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass
 
 SIM_ROLES = (
     "world_step", "planner", "npc_dialogue", "narrator",

@@ -5,7 +5,8 @@ behaviour, not just raw decode speed. Useful for relative comparisons
 within one backend; treat absolute values with care.
 """
 from __future__ import annotations
-import sqlite3, statistics, time
+import sqlite3
+import time
 from typing import Optional
 
 

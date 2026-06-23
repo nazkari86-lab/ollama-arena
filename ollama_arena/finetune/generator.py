@@ -1,6 +1,8 @@
 """Build SFT/DPO datasets by distilling a stronger teacher model."""
 from __future__ import annotations
-import json, logging, sqlite3
+import json
+import logging
+import sqlite3
 from pathlib import Path
 
 from ..tasks import get_task, get_tasks

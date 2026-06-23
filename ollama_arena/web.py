@@ -4,7 +4,13 @@
 # MODULE globals and fail to see `Request` / `BackgroundTasks` (they're
 # imported inside `run_web`'s try/except). The visible effect was every
 # route's `request: Request` being misclassified as a query parameter.
-import json, logging, os, socket, sqlite3, time, uuid
+import json
+import logging
+import os
+import socket
+import sqlite3
+import time
+import uuid
 from pathlib import Path
 
 
@@ -29,7 +35,6 @@ try:
         WebSocket, WebSocketDisconnect,
     )
     from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, RedirectResponse
-    from fastapi.staticfiles import StaticFiles
     from fastapi.middleware.cors import CORSMiddleware
     from starlette.middleware.base import BaseHTTPMiddleware
 except ImportError:
@@ -169,7 +174,6 @@ def run_web(
                 log.info(f"WebSocket disconnected. Total active: {len(self.active_connections)}")
 
         async def broadcast(self, message: dict) -> None:
-            import asyncio
             dead_connections: list[WebSocket] = []
             for connection in self.active_connections:
                 try:
@@ -323,7 +327,7 @@ def run_web(
         await manager.connect(websocket)
         try:
             while True:
-                data = await websocket.receive_text()
+                await websocket.receive_text()
         except WebSocketDisconnect:
             log.info("WebSocket client disconnected gracefully.")
             manager.disconnect(websocket)
@@ -341,7 +345,8 @@ def run_web(
         if _lb_cache["data"] and now - _lb_cache["t"] < 1.0:
             return _lb_cache["data"]
         data = arena.leaderboard()
-        _lb_cache["t"] = now; _lb_cache["data"] = data
+        _lb_cache["t"] = now
+        _lb_cache["data"] = data
         return data
 
     @app.get("/api/anti-leaderboard")
@@ -696,7 +701,8 @@ def run_web(
             with sqlite3.connect(db_path) as cx:
                 row = cx.execute("SELECT category FROM royale_log WHERE id=?", (royale_id,)).fetchone()
                 category = row[0] if row else "unknown"
-        except: category = "unknown"
+        except Exception:
+            category = "unknown"
         
         models = sorted(list(set(e["model"] for e in entries)))
         path = export_royale_report(royale_id, category, models, entries)
@@ -775,8 +781,10 @@ def run_web(
     @app.post("/api/match")
     @limiter.limit(_RL_MATCH)
     def api_run_match(request: Request, body: dict, tasks: BackgroundTasks):
-        ma = body.get("model_a", ""); mb = body.get("model_b", "")
-        cat = body.get("category", "coding"); n = _body_num(body, "n", 5)
+        ma = body.get("model_a", "")
+        mb = body.get("model_b", "")
+        cat = body.get("category", "coding")
+        n = _body_num(body, "n", 5)
         concurrency = _body_num(body, "concurrency", 1)
         if not ma or not mb:
             raise HTTPException(400, "model_a and model_b required")
@@ -1057,8 +1065,10 @@ def run_web(
         model_y_name = body.get("model_y", "")
         
         # Fallbacks if frontend named them differently
-        if not model_x_name: model_x_name = body.get("model_x_name", "")
-        if not model_y_name: model_y_name = body.get("model_y_name", "")
+        if not model_x_name:
+            model_x_name = body.get("model_x_name", "")
+        if not model_y_name:
+            model_y_name = body.get("model_y_name", "")
 
         prompt = body.get("prompt", "")
         response_x = body.get("response_x", "")
@@ -1285,7 +1295,8 @@ def run_web(
             raise HTTPException(503, f"{name} server not running")
 
         def _gen():
-            import requests as _rq, time as _t
+            import requests as _rq
+            import time as _t
             server_model = b._get_model_id()
             req_body = {
                 "model": server_model,

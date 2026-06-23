@@ -1,5 +1,4 @@
 import os
-import requests
 import logging
 from typing import Optional
 
@@ -39,9 +38,11 @@ class WebUIBridge:
 
     def broadcast_match_result(self, result_summary: str):
         """Sends a notification to Open WebUI about a completed match."""
-        if not self._headers: return
+        if not self._headers:
+            return
         try:
-            # requests.post(f"{self.base}/api/v1/channels/arena-log/messages", 
+            # requests.post(f"{self.base}/api/v1/channels/arena-log/messages",
             #               json={"content": result_summary}, headers=self._headers)
             pass
-        except Exception: pass
+        except Exception:
+            pass

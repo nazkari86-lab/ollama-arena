@@ -9,16 +9,13 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 import secrets
 
 try:
-    from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.asymmetric import ed25519
     from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.backends import default_backend
     from cryptography.exceptions import InvalidSignature
     CRYPTO_AVAILABLE = True
 except ImportError:

@@ -1,5 +1,45 @@
 # Changelog
 
+## [3.2.0] - 2026-06-23
+### Added
+- **Agentic tab** (web UI): sandbox lifecycle (start/execute/stop/cleanup)
+  and a swarm-battle launcher (2v2/3v3), backed by new `/api/agentic/*`
+  routes. `agentic/` (sandboxes, swarm battles, red-teaming) was
+  previously CLI-only despite being advertised in this changelog.
+- **P2P tab** (web UI): read-only node status, global leaderboard, and
+  node-reputation panels, backed by new `/api/p2p/*` routes. Also
+  previously CLI-only. Network participation/result-signing actions are
+  intentionally not exposed yet.
+- **Opt-in judge rubric explanations**: `LLMJudge.grade_pair(explain=True)`
+  returns a one-sentence rationale per side alongside the score, surfaced
+  in the Inspect tab's task-retry flow. Default path unchanged.
+- **Opt-in cascade evaluator** (`ARENA_CASCADE_EVAL=1`): cheap rule-based
+  scoring runs before the LLM judge; a confident match skips the judge
+  call entirely. Default off.
+- **Opt-in simulation reflection** (`reflect_every` on `/api/sim/run`):
+  periodically summarizes an agent's recent witnessed events into a short
+  insight fed back into its own future prompts. Default off.
+- **Experiment-diff and trace-timeline views** in the Simulations/Inspect
+  tabs, rendering existing `/api/sim/compare` and tool-call latency data
+  that had no UI before.
+- Command palette (⌘K) now does fuzzy matching with grouped results
+  instead of a flat substring filter; History tab gained a sortable,
+  searchable table with click-to-expand rows.
+- Startup banner now shows the real LAN IP instead of `localhost` when
+  bound to `0.0.0.0`, so the printed URL is actually reachable from other
+  devices on the network.
+
+### Fixed
+- **PyPI publish pipeline was broken on every release since v2.1.2**: the
+  publish workflow used PyPI Trusted Publishing (OIDC) without declaring
+  `permissions: id-token: write`, so every run failed at the token
+  exchange step before ever reaching PyPI. v3.0.0 and v3.1.0 were never
+  actually published despite having GitHub Releases.
+- Removed the abandoned React/Vite frontend (`frontend/`, ~9,200 lines,
+  one commit, zero references anywhere in the running app) and its
+  stale "Quick Start with React Frontend" README section — there was no
+  `--react` flag in the CLI to support it.
+
 ## [3.1.0] - 2026-06-21
 ### Added
 - **Hardware Fit Scanner:** New dashboard card that scans the local machine's

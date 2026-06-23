@@ -31,7 +31,7 @@ VADER = """\
 """
 
 def render(version: str = "") -> str:
-    tag = f"  ollama-arena" + (f" {version}" if version else "")
+    tag = "  ollama-arena" + (f" {version}" if version else "")
     return f"\n{VADER}\n{tag}\n"
 
 

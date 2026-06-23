@@ -5,12 +5,11 @@ agents in a team, and team scoring based on collaboration quality + task complet
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 log = logging.getLogger("arena.agentic.swarm")
 

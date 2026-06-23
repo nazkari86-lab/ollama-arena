@@ -1,6 +1,7 @@
 """MCP server configuration management."""
 from __future__ import annotations
-import json, logging
+import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -222,7 +223,7 @@ def load_mcp_config(path: str | None = None) -> MCPConfig:
     servers = {}
     for name, cfg in raw.get("servers", {}).items():
         # Check if server is explicitly disabled
-        if cfg.get("enabled", True) == False:
+        if not cfg.get("enabled", True):
             log.info(f"MCP server '{name}' is disabled in config")
             continue
 
@@ -382,13 +383,13 @@ def print_server_diagnostics(diag_results: dict[str, dict]) -> None:
             print(f"   🔑 Missing env: {', '.join(result['missing_env'])}")
 
         if result["requires_api_key"]:
-            print(f"   🔐 Requires API key")
+            print("   🔐 Requires API key")
 
         if result["is_external"]:
             external_count += 1
 
         if not result["enabled"]:
-            print(f"   🔴 Disabled in config")
+            print("   🔴 Disabled in config")
 
         # Count by tier
         if result["available"]:

@@ -9,11 +9,9 @@ import contextlib
 import platform
 import sqlite3
 import time
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Protocol, runtime_checkable
 
 
@@ -474,7 +472,7 @@ class HardwareDetector:
                 driver_version=driver_version.decode() if isinstance(driver_version, bytes) else driver_version,
                 architecture="cuda",
             )
-        except Exception as e:
+        except Exception:
             return HardwareInfo(
                 platform=HardwarePlatform.NVIDIA,
                 device_name="Unknown NVIDIA GPU",
@@ -506,7 +504,7 @@ class HardwareDetector:
                             try:
                                 vram_gb = float(line.split(":")[1].strip().replace(" GB", ""))
                                 total_memory_gb = vram_gb
-                            except:
+                            except Exception:
                                 pass
             
             return HardwareInfo(
@@ -516,7 +514,7 @@ class HardwareDetector:
                 total_memory_gb=total_memory_gb,
                 architecture="apple-silicon",
             )
-        except Exception as e:
+        except Exception:
             return HardwareInfo(
                 platform=HardwarePlatform.APPLE,
                 device_name="Apple Silicon GPU",
@@ -553,7 +551,7 @@ class HardwareDetector:
                 total_memory_gb=total_memory_gb,
                 architecture="rocm",
             )
-        except Exception as e:
+        except Exception:
             return HardwareInfo(
                 platform=HardwarePlatform.AMD,
                 device_name="AMD GPU",

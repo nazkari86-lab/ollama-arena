@@ -5,7 +5,10 @@ OpenRouter, Fireworks, DeepInfra, or any provider that implements the
 same surface.
 """
 from __future__ import annotations
-import json, logging, os, re, time
+import json
+import logging
+import os
+import time
 import requests
 
 from .base import GenResult, ChatTurnResult, strip_thinking, inject_system

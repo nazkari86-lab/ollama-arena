@@ -12,7 +12,7 @@ def cmd_sandbox(args):
     """Manage VM sandboxes for isolated task execution."""
     c = _console()
 
-    arena = _make_arena(args)
+    _make_arena(args)
     from ..agentic.sandbox import SandboxManager, SandboxConfig, SandboxBackend
 
     config = SandboxConfig(
@@ -38,7 +38,7 @@ def cmd_sandbox(args):
         c.print(f"[cyan]Executing task in sandbox {args.sandbox_id}...[/cyan]")
         result = manager.execute_task(args.sandbox_id, args.task)
         if result.success:
-            c.print(f"[green]✓ Task completed successfully[/green]")
+            c.print("[green]✓ Task completed successfully[/green]")
             c.print(f"Output: {result.output[:500]}")
         else:
             c.print(f"[red]✗ Task failed: {result.error}[/red]")
@@ -47,9 +47,9 @@ def cmd_sandbox(args):
     elif args.sandbox_action == "stop":
         c.print(f"[cyan]Stopping sandbox {args.sandbox_id}...[/cyan]")
         if manager.stop_sandbox(args.sandbox_id):
-            c.print(f"[green]✓ Sandbox stopped[/green]")
+            c.print("[green]✓ Sandbox stopped[/green]")
         else:
-            c.print(f"[red]✗ Failed to stop sandbox[/red]")
+            c.print("[red]✗ Failed to stop sandbox[/red]")
             sys.exit(1)
 
     elif args.sandbox_action == "list":
@@ -63,9 +63,9 @@ def cmd_sandbox(args):
         if args.sandbox_id:
             c.print(f"[cyan]Cleaning up sandbox {args.sandbox_id}...[/cyan]")
             if manager.cleanup_sandbox(args.sandbox_id):
-                c.print(f"[green]✓ Sandbox cleaned up[/green]")
+                c.print("[green]✓ Sandbox cleaned up[/green]")
             else:
-                c.print(f"[red]✗ Failed to cleanup sandbox[/red]")
+                c.print("[red]✗ Failed to cleanup sandbox[/red]")
         else:
             c.print("[cyan]Cleaning up all sandboxes...[/cyan]")
             manager.cleanup_all()
@@ -82,7 +82,7 @@ def cmd_swarm(args):
         c.print("[red]✗ Backend not reachable.[/red]")
         sys.exit(1)
 
-    from ..agentic.swarm import SwarmBattle, SwarmTeam, example_2v2_setup, example_3v3_setup, AgentRole
+    from ..agentic.swarm import SwarmBattle, example_2v2_setup, example_3v3_setup, AgentRole
 
     # Parse team configurations
     if args.mode == "2v2":
@@ -138,7 +138,7 @@ def cmd_swarm(args):
             max_steps_per_round=args.max_steps,
         )
 
-    c.print(f"\n[bold green]Result:[/bold green]")
+    c.print("\n[bold green]Result:[/bold green]")
     c.print(f"Winner: [cyan]{result.winner}[/cyan]")
     c.print(f"Score: {result.team_a_name} {result.team_a_score} vs {result.team_b_name} {result.team_b_score}")
     c.print(f"Duration: {result.duration_s:.2f}s")
@@ -202,7 +202,7 @@ def cmd_redteam(args):
             task_context=args.context,
         )
 
-    c.print(f"\n[bold green]Result:[/bold green]")
+    c.print("\n[bold green]Result:[/bold green]")
     c.print(f"Overall winner: [cyan]{result.overall_winner}[/cyan]")
     c.print(f"Attacker score: {result.attacker_score:.3f}")
     c.print(f"Defender score: {result.defender_score:.3f}")
@@ -210,7 +210,7 @@ def cmd_redteam(args):
     c.print(f"Defender wins: {result.defender_wins}/{result.total_rounds}")
     c.print(f"Duration: {result.duration_s:.2f}s")
 
-    c.print(f"\n[bold]Defense Metrics:[/bold]")
+    c.print("\n[bold]Defense Metrics:[/bold]")
     c.print(f"Detection rate: {result.defense_metrics['detection_rate']:.3f}")
     c.print(f"Blocked: {result.defense_metrics['blocked']}")
     c.print(f"Detected: {result.defense_metrics['detected']}")
@@ -278,14 +278,14 @@ def cmd_long_horizon(args):
         if manager.pause_task(args.task_id):
             c.print(f"[green]✓ Paused task {args.task_id}[/green]")
         else:
-            c.print(f"[red]✗ Failed to pause task[/red]")
+            c.print("[red]✗ Failed to pause task[/red]")
             sys.exit(1)
 
     elif args.lh_action == "resume":
         if manager.resume_task(args.task_id):
             c.print(f"[green]✓ Resumed task {args.task_id}[/green]")
         else:
-            c.print(f"[red]✗ Failed to resume task[/red]")
+            c.print("[red]✗ Failed to resume task[/red]")
             sys.exit(1)
 
     elif args.lh_action == "progress":
@@ -300,7 +300,7 @@ def cmd_long_horizon(args):
             args.step_description,
         )
         if progress:
-            c.print(f"[cyan]Progress updated:[/cyan]")
+            c.print("[cyan]Progress updated:[/cyan]")
             c.print(f"  Progress: {progress.progress_percentage:.1f}%")
             c.print(f"  Step: {progress.step_description}")
             c.print(f"  Time elapsed: {progress.time_elapsed_s:.1f}s")
@@ -320,13 +320,13 @@ def cmd_long_horizon(args):
             # Evaluate task
             evaluation = manager.evaluate_task(args.task_id, default_task_evaluator)
             if evaluation:
-                c.print(f"[cyan]Evaluation:[/cyan]")
+                c.print("[cyan]Evaluation:[/cyan]")
                 c.print(f"  Overall score: {evaluation.overall_score:.3f}")
                 c.print(f"  Completion: {evaluation.completion_percentage:.1f}%")
                 c.print(f"  Duration: {evaluation.duration_s:.1f}s")
                 c.print(f"  Assessment: {evaluation.final_assessment}")
         else:
-            c.print(f"[red]✗ Failed to complete task[/red]")
+            c.print("[red]✗ Failed to complete task[/red]")
             sys.exit(1)
 
     elif args.lh_action == "status":

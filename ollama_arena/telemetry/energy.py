@@ -8,10 +8,10 @@ from __future__ import annotations
 import platform
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from threading import Thread
-from typing import Callable, Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any
 
 from .base import HardwarePlatform, HardwareDetector
 
@@ -69,7 +69,7 @@ class NVMLMonitor:
         except ImportError:
             # pynvml not available
             pass
-        except Exception as e:
+        except Exception:
             # NVML initialization failed
             pass
     

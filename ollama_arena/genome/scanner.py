@@ -1,6 +1,8 @@
 """Scan local Ollama models and extract metadata."""
 from __future__ import annotations
-import re, subprocess, logging
+import re
+import subprocess
+import logging
 from dataclasses import dataclass, field
 
 log = logging.getLogger("arena.genome.scanner")

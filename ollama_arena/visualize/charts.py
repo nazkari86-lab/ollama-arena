@@ -1,6 +1,7 @@
 """Plotly chart generators returning embeddable HTML fragments."""
 from __future__ import annotations
-import datetime, html as html_lib, json, math
+import datetime
+import html as html_lib
 from collections import defaultdict
 from pathlib import Path
 

@@ -4,7 +4,10 @@ Each spec server runs llama.cpp with --spec-draft-model, exposing port 8888-8897
 Model names use the "spec:<name>" prefix (e.g. "spec:qwen3-14b").
 """
 from __future__ import annotations
-import json, logging, os, re, subprocess, time
+import json
+import logging
+import subprocess
+import time
 from pathlib import Path
 import requests
 

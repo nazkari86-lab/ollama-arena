@@ -131,7 +131,7 @@ def cmd_sim(args):
         console.print(f"[bold]Trained on {n} transitions, {args.epochs} epochs[/bold]")
         console.print(f"Action kinds: {result.kind_vocab}")
         console.print(f"Final loss: {result.final_loss:.4f}")
-        console.print(f"Loss by epoch: {[round(l, 4) for l in result.losses_by_epoch]}")
+        console.print(f"Loss by epoch: {[round(v, 4) for v in result.losses_by_epoch]}")
 
     elif sim_cmd == "replay":
         from ..simulations.replay.player import ReplayPlayer

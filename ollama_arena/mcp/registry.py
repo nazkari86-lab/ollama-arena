@@ -13,7 +13,8 @@ try:
     _rag_available = True
 except ImportError:
     _rag_available = False
-    rag_tool_defs = lambda: []
+    def rag_tool_defs():
+        return []
 
 DangerTier = Literal["safe", "confirm", "deny"]
 
