@@ -115,6 +115,7 @@ class EloStore:
                     ra, rb, new_ra, new_rb, now, conn=cx,
                 )
                 if category:
+                    assert new_cat_ra is not None and new_cat_rb is not None
                     self._ratings.upsert_category_rating(
                         model_a, model_b, category,
                         new_cat_ra, new_cat_rb, score_a, score_b, now, conn=cx,

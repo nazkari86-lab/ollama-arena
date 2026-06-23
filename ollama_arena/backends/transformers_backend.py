@@ -9,7 +9,7 @@ Requires the [hf] extra: transformers, torch, accelerate.
 from __future__ import annotations
 import logging
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from .base import GenResult, ChatTurnResult, inject_system
 
@@ -38,7 +38,7 @@ class TransformersBackend:
             raise RuntimeError(
                 "Install: pip install 'ollama-arena[hf]'"
             )
-        dtype = self.torch_dtype
+        dtype: Any = self.torch_dtype
         if dtype == "auto":
             dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
         log.info(f"[hf] loading {model_id} on {self.device} ({dtype})")

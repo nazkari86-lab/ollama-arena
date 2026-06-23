@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import time
+from typing import Iterator, cast
 import requests
 
 from .base import GenResult, ChatTurnResult, strip_thinking, inject_system
@@ -226,7 +227,8 @@ class OpenAICompatBackend:
                     error=r.text, latency_s=round(time.time() - t0, 3),
                 )
 
-            for line in r.iter_lines(decode_unicode=True):
+            # requests' stub doesn't model decode_unicode=True returning str
+            for line in cast(Iterator[str], r.iter_lines(decode_unicode=True)):
                 if not line or not line.startswith("data:"):
                     continue
                 data = line[5:].strip()

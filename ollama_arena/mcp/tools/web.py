@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Callable
+from typing import Any, Callable
 
 import requests
 
@@ -83,7 +83,8 @@ def wikipedia_search(args: dict) -> str:
         )
         summary_resp.raise_for_status()
         pages = summary_resp.json().get("query", {}).get("pages", {})
-        extract = next(iter(pages.values()), {}).get("extract", "")
+        empty_page: dict[str, Any] = {}
+        extract = next(iter(pages.values()), empty_page).get("extract", "")
         return f"Wikipedia: {title}\n\n{extract[:4000]}"
     except Exception as exc:
         return f"Error: {exc}"

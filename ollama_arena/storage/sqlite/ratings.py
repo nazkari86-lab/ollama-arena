@@ -318,7 +318,7 @@ class SqliteRatingsRepository:
         now = time.time()
         models = [r["model"] for r in model_results]
         current_ratings = {m: self.get(m) for m in models}
-        results_map = {m: [] for m in models}
+        results_map: dict[str, list[float]] = {m: [] for m in models}
         stats_map = {m: {"wins": 0, "losses": 0, "draws": 0} for m in models}
 
         for res_a, res_b in combinations(model_results, 2):

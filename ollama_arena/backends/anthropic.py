@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import time
+from typing import Iterator, cast
 
 import requests
 
@@ -94,7 +95,7 @@ def _messages_to_anthropic(messages: list[dict]) -> tuple[str | None, list[dict]
             turns.append({"role": "assistant", "content": parts})
             continue
         if images:
-            parts: list[dict] = []
+            parts = []
             if content:
                 parts.append({"type": "text", "text": content})
             for img in images:
@@ -192,7 +193,8 @@ class AnthropicBackend:
                     latency_s=round(time.time() - t0, 3),
                 )
 
-            for raw_line in r.iter_lines(decode_unicode=True):
+            # requests' stub doesn't model decode_unicode=True returning str
+            for raw_line in cast(Iterator[str], r.iter_lines(decode_unicode=True)):
                 if not raw_line:
                     continue
                 if raw_line.startswith("data:"):

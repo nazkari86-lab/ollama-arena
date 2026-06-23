@@ -43,7 +43,7 @@ async def run_agent_loop(
 ) -> GenResult:
     """Run an agentic tool loop against *backend* and *mcp* orchestrator."""
     tools = await mcp.get_all_tools()
-    msg = {"role": "user", "content": instruction}
+    msg: dict[str, Any] = {"role": "user", "content": instruction}
     if images:
         msg["images"] = images
     messages: list[dict] = [msg]

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Callable
 from pathlib import Path
 
 from ..rag.indexer import CodebaseIndexer
@@ -128,7 +129,7 @@ def code_index_stats(args: dict) -> str:
         return f"Error getting index stats: {str(e)}"
 
 
-def tool_defs() -> list[tuple[str, callable, dict, str]]:
+def tool_defs() -> list[tuple[str, Callable, dict, str]]:
     """Return RAG tool definitions for MCP registry."""
     return [
         (

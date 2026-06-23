@@ -69,6 +69,7 @@ def eval_text_answer(task: dict, response: str, judge: Any | None = None) -> flo
 
     # Semantic check (judge) — unchanged default path.
     if wants_judge:
+        assert judge is not None  # implied by wants_judge's "and judge" check
         try:
             return judge.evaluate_single(task["instruction"], response, reference=expected)
         except Exception as e:

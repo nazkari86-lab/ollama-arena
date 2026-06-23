@@ -52,7 +52,7 @@ def mock_browser_navigate(args: dict) -> str:
 
 
 def tool_defs(include_mock: bool = False) -> list[tuple[str, Callable[[dict], str], dict, str]]:
-    defs = [
+    defs: list[tuple[str, Callable[[dict], str], dict, str]] = [
         (
             "browser_use",
             browser_use,

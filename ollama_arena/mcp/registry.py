@@ -13,7 +13,7 @@ try:
     _rag_available = True
 except ImportError:
     _rag_available = False
-    def rag_tool_defs():
+    def rag_tool_defs() -> list[tuple[str, Callable, dict, str]]:
         return []
 
 DangerTier = Literal["safe", "confirm", "deny"]
