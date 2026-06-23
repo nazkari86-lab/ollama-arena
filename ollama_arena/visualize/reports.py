@@ -121,7 +121,7 @@ def export_royale_report(
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     
     # tasks in royale_entries are grouped by task_id
-    tasks_grouped = {}
+    tasks_grouped: dict[str, list[dict]] = {}
     for entry in tasks:
         tid = entry["task_id"]
         tasks_grouped.setdefault(tid, []).append(entry)

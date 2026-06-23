@@ -12,6 +12,7 @@ import sqlite3
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 
 def _detect_lan_ip() -> str:
@@ -192,11 +193,15 @@ def run_web(
     HERE = Path(__file__).parent.parent / "templates"
 
     # ── Rate limiting ────────────────────────────────────────────────────────
+    limiter: Any
     if _LIMITER_AVAILABLE:
         from slowapi.middleware import SlowAPIMiddleware
         limiter = Limiter(key_func=get_remote_address, default_limits=[_RL_DEFAULT])
         app.state.limiter = limiter
-        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+        # slowapi's official documented handler is typed specifically for
+        # RateLimitExceeded; Starlette's stub wants the generic Exception
+        # signature. Known stub mismatch, not a real type error.
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
         app.add_middleware(SlowAPIMiddleware)
     else:
         # No-op decorator so the codepath stays uniform

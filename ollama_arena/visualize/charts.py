@@ -229,7 +229,7 @@ def heatmap_html(matches: list[dict]) -> str:
     models = sorted({m for k in pair.keys() for m in k})
     z = []
     for i, ra in enumerate(models):
-        row = []
+        row: list[float | None] = []
         for j, rb in enumerate(models):
             if ra == rb:
                 row.append(None)

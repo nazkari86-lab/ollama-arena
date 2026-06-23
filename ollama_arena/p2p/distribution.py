@@ -545,7 +545,7 @@ class ResultAggregator:
         }
 
         if vote_totals:
-            consensus_winner = max(vote_totals, key=vote_totals.get)
+            consensus_winner = max(vote_totals, key=lambda k: vote_totals[k])
             consensus["consensus_winner"] = consensus_winner
             consensus["agreement_ratio"] = vote_totals[consensus_winner] / total_weight
 

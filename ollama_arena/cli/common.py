@@ -47,7 +47,7 @@ def _trunc(text: str, n: int = 120) -> str:
 # ── Progress Bars and Spinners ───────────────────────────────────────────────
 
 @contextmanager
-def progress_bar(description: str, total: int = None):
+def progress_bar(description: str, total: int | None = None):
     """Context manager for progress bar using rich.Progress."""
     try:
         from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, SpinnerColumn
