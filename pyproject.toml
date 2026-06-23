@@ -68,7 +68,7 @@ config = [
     "tomli>=2.0; python_version < '3.11'",
 ]
 agentic = [
-    "kubernetes>=28.0",
+    "kubernetes>=36.0.2",
 ]
 p2p = [
     "web3>=6.0",
@@ -90,7 +90,7 @@ all = [
     "mcp>=0.1.0",
     "pyyaml>=6.0",
     "tomli>=2.0; python_version < '3.11'",
-    "kubernetes>=28.0",
+    "kubernetes>=36.0.2",
     "web3>=6.0",
     "py-evm>=0.7",
     "cryptography>=41.0",
