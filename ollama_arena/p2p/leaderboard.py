@@ -445,7 +445,7 @@ class GlobalLeaderboard:
         unique_models = len(set(e.model_name for e in verified_entries))
         scores = [e.score for e in verified_entries]
         
-        category_breakdown = defaultdict(int)
+        category_breakdown: Dict[str, int] = defaultdict(int)
         for entry in verified_entries:
             category_breakdown[entry.category] += 1
         
@@ -478,7 +478,7 @@ class GlobalLeaderboard:
             Dictionary with manipulation analysis
         """
         # Analyze by node
-        node_stats = defaultdict(lambda: {
+        node_stats: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
             "total_submissions": 0,
             "verified_count": 0,
             "rejected_count": 0,
