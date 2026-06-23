@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Dict, Callable
+from typing import Any, Optional, List, Dict, Callable
 from queue import Queue, Empty
 import hashlib
 import uuid
@@ -398,7 +398,7 @@ class FinetuningMonitor:
     ) -> List[Dict]:
         """Get finetuning job history."""
         query = "SELECT * FROM finetuning_jobs"
-        params = []
+        params: List[Any] = []
 
         if model:
             query += " WHERE model = ?"
@@ -589,7 +589,7 @@ class FinetuningOrchestrator:
         else:
             raise RuntimeError("Failed to enqueue job")
 
-    def get_queue_status(self) -> Dict[str, any]:
+    def get_queue_status(self) -> Dict[str, Any]:
         """Get current queue status."""
         return {
             "queued": len(self.job_queue.list_jobs(JobStatus.QUEUED)),
@@ -599,7 +599,7 @@ class FinetuningOrchestrator:
             "gpu_status": self.gpu_allocator.get_status(),
         }
 
-    def check_auto_finetune(self, model: str) -> Dict[str, any]:
+    def check_auto_finetune(self, model: str) -> Dict[str, Any]:
         """
         Check if a model should be auto-finetuned.
 

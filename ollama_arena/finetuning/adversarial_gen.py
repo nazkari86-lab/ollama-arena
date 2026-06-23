@@ -8,7 +8,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple
+from typing import Any, Optional, List, Dict, Tuple
 from collections import defaultdict
 
 log = logging.getLogger("arena.finetuning.adversarial")
@@ -55,7 +55,7 @@ class TaskDifficultyAnalyzer:
         self,
         category: Optional[str] = None,
         model: Optional[str] = None,
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         Analyze the distribution of task difficulties for a model/category.
 
@@ -140,7 +140,7 @@ class TaskDifficultyAnalyzer:
             JOIN match_log m ON m.id = d.match_id
             WHERE m.model_a = ? OR m.model_b = ?
         """
-        params = [model, model, model, model]
+        params: List[Any] = [model, model, model, model]
 
         if category:
             query += " AND d.category = ?"
@@ -429,10 +429,10 @@ Output ONLY the new problem instruction, nothing else."""
         output_path: str = "data/adversarial_tasks.jsonl",
     ) -> str:
         """Save adversarial tasks to a file."""
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             for task in tasks:
                 f.write(json.dumps({
                     "task_id": task.task_id,
@@ -443,15 +443,15 @@ Output ONLY the new problem instruction, nothing else."""
                     "metadata": task.metadata,
                 }, ensure_ascii=False) + "\n")
 
-        log.info(f"[adversarial] Saved {len(tasks)} tasks to {output_path}")
-        return str(output_path)
+        log.info(f"[adversarial] Saved {len(tasks)} tasks to {path}")
+        return str(path)
 
 
 def calibrate_difficulty(
     tasks: List[AdversarialTask],
     db_path: str = "arena.db",
     model: Optional[str] = None,
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     Calibrate task difficulty based on actual model performance.
 
@@ -461,7 +461,7 @@ def calibrate_difficulty(
         return {"calibrated": False, "reason": "No tasks to calibrate"}
 
     # For each task, find similar tasks and check performance
-    difficulty_stats = defaultdict(lambda: {"wins": 0, "total": 0})
+    difficulty_stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"wins": 0, "total": 0})
 
     try:
         with sqlite3.connect(db_path) as cx:

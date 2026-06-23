@@ -8,7 +8,7 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple
+from typing import Any, Optional, List, Dict, Tuple
 from collections import defaultdict
 
 log = logging.getLogger("arena.finetuning.dpo")
@@ -261,7 +261,7 @@ def extract_dpo_pairs(
         FROM match_log m
         JOIN task_detail d ON d.match_id = m.id
     """
-    params = []
+    params: List[Any] = []
     conditions = []
 
     if category:
@@ -381,13 +381,13 @@ def collect_preference_dataset(
     pairs = sorted(pairs, key=lambda p: p.elo_gap, reverse=True)
 
     # Determine base model (most common winner)
-    winner_counts = defaultdict(int)
+    winner_counts: Dict[str, int] = defaultdict(int)
     for p in pairs:
         winner_counts[p.chosen_model] += 1
     base_model = max(winner_counts.items(), key=lambda x: x[1])[0] if winner_counts else "unknown"
 
     # Determine category (most common)
-    category_counts = defaultdict(int)
+    category_counts: Dict[str, int] = defaultdict(int)
     for p in pairs:
         category_counts[p.category] += 1
     category = max(category_counts.items(), key=lambda x: x[1])[0] if category_counts else "general"
@@ -420,7 +420,7 @@ def format_dpo_dataset(pairs: List[DPOPair], format_type: str = "trl") -> List[D
     Returns:
         List of formatted dictionaries
     """
-    formatted = []
+    formatted: List[Dict[str, Any]] = []
     for pair in pairs:
         if format_type == "trl":
             formatted.append({
@@ -446,7 +446,7 @@ def format_dpo_dataset(pairs: List[DPOPair], format_type: str = "trl") -> List[D
     return formatted
 
 
-def validate_dpo_dataset(pairs: List[DPOPair]) -> Dict[str, any]:
+def validate_dpo_dataset(pairs: List[DPOPair]) -> Dict[str, Any]:
     """
     Validate a DPO dataset for quality and consistency.
 
@@ -540,7 +540,7 @@ class DPOPipeline:
         self,
         target_model: str,
         category: Optional[str] = None,
-    ) -> Tuple[List[DPOPair], DatasetVersion]:
+    ) -> Tuple[List[DPOPair], Optional[DatasetVersion]]:
         """Collect and store a DPO dataset for a specific model."""
         pairs, version = collect_preference_dataset(
             target_model=target_model,
@@ -558,7 +558,7 @@ class DPOPipeline:
             return None
         return self.storage.load_dataset(versions[0].version_id)
 
-    def get_model_readiness(self, target_model: str) -> Dict[str, any]:
+    def get_model_readiness(self, target_model: str) -> Dict[str, Any]:
         """Check if a model has enough data for fine-tuning."""
         versions = self.storage.list_versions(target_model=target_model)
         if not versions:
