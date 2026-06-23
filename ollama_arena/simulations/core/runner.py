@@ -16,7 +16,7 @@ from ..agents.base import SimAgent
 from ..agents.llm_agent import LLMSimAgent
 from ..storage import SimStore
 from .scenario import ScenarioSpec, get_scenario
-from .types import AgentSpec, EpisodeResult, StepMode, WITNESS_ALL
+from .types import AgentId, AgentSpec, EpisodeResult, StepMode, WITNESS_ALL
 
 log = logging.getLogger("arena.simulations.runner")
 
@@ -92,10 +92,21 @@ class SimulationManager:
         run_id: str,
         on_tick: Callable[[dict[str, Any]], None] | None = None,
         max_ticks: int = 1000,
+        reflect_every: int | None = None,
     ) -> EpisodeResult:
         """Run from tick 0 (or from the latest checkpoint, if resuming a
         previously-paused run) through to termination/truncation/a pause
-        request, persisting every event/transition as it happens."""
+        request, persisting every event/transition as it happens.
+
+        `reflect_every` is opt-in and defaults to None (off): every Nth
+        tick, each LLMSimAgent's BrainProfile gets a one-LLM-call summary
+        of its recent witnessed events (see agents/reflection.py),
+        surfaced to future prompts via `profile.status["reflection"]`
+        (build_prompt() already prints `status` verbatim, so no prompt-
+        building code needs to change). Left at the default, this method
+        behaves exactly as before -- no extra LLM calls, no profile
+        mutation -- so existing recorded traces stay byte-for-byte
+        reproducible."""
         run = self.store.get_run(run_id)
         if run is None:
             raise KeyError(f"unknown run {run_id!r}")
@@ -143,6 +154,9 @@ class SimulationManager:
             self.store.append_events(run_id, new_events)
             self.store.append_transitions(run_id, transitions)
             tick += 1
+
+            if reflect_every:
+                self._run_reflection_step(agents, new_events, tick, reflect_every)
 
             if on_tick:
                 agent_states = {}
@@ -211,6 +225,39 @@ class SimulationManager:
         self.store.set_run_outcome(run_id, result.outcome)
         self.store.update_run_status(run_id, "completed", completed_at=time.time())
         return result
+
+    def _run_reflection_step(
+        self, agents: dict[AgentId, SimAgent], new_events: list, tick: int, reflect_every: int,
+    ) -> None:
+        """Feed this tick's witnessed events into each LLMSimAgent's
+        BrainProfile, and -- every `reflect_every` ticks -- replace its
+        stored reflection with a fresh one-LLM-call summary. Only called
+        when the caller opted in via `reflect_every`; failures are
+        logged and swallowed so a flaky reflection call never crashes
+        an otherwise-healthy run."""
+        from ..agents.reflection import generate_reflection, should_reflect
+
+        for agent_id, agent in agents.items():
+            profile = getattr(agent, "profile", None)
+            if profile is None:
+                continue
+            for event in new_events:
+                if event.visible_to(agent_id):
+                    profile.remember(event)
+
+        if not should_reflect(tick, reflect_every):
+            return
+        for agent_id, agent in agents.items():
+            profile = getattr(agent, "profile", None)
+            backend = getattr(agent, "_backend", None)
+            if profile is None or backend is None:
+                continue
+            try:
+                summary = generate_reflection(profile, backend, agent.model)
+                if summary:
+                    profile.status["reflection"] = summary
+            except Exception as e:
+                log.warning(f"[reflection] agent {agent_id} reflection failed at tick {tick}: {e}")
 
     def pause_run(self, run_id: str) -> str:
         """Request the in-progress run loop stop after its current tick and

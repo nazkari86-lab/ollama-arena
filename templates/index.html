@@ -521,6 +521,11 @@
           </select>
           <p class="sim-field-help">Configure which model handles each role in the <a href="#" onclick="goTab('providers'); return false;">Providers</a> tab.</p>
         </div>
+        <div class="form-group">
+          <label for="sim-reflect-every">Reflection every N ticks (optional)</label>
+          <input type="number" id="sim-reflect-every" placeholder="0 — off">
+          <p class="sim-field-help">Periodically summarizes each agent's recent witnessed events into a short insight, fed back into its own future prompts. Off by default.</p>
+        </div>
         <button class="btn primary" id="sim-run-btn">Start Run</button>
         <div id="sim-run-status" class="status"></div>
       </div>

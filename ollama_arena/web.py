@@ -1596,6 +1596,9 @@ def run_web(
                 raise HTTPException(400, "scenario and a non-empty agents list are required")
             config = body.get("config") or {}
             max_ticks = _body_num(body, "ticks", 1000)
+            # Opt-in, default off (0/absent) -- see SimulationManager.start_run()'s
+            # `reflect_every` docstring for why the default path is untouched.
+            reflect_every = _body_num(body, "reflect_every", 0) or None
 
             # router_role is opt-in (set from the sim tab's "Use role
             # routing" picker) -- only then do agents resolve their model
@@ -1634,6 +1637,7 @@ def run_web(
                         run_id,
                         on_tick=lambda d: _emit({"type": "sim_tick", **d}),
                         max_ticks=max_ticks,
+                        reflect_every=reflect_every,
                     )
                     _emit({
                         "type": "sim_run_done", "run_id": run_id,

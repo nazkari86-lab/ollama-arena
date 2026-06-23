@@ -164,6 +164,8 @@ async function startSimRun() {
   if (seedRaw !== '') body.seed = parseInt(seedRaw, 10);
   const routerRole = document.getElementById('sim-router-role')?.value;
   if (routerRole) body.router_role = routerRole;
+  const reflectEveryRaw = document.getElementById('sim-reflect-every')?.value;
+  if (reflectEveryRaw) body.reflect_every = parseInt(reflectEveryRaw, 10);
   const status = document.getElementById('sim-run-status');
   const button = document.getElementById('sim-run-btn');
   button.disabled = true;
