@@ -51,14 +51,14 @@ datasets = [
 hf = [
     "transformers>=4.40",
     "torch>=2.2",
-    "accelerate>=0.30",
+    "accelerate>=1.14.0",
 ]
 finetune = [
     "unsloth>=2024.8",
     "transformers>=4.40",
     "peft>=0.10",
     "trl>=0.9",
-    "accelerate>=0.30",
+    "accelerate>=1.14.0",
     "datasets>=2.14",
     "torch>=2.2",
     "bitsandbytes>=0.43; sys_platform != 'darwin'",
