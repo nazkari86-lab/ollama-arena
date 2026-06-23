@@ -29,7 +29,6 @@ jobs:
         run: ruff check ollama_arena
       - name: Type check
         run: mypy ollama_arena --ignore-missing-imports --no-error-summary
-        continue-on-error: true
       - name: Smoke test imports
         run: |
           python -c "from ollama_arena import Arena, get_tasks, task_stats; print(task_stats())"
