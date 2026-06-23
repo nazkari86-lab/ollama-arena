@@ -35,6 +35,7 @@ wasm = [
 ]
 web = [
     "fastapi>=0.100",
+    "starlette<1.0",  # >=1.0 requires the new 'httpx2' package for TestClient
     "uvicorn[standard]>=0.22",
     "jinja2>=3.1",
     "slowapi>=0.1.9",
@@ -105,6 +106,8 @@ dev = [
     "mypy",
     "pyyaml>=6.0",
     "tomli>=2.0; python_version < '3.11'",
+    "numpy>=1.24",  # used by tests/test_rag_*_extended.py to build mock embedding vectors
+    "httpx>=0.24",  # required by starlette.testclient.TestClient (tests/test_web_*.py)
 ]
 
 [project.scripts]
