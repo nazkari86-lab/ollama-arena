@@ -54,6 +54,14 @@ class MatchResult:
 
 
 @dataclass
+class _RoyaleTaskResult:
+    """One model's scored attempt at one royale task (internal to run_royale)."""
+    model: str
+    score: float
+    res: GenResult
+
+
+@dataclass
 class RoyaleResult:
     models: list[str]
     category: str
@@ -223,6 +231,8 @@ class Arena:
 
         def _score_and_pack(task, res_a: GenResult, res_b: GenResult,
                             cached_a: bool, cached_b: bool) -> dict | None:
+            score_a: Optional[float]
+            score_b: Optional[float]
             if self.judge and task.get("use_judge"):
                 jr = self.judge.grade_pair(
                     task["instruction"], res_a.text, res_b.text,
@@ -534,6 +544,8 @@ class Arena:
         res_b = _retry_gen(client_b, model_b)
 
         explanation_a = explanation_b = ""
+        score_a: Optional[float]
+        score_b: Optional[float]
         if self.judge and task.get("use_judge"):
             jr = self.judge.grade_pair(instruction, res_a.text, res_b.text,
                                        reference=expected, explain=True)
@@ -688,22 +700,25 @@ class Arena:
         # Scoring & ELO updates
         for task in tasks:
             tid = task["id"]
-            model_task_results = []
+            model_task_results: list[_RoyaleTaskResult] = []
             for model in models:
                 res = all_results[tid][model]
                 score = evaluate(task, res.text) if res.ok else 0.0
+                # No judge is passed to evaluate() above, so it always falls
+                # through to the rule-based scorer, which never returns None.
+                assert score is not None
                 total_scores[model] += score
-                model_task_results.append({"model": model, "score": score, "res": res})
-            
+                model_task_results.append(_RoyaleTaskResult(model=model, score=score, res=res))
+
             # Sort by score for ranking
-            model_task_results.sort(key=lambda x: x["score"], reverse=True)
-            
+            model_task_results.sort(key=lambda r: r.score, reverse=True)
+
             for i, r in enumerate(model_task_results):
                 # Hallucination check (if judge enabled)
                 halluc = None
                 if self.judge:
                     try:
-                        halluc = self.judge.check_hallucination(task["instruction"], r["res"].text, 
+                        halluc = self.judge.check_hallucination(task["instruction"], r.res.text,
                                                               reference=str(task.get("expected_answer", "")))
                     except Exception as e:
                         log.warning(f"Hallucination check failed: {e}")
@@ -711,27 +726,27 @@ class Arena:
                 self.elo.save_royale_entry(
                     royale_id=royale_id,
                     task_id=tid,
-                    model=r["model"],
+                    model=r.model,
                     rank=i + 1,
-                    score=r["score"],
-                    response=r["res"].text if r["res"].ok else f"[ERROR: {r['res'].error}]",
-                    tps=r["res"].tps,
-                    latency_s=r["res"].latency_s,
+                    score=r.score,
+                    response=r.res.text if r.res.ok else f"[ERROR: {r.res.error}]",
+                    tps=r.res.tps,
+                    latency_s=r.res.latency_s,
                     instruction=task["instruction"],
                     hallucination=halluc
                 )
-            
+
             # Update ELO pairwise for this task
-            self.elo.record_royale_elo([{"model": r["model"], "score": r["score"]} for r in model_task_results])
-            
+            self.elo.record_royale_elo([{"model": r.model, "score": r.score} for r in model_task_results])
+
             if self._on_task_done:
                 # Callback for first two models to satisfy legacy UI
                 # In Royale, we might need a new callback type, but for now we'll just use the first two
                 if len(models) >= 2:
                     m1, m2 = model_task_results[0], model_task_results[1]
-                    self._on_task_done(tid, m1["score"], m2["score"], 
-                                      "a_wins" if m1["score"] > m2["score"] else "b_wins" if m2["score"] > m1["score"] else "draw",
-                                      task["instruction"], m1["res"].text, m2["res"].text, "")
+                    self._on_task_done(tid, m1.score, m2.score,
+                                      "a_wins" if m1.score > m2.score else "b_wins" if m2.score > m1.score else "draw",
+                                      task["instruction"], m1.res.text, m2.res.text, "")
 
         # Final Rankings
         rankings = []
