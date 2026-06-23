@@ -178,12 +178,26 @@ class TestP2PNode:
 
     def test_task_acceptance(self, node):
         """Test task acceptance logic."""
+        # _can_accept_task() compares the task's requirements against this
+        # machine's real hardware (via psutil) -- mock capabilities so the
+        # assertion doesn't depend on the host running the test having at
+        # least 8GB/2 cores (observed flaky on constrained CI runners).
+        node._capabilities_cache = {
+            "cpu_cores": 8,
+            "memory_gb": 32.0,
+            "platform": "Linux",
+            "python_version": "3.11.0",
+            "supported_backends": ["ollama", "openai_compat"],
+            "max_concurrent_tasks": 2,
+        }
+        node._capabilities_cache_time = time.time()
+
         simple_task = {
             "task_id": "task1",
             "required_memory_gb": 8,
             "required_cpu_cores": 2,
         }
-        
+
         assert node._can_accept_task(simple_task) is True
     
     def test_task_rejection_memory(self, node):
