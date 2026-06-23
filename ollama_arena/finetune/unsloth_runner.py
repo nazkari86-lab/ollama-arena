@@ -92,7 +92,6 @@ def macos_fallback_train(jsonl_path: str, config: UnslothConfig | None = None) -
         logging_steps=10,
         save_strategy="epoch",
         report_to="none",
-        use_mps_device=True,
     )
     trainer = Trainer(model=model, args=args, train_dataset=ds)
     trainer.train()

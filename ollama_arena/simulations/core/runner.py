@@ -250,10 +250,11 @@ class SimulationManager:
         for agent_id, agent in agents.items():
             profile = getattr(agent, "profile", None)
             backend = getattr(agent, "_backend", None)
-            if profile is None or backend is None:
+            model = getattr(agent, "model", None)
+            if profile is None or backend is None or model is None:
                 continue
             try:
-                summary = generate_reflection(profile, backend, agent.model)
+                summary = generate_reflection(profile, backend, model)
                 if summary:
                     profile.status["reflection"] = summary
             except Exception as e:

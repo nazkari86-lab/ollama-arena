@@ -53,15 +53,20 @@ class StdioTransport(MCPTransport):
         reader_protocol = asyncio.StreamReaderProtocol(self._reader)
         await loop.connect_read_pipe(lambda: reader_protocol, self.process.stdout)
 
-        self._writer, _ = await loop.connect_write_pipe(
-            lambda: asyncio.StreamReaderProtocol(asyncio.StreamReader()),
-            self.process.stdin
+        # connect_write_pipe() returns a (transport, protocol) pair, not a
+        # StreamWriter -- the transport alone has no drain(), which send()
+        # below relies on. Wrap it the standard way (see asyncio docs'
+        # "Wrap an existing pipe" example).
+        write_transport, write_protocol = await loop.connect_write_pipe(
+            asyncio.streams.FlowControlMixin, self.process.stdin
         )
+        self._writer = asyncio.StreamWriter(write_transport, write_protocol, None, loop)
 
     async def send(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """Send a message via stdio and receive response."""
         if self.process is None:
             await self._start_process()
+        assert self._writer is not None and self._reader is not None  # set by _start_process()
 
         message_str = json.dumps(message) + "\n"
         self._writer.write(message_str.encode())

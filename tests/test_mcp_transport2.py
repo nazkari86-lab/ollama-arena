@@ -74,6 +74,30 @@ class TestStdioTransportClose:
         assert t.process is None
 
 
+class TestStdioTransportSendRealProcess:
+    """send() against a real subprocess -- not previously covered.
+
+    connect_write_pipe() returns a bare transport, not a StreamWriter; an
+    earlier version assigned it directly to self._writer, which has no
+    drain() and crashed on the first real send(). Mocked-process tests
+    above never exercise _start_process()/send() together, so this gap
+    went undetected.
+    """
+
+    @pytest.mark.asyncio
+    async def test_send_round_trips_through_real_pipe(self):
+        from ollama_arena.mcp.transport import StdioTransport
+        t = StdioTransport([
+            "python3", "-c",
+            "import sys; [print(line, end='', flush=True) for line in sys.stdin]",
+        ])
+        try:
+            result = await t.send({"hello": "world"})
+            assert result == {"hello": "world"}
+        finally:
+            await t.close()
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # HTTPTransport — init, is_alive, close, _get_session
 # ──────────────────────────────────────────────────────────────────────────────
