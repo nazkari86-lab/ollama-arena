@@ -77,7 +77,7 @@ p2p = [
 ]
 telemetry = [
     "pynvml>=11.0",  # NVIDIA NVML
-    "py3nvml>=0.2.0",  # Alternative NVML binding
+    "py3nvml>=0.2.7",  # Alternative NVML binding
     "psutil>=5.9",
 ]
 zkproof = [
@@ -95,7 +95,7 @@ all = [
     "py-evm>=0.7",
     "cryptography>=41.0",
     "pynvml>=11.0",
-    "py3nvml>=0.2.0",
+    "py3nvml>=0.2.7",
     "psutil>=5.9",
 ]
 dev = [
