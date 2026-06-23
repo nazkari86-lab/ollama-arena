@@ -39,7 +39,7 @@ class GenomeResolver:
 
         direct = self.registry.match_by_name(info.name)
         if direct:
-            canonical = self.registry.get(direct)
+            canonical = self.registry.get(direct) or {}
             s = score_name_match(info.name, direct,
                                  canonical.get("aliases", []))
             if s > best_score:
@@ -49,7 +49,7 @@ class GenomeResolver:
         if info.from_model:
             from_id = self.registry.match_by_name(info.from_model)
             if from_id:
-                canonical = self.registry.get(from_id)
+                canonical = self.registry.get(from_id) or {}
                 s = score_from_chain(info.from_model, from_id,
                                      canonical.get("aliases", []))
                 if s > best_score:

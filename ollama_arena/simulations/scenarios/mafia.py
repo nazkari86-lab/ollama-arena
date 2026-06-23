@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, Optional
 
 from ..core.action_schema import ActionSchema
 from ..core.scenario import ScenarioSpec, register_scenario
@@ -112,7 +112,7 @@ class MafiaWorld(World):
         self.living: set[AgentId] = set()
         self._pending: set[AgentId] = set()
         self._discussion_buffer: dict[AgentId, str] = {}
-        self._votes: dict[AgentId, str] = {}
+        self._votes: dict[AgentId, Optional[str]] = {}
         self._winner_faction: str | None = None
 
     def _next_event_id(self) -> str:

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass
-from typing import Iterator, Literal
+from typing import Iterator, Literal, Optional
 
 from ..core.action_schema import ActionSchema
 from ..core.scenario import ScenarioSpec, register_scenario
@@ -83,12 +83,12 @@ class RPSWorld(World):
         raise NotImplementedError("RPS only steps simultaneously")
 
     def step_simultaneous(self, actions: dict[AgentId, Action]):
-        choices = {aid: a.payload.get("choice") for aid, a in actions.items()}
+        choices: dict[AgentId, Optional[str]] = {aid: a.payload.get("choice") for aid, a in actions.items()}
         a, b = self.agent_ids
         ca, cb = choices.get(a), choices.get(b)
         if ca == cb:
             outcome = "draw"
-        elif _BEATS.get(ca) == cb:
+        elif ca is not None and _BEATS.get(ca) == cb:
             outcome = a
             self.scores[a] += 1
         else:

@@ -147,7 +147,7 @@ class SandboxUniverseWorld(World):
         for aid, action in actions.items():
             if action.kind == "gather":
                 resource = action.payload.get("resource")
-                if resource in self.resource_names:
+                if resource is not None and resource in self.resource_names:
                     self.resources[aid][resource] += self.gather_amount
                     self._emit("gathered", {"agent": aid, "resource": resource}, actor_id=aid)
                 else:
@@ -158,11 +158,13 @@ class SandboxUniverseWorld(World):
                 resource = action.payload.get("resource")
                 amount = action.payload.get("amount", 0.0)
                 can_give = (
-                    target in self.living and target != aid
+                    target is not None and resource is not None
+                    and target in self.living and target != aid
                     and resource in self.resource_names
                     and 0 < amount <= self.resources[aid].get(resource, 0.0)
                 )
                 if can_give:
+                    assert target is not None and resource is not None  # implied by can_give
                     self.resources[aid][resource] -= amount
                     self.resources[target][resource] += amount
                     self._emit("gave", {"agent": aid, "target": target,
