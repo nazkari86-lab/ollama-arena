@@ -467,11 +467,13 @@ def _download(info: DatasetInfo, limit: int | None = None) -> list[dict]:
     ds = hf_load(info.hf_id, split=info.split, **kwargs)
     n = limit or len(ds)
     tasks = []
+    fetcher = info.fetcher
+    assert fetcher is not None, f"dataset {info.name} has no fetcher registered"
     for i, row in enumerate(ds):
         if i >= n:
             break
         try:
-            tasks.append(info.fetcher(dict(row), i))
+            tasks.append(fetcher(dict(row), i))
         except Exception as e:
             log.debug(f"[datasets] skip row {i} of {info.name}: {e}")
     return tasks
