@@ -43,6 +43,8 @@
   <div class="tab" role="tab" tabindex="-1" data-tab="sim">🎭 Simulations</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="world">🎮 World</div>
   <div class="tab" role="tab" tabindex="-1" data-tab="providers">🔌 Providers</div>
+  <div class="tab" role="tab" tabindex="-1" data-tab="agentic">🤖 Agentic</div>
+  <div class="tab" role="tab" tabindex="-1" data-tab="p2p">🌐 P2P</div>
 
 </div>
 
@@ -656,6 +658,88 @@
       </p>
       <div id="role-routing-rows" class="role-routing-rows"></div>
       <div id="role-routing-status" class="status"></div>
+    </div>
+  </div>
+
+  <!-- AGENTIC: SANDBOXES + SWARM BATTLES -->
+  <div class="tab-content" id="tab-agentic" role="tabpanel">
+    <div class="sim-overview">
+      <div>
+        <h2>Agentic — Sandboxes &amp; Swarm Battles</h2>
+        <p>Isolated VM sandboxes for task execution, and multi-agent team battles (2v2/3v3). Same safety defaults as the <code>ollama-arena sandbox</code>/<code>swarm</code> CLI commands.</p>
+      </div>
+      <div class="sim-overview-stats" aria-label="Agentic statistics">
+        <div><strong id="agentic-stat-sandboxes">0</strong><span>Sandboxes</span></div>
+        <div><strong id="agentic-stat-running">0</strong><span>Running</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Sandboxes
+        <button class="btn" id="agentic-sandboxes-refresh-btn" style="width:auto; margin-left:auto; padding:6px 14px; font-size:11px; background:transparent; border-color:var(--border-color);">Refresh</button>
+      </h2>
+      <div class="sim-tool-row">
+        <input type="text" id="agentic-sandbox-id" placeholder="sandbox id (e.g. demo-1)" style="flex:1;">
+        <button class="btn primary" id="agentic-sandbox-start-btn" style="width:auto; padding:10px 16px; font-size:12px;">Start</button>
+      </div>
+      <div id="agentic-sandboxes-table" style="margin-top:16px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Execute task in sandbox</h2>
+      <div class="sim-tool-row">
+        <select id="agentic-exec-sandbox"></select>
+        <input type="text" id="agentic-exec-task" placeholder="command to run, e.g. echo hello" style="flex:1;">
+        <button class="btn" id="agentic-exec-btn" style="width:auto; padding:10px 16px; font-size:12px;">Run</button>
+      </div>
+      <div class="log" id="agentic-exec-log"></div>
+    </div>
+
+    <div class="card">
+      <h2>Swarm battle</h2>
+      <div class="sim-tool-row">
+        <select id="agentic-swarm-mode">
+          <option value="2v2">2v2</option>
+          <option value="3v3">3v3</option>
+        </select>
+        <input type="number" id="agentic-swarm-rounds" placeholder="rounds" value="3" style="width:90px;">
+        <input type="number" id="agentic-swarm-max-steps" placeholder="max steps/round" value="5" style="width:140px;">
+      </div>
+      <textarea id="agentic-swarm-task" placeholder="Task for both teams to work on…" style="width:100%; min-height:70px; margin-top:10px;"></textarea>
+      <button class="btn primary" id="agentic-swarm-start-btn" style="width:auto; padding:10px 16px; font-size:12px; margin-top:10px;">Launch battle</button>
+      <div id="agentic-swarm-status" class="status"></div>
+      <div id="agentic-swarm-result" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <!-- P2P: NODE STATUS / LEADERBOARD / REPUTATION (read-only) -->
+  <div class="tab-content" id="tab-p2p" role="tabpanel">
+    <div class="sim-overview">
+      <div>
+        <h2>P2P Network</h2>
+        <p>Read-only status for the Arena@Home gossip-protocol node, global leaderboard, and node reputation. Network participation and result-signing actions are not exposed here.</p>
+      </div>
+      <div class="sim-overview-stats" aria-label="P2P statistics">
+        <div><strong id="p2p-stat-peers">0</strong><span>Peers</span></div>
+        <div><strong id="p2p-stat-entries">0</strong><span>Leaderboard entries</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Node status
+        <button class="btn" id="p2p-refresh-btn" style="width:auto; margin-left:auto; padding:6px 14px; font-size:11px; background:transparent; border-color:var(--border-color);">Refresh</button>
+      </h2>
+      <div id="p2p-status-panel"></div>
+    </div>
+
+    <div class="card">
+      <h2>Global leaderboard</h2>
+      <div id="p2p-leaderboard-table"></div>
+    </div>
+
+    <div class="card">
+      <h2>Top trusted nodes</h2>
+      <div id="p2p-reputation-table"></div>
     </div>
   </div>
 </div>

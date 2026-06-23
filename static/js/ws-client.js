@@ -11,6 +11,13 @@ function connectWS() {
       handleSimWSEvent(d);
       return;
     }
+    // Swarm battles are keyed by job_id like the single-match flow below,
+    // but use their own dispatcher (handleAgenticWSEvent) since the
+    // single-job currentJobId gate is reserved for the Arena Match tab.
+    if (typeof d.type === 'string' && d.type.startsWith('swarm_') && typeof handleAgenticWSEvent === 'function') {
+      handleAgenticWSEvent(d);
+      return;
+    }
     if (d.job_id === currentJobId) handleWSEvent(d);
   };
   socket.onclose = () => setTimeout(connectWS, 2000);
@@ -206,7 +213,7 @@ document.querySelectorAll('.tab').forEach(el => {
     document.getElementById('tab-' + el.dataset.tab).classList.add('active');
     
     savePref('lastTab', el.dataset.tab);
-    const m = { dashboard: loadCharts, datasets: loadDatasets, performance: loadPerf, hallucinations: loadHallucinations, spec: loadSpec, genome: initGenomeTab, sim: initSimTab, world: initWorldTab, providers: initProvidersTab, tournament: () => {}, royale: () => {}, history: loadHistory };
+    const m = { dashboard: loadCharts, datasets: loadDatasets, performance: loadPerf, hallucinations: loadHallucinations, spec: loadSpec, genome: initGenomeTab, sim: initSimTab, world: initWorldTab, providers: initProvidersTab, agentic: initAgenticTab, p2p: initP2PTab, tournament: () => {}, royale: () => {}, history: loadHistory };
     if (m[el.dataset.tab]) m[el.dataset.tab]();
   });
   
