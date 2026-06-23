@@ -42,7 +42,7 @@ web = [
     "cryptography>=41.0",
 ]
 viz = [
-    "plotly>=5.18",
+    "plotly>=6.8.0",
 ]
 datasets = [
     "datasets>=2.14",
@@ -85,7 +85,7 @@ zkproof = [
 ]
 all = [
     "fastapi>=0.100", "uvicorn[standard]>=0.22",
-    "plotly>=5.18",
+    "plotly>=6.8.0",
     "datasets>=2.14", "huggingface_hub>=0.20",
     "mcp>=0.1.0",
     "pyyaml>=6.0",
