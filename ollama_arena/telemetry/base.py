@@ -265,7 +265,7 @@ class SQLiteTelemetryStorage:
         import json
         
         query = "SELECT * FROM telemetry_records WHERE 1=1"
-        params = []
+        params: List[Any] = []
         
         if model:
             query += " AND model = ?"

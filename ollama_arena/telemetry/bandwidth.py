@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from threading import Thread
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Union
 
 from .base import HardwarePlatform, HardwareDetector
 
@@ -170,7 +170,7 @@ class ProcMeminfoMonitor:
     def __init__(self):
         """Initialize /proc/meminfo monitor."""
         self._available = platform.system() == "Linux"
-        self._previous_used = 0
+        self._previous_used = 0.0
         self._previous_time = 0.0
     
     def is_available(self) -> bool:
@@ -247,7 +247,7 @@ class PSUtilBandwidthMonitor:
     def __init__(self):
         """Initialize psutil monitor."""
         self._available = self._check_psutil()
-        self._previous_used = 0
+        self._previous_used = 0.0
         self._previous_time = 0.0
     
     def _check_psutil(self) -> bool:
@@ -325,7 +325,7 @@ class GPUBandwidthMonitor:
         self.platform = platform
         self.device_index = device_index
         self._available = self._check_gpu()
-        self._previous_used = 0
+        self._previous_used = 0.0
         self._previous_time = 0.0
     
     def _check_gpu(self) -> bool:
@@ -482,6 +482,7 @@ class BandwidthProfiler:
         self.gpu_monitor = GPUBandwidthMonitor(self.platform, device_index)
         
         # Select primary monitor
+        self.primary_monitor: Union[EBPFBandwidthMonitor, ProcMeminfoMonitor, PSUtilBandwidthMonitor, None]
         if self.ebpf_monitor and self.ebpf_monitor.is_available():
             self.primary_monitor = self.ebpf_monitor
         elif self.proc_monitor and self.proc_monitor.is_available():

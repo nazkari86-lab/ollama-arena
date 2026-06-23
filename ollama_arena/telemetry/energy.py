@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from threading import Thread
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 
 from .base import HardwarePlatform, HardwareDetector
 
@@ -332,6 +332,7 @@ class EnergyMonitor:
         self.mps_monitor = MPSMonitor() if self.platform == HardwarePlatform.APPLE else None
         
         # Determine active monitor
+        self.active_monitor: Union[NVMLMonitor, ROCmMonitor, MPSMonitor, None]
         if self.nvml_monitor and self.nvml_monitor.is_available():
             self.active_monitor = self.nvml_monitor
         elif self.rocm_monitor and self.rocm_monitor.is_available():

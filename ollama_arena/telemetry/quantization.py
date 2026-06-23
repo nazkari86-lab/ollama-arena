@@ -191,7 +191,7 @@ class ParetoFrontier:
         Returns:
             Dictionary mapping use case to recommended format.
         """
-        recommendations = {}
+        recommendations: dict[str, QuantizationFormat] = {}
         
         if not self.frontier:
             return recommendations
