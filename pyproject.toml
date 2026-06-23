@@ -64,7 +64,7 @@ finetune = [
     "bitsandbytes>=0.43; sys_platform != 'darwin'",
 ]
 config = [
-    "pyyaml>=6.0",
+    "pyyaml>=6.0.3",
     "tomli>=2.0; python_version < '3.11'",
 ]
 agentic = [
@@ -88,7 +88,7 @@ all = [
     "plotly>=5.18",
     "datasets>=2.14", "huggingface_hub>=0.20",
     "mcp>=0.1.0",
-    "pyyaml>=6.0",
+    "pyyaml>=6.0.3",
     "tomli>=2.0; python_version < '3.11'",
     "kubernetes>=28.0",
     "web3>=6.0",
@@ -104,7 +104,7 @@ dev = [
     "pytest-cov",
     "ruff",
     "mypy",
-    "pyyaml>=6.0",
+    "pyyaml>=6.0.3",
     "tomli>=2.0; python_version < '3.11'",
     "numpy>=1.24",  # used by tests/test_rag_*_extended.py to build mock embedding vectors
     "httpx>=0.24",  # required by starlette.testclient.TestClient (tests/test_web_*.py)
