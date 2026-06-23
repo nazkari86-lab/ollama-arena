@@ -355,7 +355,7 @@ class SwarmBattle:
         }
 
 
-def example_2v2_setup() -> tuple[SwarmTeam, SwarmTeam]:
+def example_2v2_setup() -> tuple[dict[str, AgentRole], dict[str, AgentRole]]:
     """Example setup for a 2v2 swarm battle."""
     # Team A: Qwen-Coder (writes code) + Phi-4 (writes tests)
     team_a_config = {
@@ -372,7 +372,7 @@ def example_2v2_setup() -> tuple[SwarmTeam, SwarmTeam]:
     return team_a_config, team_b_config
 
 
-def example_3v3_setup() -> tuple[SwarmTeam, SwarmTeam]:
+def example_3v3_setup() -> tuple[dict[str, AgentRole], dict[str, AgentRole]]:
     """Example setup for a 3v3 swarm battle."""
     # Team A: Coder + Tester + Reviewer
     team_a_config = {

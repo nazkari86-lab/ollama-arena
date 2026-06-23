@@ -228,7 +228,7 @@ def close_all_connections():
         _connection_pool.clear()
 
 
-def get_pool_stats() -> Dict[str, int]:
+def get_pool_stats() -> Dict[str, float]:
     """Get statistics about the connection pool."""
     with _pool_lock:
         return {
